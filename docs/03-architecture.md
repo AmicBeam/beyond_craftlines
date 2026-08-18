@@ -25,7 +25,7 @@ Server Runtime
   ├─ SandboxManager            # 测试维槽位
   ├─ MeterService              # 计量
   ├─ CompileService            # 报告→编译
-  ├─ DriveRuntime              # 合成链驱动核
+  ├─ DriveRuntime              # 构象执行器运行时
   └─ CopyService               # 图纸复制
 
 Integrations

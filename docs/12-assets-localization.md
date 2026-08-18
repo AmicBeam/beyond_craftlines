@@ -11,8 +11,8 @@
 
 ### 1.2 方块贴图
 
-- `craftline_anchor`（六面 + 模式覆盖层）
-- `craftline_drive`（开关态/工作态）
+- `schematic_anchor`（六面 + 模式覆盖层）
+- `schematic_executor`（开关态/工作态）
 - `schematic_duplicator`
 - 无自定义屏障贴图（使用原版 barrier）
 - 网络界面“稳态构象图可产出”角标图标

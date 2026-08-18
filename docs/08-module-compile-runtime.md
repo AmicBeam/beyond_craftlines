@@ -21,7 +21,7 @@ confirmReport(reportId, selectedIn, selectedOut, cycleTicks)
 - cycleTicks
 - version / schemaVersion
 
-## 2. 合成链驱动核（Blueprint Drive）
+## 2. 构象执行器（Schematic Executor）
 
 ### 2.1 行为
 

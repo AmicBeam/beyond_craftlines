@@ -1,0 +1,29 @@
+# Build
+**/build/
+**/.gradle/
+**/out/
+**/bin/
+**/run/
+**/runs/
+**/libs/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local secrets / temp
+.env
+*.tmp
+.tmp/

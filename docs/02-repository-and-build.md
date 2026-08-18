@@ -30,7 +30,6 @@ beyond-craftlines/
       src/main/java/...          # Forge 适配、mixin、平台注册
       src/main/resources/...     # mods.toml / mixins / 版本专有资源
       src/jei/java/...           # 可选 JEI 兼容源集
-      src/emi/java/...
       src/jade/java/...
       src/test/java/...          # 版本集成测试
     1.21.1/ ...
@@ -58,7 +57,6 @@ sourceSets.test.java.srcDir '../../common/src/test/java'
 
 ```gradle
 sourceSets.main.java.srcDir 'src/jei/java'
-sourceSets.main.java.srcDir 'src/emi/java'
 sourceSets.main.java.srcDir 'src/jade/java'
 ```
 
@@ -98,7 +96,7 @@ beyond_craftlines-<mod_version>+<minecraft_version>.jar
 
 ### 5.2 软依赖
 
-- Sky Logistics / JEI / EMI / Jade：`mandatory=false`
+- Sky Logistics / JEI / Jade：`mandatory=false`（无 EMI）
 - 兼容代码放独立源集或 `integrate/*` 包，类加载用 mod presence 守卫
 
 ### 5.3 本地/离线构建

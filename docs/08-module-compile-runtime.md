@@ -7,7 +7,7 @@ confirmReport(reportId, selectedIn, selectedOut, cycleTicks)
   validate session owner/permission
   compiled = CompileService.from(report, selection)
   library.storeCompiled(compiled)
-  give/update blueprint_compiled item
+  give/update stabilized_schematic item
   state = COMPILED
 ```
 
@@ -21,12 +21,12 @@ confirmReport(reportId, selectedIn, selectedOut, cycleTicks)
 - cycleTicks
 - version / schemaVersion
 
-## 2. 图纸驱动器（Blueprint Drive）
+## 2. 合成链驱动核（Blueprint Drive）
 
 ### 2.1 行为
 
 - 绑定 BD 网络
-- 放入 1 张已编译图纸
+- 放入 1 张稳态构象图
 - 模式：
   - `TIMED`：按 cycleTicks
   - `GATED`：红石脉冲一轮
@@ -54,13 +54,13 @@ tryRun()
 2. 驱动器内部缓冲槽
 3. 缓冲满则暂停下一轮，不继续扣输入
 
-## 3. 图纸复制台
+## 3. 构象复制台
 
 ```text
 copy(compiled)
   cost = compiled.capex
   if net.extract(cost):
-     output one additional blueprint_compiled (same id or clone id)
+     output one additional stabilized_schematic (same id or clone id)
 ```
 
 原件不消耗。可配置是否允许跨玩家网络复制（默认仅有权限网络）。
@@ -69,7 +69,7 @@ copy(compiled)
 
 `BlueprintRecipeFamily`：
 
-- 查询：输出匹配 goal 的已编译图纸（玩家可见库：自己的 / 网络共享库）
+- 查询：输出匹配 goal 的稳态构象图（玩家可见库：自己的 / 网络共享库）
 - 规划：把图纸 inputs 作为子需求展开
 - 执行：走 `BlueprintBlackboxExecutor`（可直接扣 IO，不必真粘贴结构）
 

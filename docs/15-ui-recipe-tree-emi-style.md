@@ -1,7 +1,7 @@
-# 15 · 配方树界面设计（EMI 风格）
+# 15 · 配方树界面设计（学习 EMI 风格，非 EMI 联动）
 
 最终态要求：**Craftlines 配方树界面在信息架构与交互气质上对齐 EMI 的 Recipe Tree / BoMScreen**，而不是 RSI 的卡片列表优先风格。  
-实现上为独立 GUI（不直接依赖 EMI 运行时），但视觉与操作应让用过 EMI 的玩家几乎零学习成本。
+**只学习其视觉与交互，不实现 EMI 模组联动/插件/入口。** GUI 完全独立。
 
 参考源码（工作区 `emi/`）：
 
@@ -72,11 +72,11 @@
 
 - **左键节点**：
   - 若可折叠：切换 expand/fold（对齐 `FoldState`）
-  - Shift+左键：查看该节点配方（打开 JEI/EMI 配方页，软依赖）
+  - Shift+左键：查看该节点配方（打开 JEI 配方页，软依赖）
 - **右键节点**：
   - 打开“解析/替代配方”菜单（对齐 EMI resolution）
   - 可固定某条配方分支
-- **中键**（可选）：收藏缺料到 JEI/EMI
+- **中键**（可选）：收藏缺料到 JEI
 
 ### 3.3 批次
 
@@ -108,7 +108,7 @@
    - 物品本体信息
    - 配方摘要组件（类似 `RecipeTooltipComponent`）
    - 来源说明（网络/合成/图纸）
-5. Help 按钮提供快捷键说明浮层。
+5. Help 按钮提供操作说明浮层（拖拽/缩放/批次/中键入口说明；无下单快捷键）。
 
 ---
 
@@ -130,7 +130,7 @@
 
 ---
 
-## 6. 与 JEI / EMI 入口关系
+## 6. 与 JEI 入口关系
 
 - JEI 配方页按钮：`预览配方树` / `执行`
 - EMI 若存在：
@@ -168,7 +168,7 @@ client/ui/theme/
 
 ```toml
 [recipeTree]
-emiStyleLayout = true
+learnEmiLayout = true
 nodeWidth = 30
 nodeHorizontalSpacing = 8
 nodeVerticalSpacing = 20

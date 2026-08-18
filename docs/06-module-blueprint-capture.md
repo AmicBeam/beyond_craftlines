@@ -36,7 +36,7 @@
 ## 4. 存储策略
 
 - 服务器 `BlueprintLibrarySavedData` 存完整结构
-- 物品 `blueprint_draft` 仅存 `blueprintId` + 摘要
+- 物品 `unstable_schematic` 仅存 `blueprintId` + 摘要
 - 超大结构分片写入（文件或分段 NBT）
 
 ## 5. 核心链路
@@ -47,7 +47,7 @@ Anchor SAVE
   validate no dangerous blocks
   snapshot = CaptureService.capture(world, box)
   id = library.putDraft(snapshot, owner, name)
-  give blueprint_draft(id)
+  give unstable_schematic(id)
 ```
 
 ## 6. UT

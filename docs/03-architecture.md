@@ -4,7 +4,7 @@
 
 ```text
 Client
-  ├─ JEI/EMI Plugin
+  ├─ JEI Plugin
   ├─ Screens (Anchor/Drive/Duplicator/Plan/Report)
   └─ HUD (progress / sandbox)
 
@@ -25,7 +25,7 @@ Server Runtime
   ├─ SandboxManager            # 测试维槽位
   ├─ MeterService              # 计量
   ├─ CompileService            # 报告→编译
-  ├─ DriveRuntime              # 图纸驱动器
+  ├─ DriveRuntime              # 合成链驱动核
   └─ CopyService               # 图纸复制
 
 Integrations
@@ -63,7 +63,6 @@ com.beyondcraftlines
     bd/
     skylogistics/
     jei/
-    emi/
   client/          # 仅无 loader 强依赖的客户端逻辑；否则放 versions
   network/
   registry/        # 逻辑 ID 常量，不直接 DeferredRegister
@@ -131,7 +130,7 @@ JEI button
 Anchor SAVE
   -> CaptureService.snapshot
   -> BlueprintLibrary.createDraft
-  -> item blueprint_draft (ref id)
+  -> item unstable_schematic (ref id)
 
 Start TEST
   -> SandboxManager.allocate
@@ -144,7 +143,7 @@ Stop/Stabilize
   -> Report GUI
   -> player confirm
   -> CompileService.toCompiled
-  -> item blueprint_compiled
+  -> item stabilized_schematic
 ```
 
 ### 4.3 图纸驱动
@@ -170,8 +169,9 @@ Drive tick/redstone
 
 ## 6. 客户端配方树
 
-玩家可见的计划预览必须采用 **EMI BoM 风格配方树**（见 `15-ui-recipe-tree-emi-style.md`）。
+玩家可见的计划预览必须采用 **EMI BoM 风格配方树**（见 `15-ui-recipe-tree-emi-style.md`，仅风格参考）。
 服务端仍输出 `CraftPlan` DTO；客户端负责 TreeVolume 布局与交互，不在本地重算权威计划。
+入口仅来自 BD 维度网络界面中的 JEI 按钮或鼠标中键，不使用快捷键，不做 EMI 联动。
 
 ## 7. 错误模型
 

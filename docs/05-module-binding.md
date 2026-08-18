@@ -1,4 +1,6 @@
-# 05 · 模块设计：维度工具与设备绑定
+# 05 · 模块设计：时空联结器与设备绑定
+
+> 旧称“维度工具”已废弃，统一为 `spacetime_linker` / 时空联结器。
 
 ## 1. 职责
 
@@ -33,7 +35,7 @@ BindingRecord {
 ### 3.1 绑定
 
 ```text
-Shift-use dimension_tool on block
+Shift-right-click block with spacetime_linker
   resolve net from tool/player primary net
   check permission + claim
   detect DeviceType via DeviceProbe
@@ -50,7 +52,7 @@ Shift-use dimension_tool on block
 ### 3.3 附近扫描
 
 ```text
-keybind / tool action
+from linker UI action (no global order hotkey)
   select connector/tool context
   scan loaded chunks in radius (budgeted across ticks)
   skip already bound / denied / unsupported

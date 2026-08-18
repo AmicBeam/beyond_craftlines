@@ -6,7 +6,7 @@
 | 中文名 | 超越维度：合成链 |
 | `mod_id` | `beyond_craftlines` |
 | 硬依赖 | Beyond Dimensions（超越维度） |
-| 软依赖 | Sky Logistics（天穹物流）、JEI、EMI、Jade |
+| 软依赖 | Sky Logistics（天穹物流）、JEI、Jade（无 EMI 联动） |
 | 目标版本 | `1.20.1` Forge / `1.21.1` NeoForge / `26.1.2` NeoForge |
 
 本目录是**最终设计文档组**（非 MVP 切片）。实现前以本文档组为准。
@@ -20,7 +20,7 @@
 | [docs/02-repository-and-build.md](docs/02-repository-and-build.md) | 多版本仓库与构建（对齐天穹物流） |
 | [docs/03-architecture.md](docs/03-architecture.md) | 总体架构、包结构、核心运行时 |
 | [docs/04-module-autocraft.md](docs/04-module-autocraft.md) | JEI/BD 工作树与一键合成执行 |
-| [docs/05-module-binding.md](docs/05-module-binding.md) | 维度工具与设备绑定 |
+| [docs/05-module-binding.md](docs/05-module-binding.md) | 时空联结器与设备绑定 |
 | [docs/06-module-blueprint-capture.md](docs/06-module-blueprint-capture.md) | 框选、草稿图纸、结构捕获 |
 | [docs/07-module-sandbox-meter.md](docs/07-module-sandbox-meter.md) | 测试维、屏障、计量与报告 |
 | [docs/08-module-compile-runtime.md](docs/08-module-compile-runtime.md) | 编译图纸、驱动器、复制、JEI 图纸源 |
@@ -30,11 +30,12 @@
 | [docs/12-assets-localization.md](docs/12-assets-localization.md) | 美术素材与本地化 |
 | [docs/13-testing-strategy.md](docs/13-testing-strategy.md) | 单元测试 / 集成测试 / 游戏内验收 |
 | [docs/14-references.md](docs/14-references.md) | RSI / ModuleWorks 等参考点（不改变本设计） |
-| [docs/15-ui-recipe-tree-emi-style.md](docs/15-ui-recipe-tree-emi-style.md) | 配方树界面（EMI BoM 风格） |
+| [docs/15-ui-recipe-tree-emi-style.md](docs/15-ui-recipe-tree-emi-style.md) | 配方树界面（学习 EMI 风格，非联动） |
+| [docs/16-content-naming.md](docs/16-content-naming.md) | 超维风物品/方块命名 |
 
 ## 一句话
 
 在超越维度网络上同时提供：
 
-1. **合成链**：JEI 工作树预览 + 一键递归合成（默认 BD 自有设备族）
-2. **产线链**：框选真实产线 → 沙盒测试 → 编译图纸 → 自动量产 / 复制 / 作为缺料来源
+1. **合成链**：在 BD 维度网络界面中通过 JEI 按钮或中键下单，预览 EMI 风格配方树并递归合成（默认 BD 自有设备族）
+2. **产线链**：框选真实产线 → 原版屏障沙盒试产 → 编译稳态构象图 → 自动量产 / 复制 / 作为缺料来源

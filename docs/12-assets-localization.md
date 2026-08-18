@@ -4,17 +4,18 @@
 
 ### 1.1 物品贴图（32x32 或模组统一像素规范）
 
-- `dimension_tool`
-- `blueprint_draft`
-- `blueprint_compiled`
-- `blueprint_report`
+- `spacetime_linker`（时空联结器）
+- `unstable_schematic`（未稳构象图）
+- `stabilized_schematic`（稳态构象图）
+- `trial_report`（试产报告）
 
 ### 1.2 方块贴图
 
-- `blueprint_anchor`（六面 + 模式覆盖层）
-- `blueprint_drive`（开关态/工作态）
-- `blueprint_duplicator`
-- `test_barrier`（半透明/不遮挡过强）
+- `craftline_anchor`（六面 + 模式覆盖层）
+- `craftline_drive`（开关态/工作态）
+- `schematic_duplicator`
+- 无自定义屏障贴图（使用原版 barrier）
+- 网络界面“稳态构象图可产出”角标图标
 
 ### 1.3 GUI
 
@@ -71,13 +72,15 @@
 ### 2.4 工具提示
 
 - 图纸摘要（hash 短码、输入输出数量、状态）
-- 维度工具绑定信息
+- 时空联结器绑定信息（勿再出现“维度工具”文案）
 
-### 2.5 JEI/EMI
+### 2.5 JEI / 网络界面
 
-- 按钮 tooltip
+- 仅 BD 维度网络界面上下文下的按钮 tooltip：`预览配方树` / `下单`
+- 中键下单提示
+- 稳态构象图产物标记 tooltip
 - 分类名：`Beyond Craftlines` / `超越维度：合成链`
-- 图纸黑盒配方类别名
+- 构象图黑盒配方类别名
 
 ### 2.6 配置注释
 

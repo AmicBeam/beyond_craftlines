@@ -1,14 +1,22 @@
 # 04 · 模块设计：自动合成链（JEI / BD）
 
+## 0. 入口约束（硬性）
+
+1. Craftlines 的 JEI 额外按钮**仅在 BD 维度网络界面打开时**出现。
+2. 在维度网络界面中，对物品使用**鼠标中键**可进入该物品的配方树/下单界面。
+3. 不提供快捷键打开下单界面。
+4. 不实现 EMI 联动；只学习 EMI 配方树视觉与交互。
+
 ## 1. 模块职责
 
 负责：
 
 - 配方索引
-- 工作树预览
-- 一键执行
+- 配方树预览（EMI 视觉风格）
+- BD 维度网络界面内的下单执行
 - 进度与取消
-- 图纸节点嵌套调用入口
+- 稳态构象图节点嵌套调用入口
+- 网络物品“可由构象图产出”的标记数据
 
 不负责：结构捕获、沙盒、驱动器 GUI（只调用其黑盒执行器）。
 
@@ -23,7 +31,7 @@
 | GraphScheduler | `plan/GraphScheduler` | 运行时调度 |
 | MaterialLedger | `ledger/MaterialLedger` | 预留/抽取/退款 |
 | AutocraftController | `plan/AutocraftController` | 玩家会话生命周期 |
-| JeiBridge / EmiBridge | `integrate/jei|emi` | UI 入口 |
+| JeiBridge | `integrate/jei` | 仅在 BD 维度网络界面打开时的 JEI 入口 |
 
 ## 3. 默认可执行族（最终态）
 
@@ -31,7 +39,7 @@
 2. `smelting`：对接 BD `NetFurnace`（可配允许原版熔炉绑定执行）。
 3. `blasting`：`NetBlastFurnace`
 4. `smoking`：`NetSmoker`
-5. `blueprint_blackbox`：已编译图纸
+5. `blueprint_blackbox`：稳态构象图
 6. 扩展族：数据包/`RecipeFamilyProvider`（默认仍受总闸配置）
 
 ## 4. 核心链路：预览
@@ -140,8 +148,17 @@ interface DeviceExecutor {
 7. `PermissionDeniedTest`
 8. `PlanCacheInvalidationTest`：库存变化后旧计划失效
 
-## 8. 版本适配点
+## 8. 网络界面标记
+
+`NetworkProductMarkerService`：
+
+- 输入：当前网络可见物品列表 + 玩家可见稳态构象图库
+- 输出：可被构象图生产的 item key 集合
+- 客户端在 BD 网络格子上画角标；中键命中后打开对应目标的配方树
+
+## 9. 版本适配点
 
 - JEI API 在 1.20.1 / 1.21+ 包名差异 → versions 源集
 - BD GUI 类名/菜单类型差异 → `NetAccessService` 版本实现
 - 配方 `RecipeHolder` vs 旧 `Recipe` → recipe adapter
+- 中键事件需挂在 BD 网络界面物品区，而不是全局键位

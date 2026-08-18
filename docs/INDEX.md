@@ -22,7 +22,8 @@
 9. [12-assets-localization.md](12-assets-localization.md)
 10. [13-testing-strategy.md](13-testing-strategy.md)
 11. [14-references.md](14-references.md) — RSI / ModuleWorks 参考（不改设计）
-12. [15-ui-recipe-tree-emi-style.md](15-ui-recipe-tree-emi-style.md) — **配方树 UI（EMI 风格）**
+12. [15-ui-recipe-tree-emi-style.md](15-ui-recipe-tree-emi-style.md) — 配方树 UI（学习 EMI 风格，非联动）
+13. [16-content-naming.md](16-content-naming.md) — 超维风内容命名
 
 ## 本文档组覆盖检查
 
@@ -36,4 +37,7 @@
 - [x] 配置全集
 - [x] 最终态设计（非 MVP）
 - [x] 1.20.1 Forge / 1.21.1 NeoForge / 26.1.2 NeoForge + common/versions 构建方式
-- [x] 配方树界面 EMI 风格专项设计
+- [x] 配方树界面学习 EMI 风格（无 EMI 联动）
+- [x] BD 网络界面下单入口 + 中键 + 稳态产物标记
+- [x] 原版屏障围挡；观察者出界 5 秒退出
+- [x] 超维风命名（时空联结器/构象图等）

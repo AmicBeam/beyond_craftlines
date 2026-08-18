@@ -46,7 +46,7 @@ CurseForge：[`ggg-moduleworks`](https://www.curseforge.com/minecraft/mc-mods/gg
 
 - `DimensionsNet` / `UnifiedStorage`
 - 网络熔炉与终端
-- 现有 JEI/EMI fill 转移（本模组在其上增加计划执行）
+- 现有 JEI fill 转移（本模组在其上增加计划执行）
 
 ## 5. 内部前稿
 

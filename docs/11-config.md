@@ -12,8 +12,9 @@ enableBlueprintCapture = true
 enableSandbox = true
 enableDrive = true
 enableDuplicator = true
-enableJeiButtons = true
-enableEmiButtons = true
+enableJeiButtons = true          # 仅 BD 维度网络界面打开时生效
+enableNetworkMiddleClickOrder = true
+enableCompiledProductMarker = true
 
 [recipeFamilies]
 enableCrafting = true
@@ -38,10 +39,12 @@ particleBounds = true
 
 [sandbox]
 forceSpectator = true
+spectatorAutoExitOutsideSeconds = 5
 defaultTimeoutTicks = 120000   # 100 minutes @20tps
 stableWindowTicks = 1200
 maxConcurrentSessionsPerServer = 8
 slotSpacing = 512
+useVanillaBarrier = true
 
 [drive]
 defaultMode = "TIMED"          # TIMED|GATED|INSTANT
@@ -84,7 +87,9 @@ retainFinishedReports = 32
 
 ```toml
 [ui]
-showJeiButtons = true
+showJeiButtons = true            # still requires BD network GUI context
+showCompiledProductMarker = true
+middleClickOpensOrderTree = true
 rememberOutputDestination = true
 planZoomSensitivity = 1.0
 

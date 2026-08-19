@@ -1,0 +1,60 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.116'
+}
+
+version = mod_version
+group = mod_group_id
+base { archivesName = "${mod_id}-${minecraft_version}-neoforge" }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+    runs {
+        client { client() }
+        server { server() }
+    }
+    mods {
+        beyond_craftlines { sourceSet sourceSets.main }
+    }
+}
+
+repositories { mavenCentral() }
+
+dependencies {
+    implementation files('../bd-upstream/build/libs/beyonddimensions-1.21.1-neoforge-0.7.27.jar')
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+}
+
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+            minecraft_version_range: minecraft_version_range,
+            neo_version_range: neo_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: 'MIT',
+            mod_version: mod_version,
+            mod_authors: mod_authors,
+            mod_description: mod_description,
+            beyond_dimensions_version: beyond_dimensions_version
+    ]
+    inputs.properties replaceProperties
+    filteringCharset = 'UTF-8'
+    from 'src/main/templates'
+    expand replaceProperties
+    into layout.buildDirectory.dir('generated/sources/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

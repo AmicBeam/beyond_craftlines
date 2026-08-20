@@ -34,13 +34,36 @@ public final class SimulatedCrafting
     public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
                                      ResourceLocation expectedOutput, long requestedCrafts,
                                      List<RecipePlan.IngredientSelection> selections)
+    { return craftBatch(level, storage, recipeId, expectedOutput, requestedCrafts, selections, List.of()); }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
+                                     ResourceLocation expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections,
+                                     List<RecipePlan.ReservedMaterial> orderReserved)
+    { return craftBatch(level, storage, recipeId, expectedOutput, requestedCrafts,
+            selections, orderReserved, false); }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
+                                     ResourceLocation expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections,
+                                     List<RecipePlan.ReservedMaterial> orderReserved,
+                                     boolean escrowOutput)
+    { return craftBatch(level, storage, recipeId, expectedOutput, requestedCrafts, selections,
+            orderReserved, escrowOutput, null); }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
+                                     ResourceLocation expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections,
+                                     List<RecipePlan.ReservedMaterial> orderReserved,
+                                     boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot)
     {
         if (requestedCrafts < 1) return Attempt.failed("invalid crafting batch size");
         var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed("crafting recipe is no longer available: " + recipeId);
 
-        Prepared prepared = prepare(storage, recipe, level, selections);
+        Map<ItemStackKey, Long> reservedAmounts = reservedAmounts(orderReserved);
+        Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts, networkSnapshot);
         if (prepared == null) return Attempt.failed("waiting for matching crafting ingredients");
 
         ItemStack output;
@@ -68,11 +91,12 @@ public final class SimulatedCrafting
             else if (ItemStack.isSameItem(input, remainder)) statefulRemainder = true;
         }
 
-        long batch = statefulRemainder ? 1 : availableBatch(storage, prepared, persistentSlots, requestedCrafts);
+        long batch = statefulRemainder ? 1 : availableBatch(
+                storage, networkSnapshot, reservedAmounts, prepared, persistentSlots, requestedCrafts);
         if (batch < 1) return Attempt.failed("waiting for matching crafting ingredients");
 
         Map<ItemStackKey, Long> returns = new LinkedHashMap<>();
-        add(returns, output, batch);
+        if (!escrowOutput) add(returns, output, batch);
         for (int i = 0; i < remainders.size(); i++)
             add(returns, remainders.get(i), persistentSlots[i] ? 1 : batch);
         for (var entry : returns.entrySet())
@@ -81,10 +105,14 @@ public final class SimulatedCrafting
 
         Map<ItemStackKey, Long> consumption = consumption(prepared, persistentSlots, batch);
         List<KeyAmount> extracted = new ArrayList<>();
+        LinkedHashMap<ItemStackKey, Long> consumedReserved = new LinkedHashMap<>();
         for (var entry : consumption.entrySet())
         {
-            KeyAmount taken = storage.extract(entry.getKey(), entry.getValue(), false, false);
-            if (taken.amount() != entry.getValue())
+            long fromReserved = Math.min(reservedAmounts.getOrDefault(entry.getKey(), 0L), entry.getValue());
+            if (fromReserved > 0) consumedReserved.put(entry.getKey(), fromReserved);
+            long networkNeeded = entry.getValue() - fromReserved;
+            KeyAmount taken = storage.extract(entry.getKey(), networkNeeded, false, false);
+            if (taken.amount() != networkNeeded)
             {
                 if (!taken.isEmpty()) extracted.add(taken);
                 rollbackInputs(storage, extracted);
@@ -106,17 +134,33 @@ public final class SimulatedCrafting
                 return Attempt.failed("crafting transaction rolled back because network capacity changed");
             }
         }
-        return new Attempt(true, "", SaturatingLongMath.multiply(output.getCount(), batch), batch);
+        return new Attempt(true, "", SaturatingLongMath.multiply(output.getCount(), batch), batch,
+                consumedReserved.entrySet().stream().map(entry ->
+                        new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList(),
+                escrowOutput ? List.of(new RecipePlan.ReservedMaterial(new ItemStackKey(output),
+                        SaturatingLongMath.multiply(output.getCount(), batch))) : List.of());
     }
 
     private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level,
-                                    List<RecipePlan.IngredientSelection> selections)
+                                    List<RecipePlan.IngredientSelection> selections,
+                                    Map<ItemStackKey, Long> orderReserved,
+                                    PlanningSnapshotService.Snapshot networkSnapshot)
     {
         List<Ingredient> ingredients = recipe.getIngredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
         List<ItemStackKey> slotKeys = new ArrayList<>();
         Map<ItemStackKey, Long> reserved = new LinkedHashMap<>();
-        List<KeyAmount> availableStacks = List.copyOf(storage.getStorage());
+        LinkedHashMap<ItemStackKey, Long> combined = new LinkedHashMap<>(orderReserved);
+        if (networkSnapshot == null)
+        {
+            for (KeyAmount available : storage.getStorage())
+                if (available.key() instanceof ItemStackKey key && available.amount() > 0)
+                    combined.merge(key, available.amount(), SaturatingLongMath::add);
+        }
+        else for (PlanningSnapshotService.ComponentEntry available : networkSnapshot.componentEntries())
+            combined.merge(available.key(), available.amount(), SaturatingLongMath::add);
+        List<KeyAmount> availableStacks = combined.entrySet().stream()
+                .map(entry -> new KeyAmount(entry.getKey(), entry.getValue())).toList();
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
             selectedItems.put(selection.slot(), selection.item());
@@ -208,7 +252,9 @@ public final class SimulatedCrafting
         return CraftingInput.of(width, height, slots);
     }
 
-    private static long availableBatch(UnifiedStorage storage, Prepared prepared, boolean[] persistent,
+    private static long availableBatch(UnifiedStorage storage, PlanningSnapshotService.Snapshot networkSnapshot,
+                                       Map<ItemStackKey, Long> orderReserved,
+                                       Prepared prepared, boolean[] persistent,
                                        long requested)
     {
         Map<ItemStackKey, Long> fixed = new LinkedHashMap<>();
@@ -220,9 +266,16 @@ public final class SimulatedCrafting
             (persistent[i] ? fixed : perBatch).merge(key, 1L, Long::sum);
         }
         long batch = requested;
+        Map<ItemStackKey, Long> snapshotAmounts = new LinkedHashMap<>();
+        if (networkSnapshot != null)
+            for (PlanningSnapshotService.ComponentEntry value : networkSnapshot.componentEntries())
+                snapshotAmounts.put(value.key(), value.amount());
         for (var entry : perBatch.entrySet())
         {
-            long available = storage.getStackByKey(entry.getKey()).amount()
+            long networkAmount = networkSnapshot == null ? storage.getStackByKey(entry.getKey()).amount()
+                    : snapshotAmounts.getOrDefault(entry.getKey(), 0L);
+            long available = SaturatingLongMath.add(networkAmount,
+                    orderReserved.getOrDefault(entry.getKey(), 0L))
                     - fixed.getOrDefault(entry.getKey(), 0L);
             if (available < 0) return 0;
             batch = Math.min(batch, available / entry.getValue());
@@ -256,7 +309,23 @@ public final class SimulatedCrafting
 
     private record Prepared(CraftingInput input, List<ItemStackKey> slotKeys) {}
 
-    public record Attempt(boolean success, String reason, long output, long crafts) {
-        static Attempt failed(String reason) { return new Attempt(false, reason, 0, 0); }
+    private static Map<ItemStackKey, Long> reservedAmounts(List<RecipePlan.ReservedMaterial> reserved)
+    {
+        LinkedHashMap<ItemStackKey, Long> result = new LinkedHashMap<>();
+        for (RecipePlan.ReservedMaterial material : reserved)
+            result.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        return result;
+    }
+
+    public record Attempt(boolean success, String reason, long output, long crafts,
+                          List<RecipePlan.ReservedMaterial> consumedReserved,
+                          List<RecipePlan.ReservedMaterial> producedReserved) {
+        public Attempt
+        {
+            consumedReserved = List.copyOf(consumedReserved);
+            producedReserved = List.copyOf(producedReserved);
+        }
+        static Attempt failed(String reason)
+        { return new Attempt(false, reason, 0, 0, List.of(), List.of()); }
     }
 }

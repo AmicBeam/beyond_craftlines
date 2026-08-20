@@ -40,8 +40,8 @@ public final class DeviceBindingRegistry
         return network != null && network.isManager(player) && data.remove(player.level().dimension(), position);
     }
 
-    public static Optional<BindingRecord> bindMachine(Player player, BlockPos position,
-                                                       Set<ResourceLocation> jeiTypes)
+    public static Optional<BindResult> bindMachine(Player player, BlockPos position,
+                                                   Set<ResourceLocation> jeiTypes)
     {
         if (player.getServer() == null || !(player.level() instanceof ServerLevel level)) return Optional.empty();
         DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
@@ -62,30 +62,53 @@ public final class DeviceBindingRegistry
                 : DeviceType.PROVISIONER_RECIPE_BINDING;
         if (deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE
                 && !BoundMachineAutomation.isAutomatable(level, position)) return Optional.empty();
-        BindingRecord record;
         if (selection == null)
         {
-            record = new BindingRecord(UUID.randomUUID(), player.getUUID(), network.getId(),
+            BindingRecord record = new BindingRecord(UUID.randomUUID(), player.getUUID(), network.getId(),
                     level.dimension(), position, deviceType, resolved.jeiTypes(), resolved.families(), blockId,
                     null, null, "", false, level.getGameTime());
             data.add(record);
+            return Optional.of(new BindResult(deviceType, resolved.families()));
         }
-        else
+        ServerLevel provisionerLevel = player.getServer().getLevel(selection.dimension());
+        if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
+                instanceof CraftlineProvisionerBlockEntity provisioner)) return Optional.empty();
+        provisioner.addRecipeCandidates(resolved.jeiTypes());
+        PROVISIONER_SELECTIONS.remove(player.getUUID());
+        return Optional.of(new BindResult(deviceType, resolved.families()));
+    }
+
+    public static boolean configureProvisioner(Player player, BlockPos position,
+                                               Set<ResourceLocation> selectedTypes)
+    {
+        if (player.getServer() == null || !(player.level() instanceof ServerLevel level)
+                || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
+            return false;
+        DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
+        if (network == null || !network.isManager(player)) return false;
+        if (!provisioner.recipeCandidates().containsAll(selectedTypes)) return false;
+
+        BindingSavedData data = BindingSavedData.get(player.getServer());
+        if (selectedTypes.isEmpty())
         {
-            HashSet<ResourceLocation> mergedTypes = new HashSet<>(
-                    data.recipeTypesForProvisioner(selection.dimension(), selection.position()));
-            mergedTypes.addAll(resolved.jeiTypes());
-            var merged = JeiRecipeFamilyRegistry.resolve(mergedTypes, loadedFamilies);
-            ResourceLocation provisionerId = BuiltInRegistries.BLOCK.getKey(
-                    player.getServer().getLevel(selection.dimension()).getBlockState(selection.position()).getBlock());
-            record = new BindingRecord(UUID.randomUUID(), player.getUUID(), network.getId(),
-                    selection.dimension(), selection.position(), deviceType,
-                    merged.jeiTypes(), merged.families(), provisionerId,
-                    selection.dimension(), selection.position(), "", false, level.getGameTime());
-            data.replaceProvisionerBinding(selection.dimension(), selection.position(), record);
-            PROVISIONER_SELECTIONS.remove(player.getUUID());
+            data.removeForProvisioner(level.dimension(), position);
+            return true;
         }
-        return Optional.of(record);
+        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
+        if (resolved.isEmpty() || resolved.jeiTypes().size() != selectedTypes.size()) return false;
+        BindingRecord existing = data.at(level.dimension(), position);
+        ResourceLocation provisionerId = BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock());
+        BindingRecord replacement = new BindingRecord(
+                existing == null ? UUID.randomUUID() : existing.id(), player.getUUID(), network.getId(),
+                level.dimension(), position, DeviceType.PROVISIONER_RECIPE_BINDING,
+                resolved.jeiTypes(), resolved.families(), provisionerId,
+                level.dimension(), position, existing == null ? "" : existing.nickname(),
+                existing != null && existing.favorite(),
+                existing == null ? level.getGameTime() : existing.boundGameTime());
+        data.replaceProvisionerBinding(level.dimension(), position, replacement);
+        return true;
     }
 
     public static boolean clearSelectedProvisionerRecipes(Player player)
@@ -96,8 +119,16 @@ public final class DeviceBindingRegistry
         ProvisionerSelection selection = validSelection(player.getServer(), player.getUUID(), network.getId());
         if (selection == null) return false;
         PROVISIONER_SELECTIONS.remove(player.getUUID());
+        ServerLevel level = player.getServer().getLevel(selection.dimension());
+        boolean clearedCandidates = false;
+        if (level != null && level.getBlockEntity(selection.position())
+                instanceof CraftlineProvisionerBlockEntity provisioner)
+        {
+            clearedCandidates = !provisioner.recipeCandidates().isEmpty();
+            provisioner.clearRecipeCandidates();
+        }
         BindingSavedData data = BindingSavedData.get(player.getServer());
-        return data.removeForProvisioner(selection.dimension(), selection.position());
+        return data.removeForProvisioner(selection.dimension(), selection.position()) || clearedCandidates;
     }
 
     public static boolean selectProvisioner(Player player, BlockPos position)
@@ -176,6 +207,7 @@ public final class DeviceBindingRegistry
 
     public record BoundMachine(BindingRecord binding, ServerLevel level) {}
     public record ProvisionerTarget(BindingRecord binding, CraftlineProvisionerBlockEntity provisioner) {}
+    public record BindResult(DeviceType deviceType, Set<String> recipeFamilies) {}
     private record ProvisionerSelection(ResourceKey<Level> dimension, BlockPos position, int networkId) {}
 
     public static void removeAt(MinecraftServer server, ResourceKey<Level> dimension, BlockPos position)

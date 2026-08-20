@@ -1,5 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
+import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -40,13 +42,18 @@ public final class BoundMachineAutomation
 
     public static long insertCapacity(ServerLevel level, BlockPos position, ResourceLocation itemId, long limit)
     {
-        return insertCapacity(handlers(level, position), itemId, limit);
+        return insertCapacity(handlers(level, position), new ItemStack(BuiltInRegistries.ITEM.get(itemId)), limit);
     }
 
+    public static long insertCapacity(ServerLevel level, BlockPos position, ItemStackKey key, long limit)
+    { return insertCapacity(handlers(level, position), key.getReadOnlyStack(), limit); }
+
     static long insertCapacity(List<IItemHandler> handlers, ResourceLocation itemId, long limit)
+    { return insertCapacity(handlers, new ItemStack(BuiltInRegistries.ITEM.get(itemId)), limit); }
+
+    private static long insertCapacity(List<IItemHandler> handlers, ItemStack template, long limit)
     {
         if (limit <= 0) return 0;
-        ItemStack template = new ItemStack(BuiltInRegistries.ITEM.get(itemId));
         if (template.isEmpty()) return 0;
         long best = 0;
         for (IItemHandler handler : handlers)
@@ -65,13 +72,18 @@ public final class BoundMachineAutomation
 
     public static long insert(ServerLevel level, BlockPos position, ResourceLocation itemId, long amount)
     {
-        return insert(handlers(level, position), itemId, amount);
+        return insert(handlers(level, position), new ItemStack(BuiltInRegistries.ITEM.get(itemId)), amount);
     }
 
+    public static long insert(ServerLevel level, BlockPos position, ItemStackKey key, long amount)
+    { return insert(handlers(level, position), key.getReadOnlyStack(), amount); }
+
     static long insert(List<IItemHandler> handlers, ResourceLocation itemId, long amount)
+    { return insert(handlers, new ItemStack(BuiltInRegistries.ITEM.get(itemId)), amount); }
+
+    private static long insert(List<IItemHandler> handlers, ItemStack template, long amount)
     {
         if (amount <= 0) return 0;
-        ItemStack template = new ItemStack(BuiltInRegistries.ITEM.get(itemId));
         IItemHandler handler = handlers.stream()
                 .max(java.util.Comparator.comparingLong(value -> simulatedInsert(value, template, amount)))
                 .orElse(null);
@@ -102,6 +114,29 @@ public final class BoundMachineAutomation
     public static long extract(ServerLevel level, BlockPos position, ResourceLocation itemId, long amount)
     {
         return extract(handlers(level, position), itemId, amount);
+    }
+
+    public static List<KeyAmount> extractStacks(ServerLevel level, BlockPos position,
+                                                ResourceLocation itemId, long amount)
+    {
+        List<IItemHandler> handlers = handlers(level, position);
+        IItemHandler handler = handlers.stream()
+                .max(java.util.Comparator.comparingLong(value -> countExtractable(value, itemId)))
+                .orElse(null);
+        if (handler == null || amount <= 0) return List.of();
+        List<KeyAmount> result = new ArrayList<>();
+        long extracted = 0;
+        for (int slot = 0; slot < handler.getSlots() && extracted < amount; slot++)
+        {
+            ItemStack visible = handler.getStackInSlot(slot);
+            if (visible.isEmpty() || !BuiltInRegistries.ITEM.getKey(visible.getItem()).equals(itemId)) continue;
+            int request = (int) Math.min(Integer.MAX_VALUE, amount - extracted);
+            ItemStack taken = handler.extractItem(slot, request, false);
+            if (taken.isEmpty()) continue;
+            result.add(new KeyAmount(new ItemStackKey(taken), taken.getCount()));
+            extracted += taken.getCount();
+        }
+        return List.copyOf(result);
     }
 
     static long extract(List<IItemHandler> handlers, ResourceLocation itemId, long amount)

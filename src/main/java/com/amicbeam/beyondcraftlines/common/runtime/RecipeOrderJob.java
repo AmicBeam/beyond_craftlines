@@ -12,13 +12,15 @@ import java.util.UUID;
 public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocation target,
                              long requested, List<RecipePlan.Step> steps, int nextStep,
                              boolean blockingMode, Status status, String message,
-                             long createdAt, long nextCraftingTick, ExternalWait externalWait)
+                             long createdAt, long nextCraftingTick, ExternalWait externalWait,
+                             List<RecipePlan.ReservedMaterial> reserved)
 {
     public enum Status { QUEUED, RUNNING, PAUSED, COMPLETE, CANCELLED, ERROR }
 
     public RecipeOrderJob
     {
         steps = List.copyOf(steps);
+        reserved = List.copyOf(reserved);
         message = message == null ? "" : message;
     }
 
@@ -27,7 +29,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         int next = nextStep + 1;
         return new RecipeOrderJob(id, owner, networkId, target, requested, steps, next,
                 blockingMode, next >= steps.size() ? Status.COMPLETE : Status.RUNNING, "",
-                createdAt, nextCraftingTick, null);
+                createdAt, nextCraftingTick, null, reserved);
     }
 
     public RecipeOrderJob advanceAfterCrafting(long nextAllowedTick)
@@ -35,7 +37,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         int next = nextStep + 1;
         return new RecipeOrderJob(id, owner, networkId, target, requested, steps, next,
                 blockingMode, next >= steps.size() ? Status.COMPLETE : Status.RUNNING, "",
-                createdAt, nextAllowedTick, null);
+                createdAt, nextAllowedTick, null, reserved);
     }
 
     public RecipeOrderJob completeSingleCraft(long nextAllowedTick)
@@ -54,7 +56,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                 current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs(),
                 current.ingredientSelections()));
         return new RecipeOrderJob(id, owner, networkId, target, requested, remaining, nextStep,
-                blockingMode, Status.RUNNING, "", createdAt, nextAllowedTick, null);
+                blockingMode, Status.RUNNING, "", createdAt, nextAllowedTick, null, reserved);
     }
 
     public RecipeOrderJob completeExternalBatch()
@@ -67,32 +69,40 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         {
             long amount = input.amount() - BlockingModeLogic.amountToDispatch(
                     true, input.amount(), current.crafts());
-            if (amount > 0) remainingInputs.add(new RecipePlan.Material(input.item(), amount));
+            if (amount > 0) remainingInputs.add(new RecipePlan.Material(
+                    input.item(), amount, input.ingredientSlot()));
         }
         remaining.set(nextStep, new RecipePlan.Step(current.recipe(), current.family(), current.output(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,
                 current.ingredientSelections()));
         return new RecipeOrderJob(id, owner, networkId, target, requested, remaining, nextStep,
-                true, Status.RUNNING, "", createdAt, nextCraftingTick, null);
+                true, Status.RUNNING, "", createdAt, nextCraftingTick, null, reserved);
     }
 
     public RecipeOrderJob with(Status next, String reason)
     {
         return new RecipeOrderJob(id, owner, networkId, target, requested, steps, nextStep,
-                blockingMode, next, reason, createdAt, nextCraftingTick, externalWait);
+                blockingMode, next, reason, createdAt, nextCraftingTick, externalWait, reserved);
     }
 
     public RecipeOrderJob awaitExternal(ExternalWait wait, String reason)
     {
         return new RecipeOrderJob(id, owner, networkId, target, requested, steps, nextStep,
-                blockingMode, Status.PAUSED, reason, createdAt, nextCraftingTick, wait);
+                blockingMode, Status.PAUSED, reason, createdAt, nextCraftingTick, wait, reserved);
+    }
+
+    public RecipeOrderJob withReserved(List<RecipePlan.ReservedMaterial> values)
+    {
+        return new RecipeOrderJob(id, owner, networkId, target, requested, steps, nextStep,
+                blockingMode, status, message, createdAt, nextCraftingTick, externalWait, values);
     }
 
     public record ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,
                                ResourceLocation output, boolean nativeFurnace,
                                long baseline, long networkBaseline, long networkObserved,
                                long amount, long collected,
-                               List<RecipePlan.Material> remainingInputs)
+                               List<RecipePlan.Material> remainingInputs,
+                               List<RecipePlan.ReservedMaterial> networkBaselineStacks)
     {
         public ExternalWait
         {
@@ -101,18 +111,19 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                     || collected < 0 || collected > amount)
                 throw new IllegalArgumentException("invalid external wait");
             remainingInputs = List.copyOf(remainingInputs);
+            networkBaselineStacks = List.copyOf(networkBaselineStacks);
         }
 
         public ExternalWait withInputs(List<RecipePlan.Material> inputs)
         { return new ExternalWait(machineDimension, machinePosition, output, nativeFurnace,
-                baseline, networkBaseline, networkObserved, amount, collected, inputs); }
+                baseline, networkBaseline, networkObserved, amount, collected, inputs, networkBaselineStacks); }
 
         public ExternalWait withCollected(long value)
         { return new ExternalWait(machineDimension, machinePosition, output, nativeFurnace,
-                baseline, networkBaseline, networkObserved, amount, value, remainingInputs); }
+                baseline, networkBaseline, networkObserved, amount, value, remainingInputs, networkBaselineStacks); }
 
         public ExternalWait withProgress(long observed, long value)
         { return new ExternalWait(machineDimension, machinePosition, output, nativeFurnace,
-                baseline, networkBaseline, observed, amount, value, remainingInputs); }
+                baseline, networkBaseline, observed, amount, value, remainingInputs, networkBaselineStacks); }
     }
 }

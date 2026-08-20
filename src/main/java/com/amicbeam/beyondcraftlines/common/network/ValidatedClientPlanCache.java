@@ -1,6 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
-import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
@@ -27,5 +27,5 @@ final class ValidatedClientPlanCache
     }
 
     record Entry(long nonce, int networkId, ResourceLocation target, long count,
-                 long stockRevision, long recipeEpoch, long expiresAt, RecipePlan plan) {}
+                 long recipeEpoch, long expiresAt, RecipeResolutionOverrides overrides) {}
 }

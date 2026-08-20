@@ -13,7 +13,7 @@ public final class CraftlinesNetwork
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event)
     {
-        var registrar = event.registrar("3");
+        var registrar = event.registrar("4");
         registrar.playToServer(OpenOrderMenuPayload.TYPE, OpenOrderMenuPayload.STREAM_CODEC, OpenOrderMenuPayload::handle);
         registrar.playToServer(SubmitOrderPayload.TYPE, SubmitOrderPayload.STREAM_CODEC, SubmitOrderPayload::handle);
         registrar.playToServer(RequestPlanningSnapshotPayload.TYPE, RequestPlanningSnapshotPayload.STREAM_CODEC,
@@ -26,6 +26,10 @@ public final class CraftlinesNetwork
         registrar.playToServer(CancelOrderPayload.TYPE, CancelOrderPayload.STREAM_CODEC, CancelOrderPayload::handle);
         registrar.playToServer(BindMachinePayload.TYPE, BindMachinePayload.STREAM_CODEC,
                 BindMachinePayload::handle);
+        registrar.playToServer(ConfigureProvisionerPayload.TYPE, ConfigureProvisionerPayload.STREAM_CODEC,
+                ConfigureProvisionerPayload::handle);
+        registrar.playToServer(ExtractProvisionerPayload.TYPE, ExtractProvisionerPayload.STREAM_CODEC,
+                ExtractProvisionerPayload::handle);
         registrar.playToServer(RequestBindingVisualsPayload.TYPE, RequestBindingVisualsPayload.STREAM_CODEC,
                 RequestBindingVisualsPayload::handle);
         registrar.playToClient(OrderStatusPayload.TYPE, OrderStatusPayload.STREAM_CODEC, OrderStatusPayload::handle);

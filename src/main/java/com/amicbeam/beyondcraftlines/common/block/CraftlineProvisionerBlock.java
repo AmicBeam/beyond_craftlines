@@ -1,9 +1,13 @@
 package com.amicbeam.beyondcraftlines.common.block;
 
 import com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity;
+import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
+import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import com.wintercogs.beyonddimensions.common.block.NetedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
@@ -21,11 +25,20 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
                                                Player player, BlockHitResult hit)
     {
         if (player.isShiftKeyDown()) return super.useWithoutItem(state, level, pos, player, hit);
-        if (!level.isClientSide() && level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity be)
+        if (!level.isClientSide() && player instanceof ServerPlayer serverPlayer
+                && level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity be)
         {
-            if (!be.giveOneItemStack(player))
-                player.sendSystemMessage(Component.translatable("message.beyond_craftlines.provisioner_status",
-                        be.storage().getSlots(), be.getNetId()));
+            var selected = BindingSavedData.get(serverPlayer.getServer())
+                    .recipeTypesForProvisioner(level.dimension(), pos);
+            be.addRecipeCandidates(selected);
+            var candidates = be.recipeCandidates();
+            serverPlayer.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
+                    new ProvisionerConfigMenu(id, inventory, pos, candidates, selected),
+                    Component.translatable("menu.beyond_craftlines.provisioner")), buffer -> {
+                        buffer.writeBlockPos(pos);
+                        ProvisionerConfigMenu.writeTypes(buffer, candidates);
+                        ProvisionerConfigMenu.writeTypes(buffer, selected);
+                    });
         }
         return InteractionResult.sidedSuccess(level.isClientSide());
     }

@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.network;
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.chat.Component;
@@ -61,16 +62,23 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 var validated = ValidatedClientPlanCache.consume(player.getUUID(), payload.proposalNonce(), now);
                 if (validated == null || validated.networkId() != menu.networkId()
                         || !validated.target().equals(target) || validated.count() != count
-                        || validated.stockRevision() != payload.stockRevision()
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
                 var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.capture(menu.networkId());
                 long recipeEpoch = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.recipeEpoch(
                         player.level(), menu.availableFamilies());
-                if (snapshot.revision() != payload.stockRevision() || recipeEpoch != payload.recipeEpoch())
-                    throw new IllegalStateException("network inventory or recipes changed; refresh the preview");
+                if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
+                    throw new IllegalStateException("recipes changed; refresh the preview");
+                var currentPlan = RecipePlanningService.plan(player.serverLevel(), target, count, snapshot,
+                        menu.availableFamilies(), validated.overrides());
+                if (!validated.overrides().completelyResolves(currentPlan))
+                    throw new IllegalStateException("client plan is incomplete; refresh the preview");
+                if (PlanningFreshness.evaluate(payload.stockRevision(), snapshot.revision(),
+                        validated.recipeEpoch(), recipeEpoch, currentPlan.craftable())
+                        == PlanningFreshness.Result.REQUIRED_MATERIALS_CHANGED)
+                    throw new IllegalStateException("required ingredients changed: " + currentPlan.missing());
                 var job = RecipeOrderService.enqueueValidated(player.serverLevel(), player.getUUID(), menu.networkId(),
-                        target, count, payload.blockingMode(), validated.plan());
+                        target, count, payload.blockingMode(), currentPlan);
                 player.displayClientMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()), false);
             }

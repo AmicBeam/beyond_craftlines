@@ -20,7 +20,10 @@ public final class CraftlinesClientEvents
         static { ClientBindingVisuals.initialize(); }
 
         @SubscribeEvent public static void registerScreens(RegisterMenuScreensEvent event)
-        { event.register(CraftlinesMenus.ORDER.get(), CraftlineOrderScreen::new); }
+        {
+            event.register(CraftlinesMenus.ORDER.get(), CraftlineOrderScreen::new);
+            event.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
+        }
     }
 
     @EventBusSubscriber(modid = BeyondCraftlines.MOD_ID, value = Dist.CLIENT)

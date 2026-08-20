@@ -10,6 +10,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Sends order materials through the public storage exposed by BD network furnaces. */
 public final class NativeFurnaceAutomation
@@ -17,9 +19,11 @@ public final class NativeFurnaceAutomation
     private NativeFurnaceAutomation() {}
 
     public static long insertCapacity(BaseNetFurnaceBlockEntity<?> furnace, ResourceLocation itemId, long limit)
+    { return insertCapacity(furnace, key(itemId), limit); }
+
+    public static long insertCapacity(BaseNetFurnaceBlockEntity<?> furnace, ItemStackKey key, long limit)
     {
         if (limit <= 0) return 0;
-        ItemStackKey key = key(itemId);
         if (key.getReadOnlyStack().isEmpty()) return 0;
         StackHandler input = furnace.getInputStorageSlots();
         long accepted = 0;
@@ -45,9 +49,11 @@ public final class NativeFurnaceAutomation
     }
 
     public static long insert(BaseNetFurnaceBlockEntity<?> furnace, ResourceLocation itemId, long amount)
+    { return insert(furnace, key(itemId), amount); }
+
+    public static long insert(BaseNetFurnaceBlockEntity<?> furnace, ItemStackKey key, long amount)
     {
         if (amount <= 0) return 0;
-        ItemStackKey key = key(itemId);
         StackHandler input = furnace.getInputStorageSlots();
         long inserted = 0;
         for (int slot = 0; slot < input.getSlots() && inserted < amount; slot++)
@@ -78,11 +84,34 @@ public final class NativeFurnaceAutomation
         return extracted;
     }
 
+    public static List<KeyAmount> extractOutputStacks(BaseNetFurnaceBlockEntity<?> furnace,
+                                                      ResourceLocation itemId, long amount)
+    {
+        if (amount <= 0) return List.of();
+        StackHandler output = furnace.getOutputStorageSlots();
+        List<KeyAmount> values = new ArrayList<>();
+        long extracted = 0;
+        for (int slot = 0; slot < output.getSlots() && extracted < amount; slot++)
+        {
+            KeyAmount visible = output.getStackBySlot(slot);
+            if (!matches(visible, itemId)) continue;
+            KeyAmount result = output.extract(slot, amount - extracted, false);
+            if (!result.isEmpty())
+            {
+                values.add(result);
+                extracted += result.amount();
+            }
+        }
+        return List.copyOf(values);
+    }
+
     public static long restoreOutput(BaseNetFurnaceBlockEntity<?> furnace, ResourceLocation itemId, long amount)
+    { return restoreOutput(furnace, key(itemId), amount); }
+
+    public static long restoreOutput(BaseNetFurnaceBlockEntity<?> furnace, ItemStackKey key, long amount)
     {
         if (amount <= 0) return 0;
         StackHandler output = furnace.getOutputStorageSlots();
-        ItemStackKey key = key(itemId);
         long inserted = 0;
         for (int slot = 0; slot < output.getSlots() && inserted < amount; slot++)
         {

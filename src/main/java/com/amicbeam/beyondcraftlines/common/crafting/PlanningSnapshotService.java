@@ -1,6 +1,8 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
+import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -15,10 +17,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 
-/** Immutable, item-id-level inventory view used by client proposals and server verification. */
+/** Immutable component-aware inventory view used by client proposals and authoritative verification. */
 public final class PlanningSnapshotService
 {
     private static final Map<RecipeManager, List<RecipeIdentity>> RECIPE_IDENTITIES =
+            java.util.Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<UnifiedStorage, InventoryCache> INVENTORY_CACHES =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private PlanningSnapshotService() {}
 
@@ -26,17 +30,17 @@ public final class PlanningSnapshotService
     {
         DimensionsNet network = DimensionsNet.getNetFromId(networkId);
         if (network == null) throw new IllegalArgumentException("network not found");
-        Map<ResourceLocation, Long> aggregated = new LinkedHashMap<>();
-        for (var stored : network.getUnifiedStorage().getStorage())
+        UnifiedStorage storage = network.getUnifiedStorage();
+        synchronized (INVENTORY_CACHES)
         {
-            if (!(stored.key() instanceof ItemStackKey key) || stored.amount() <= 0) continue;
-            aggregated.merge(BuiltInRegistries.ITEM.getKey(key.getSource()), stored.amount(),
-                    SaturatingLongMath::add);
+            InventoryCache cache = INVENTORY_CACHES.get(storage);
+            if (cache == null)
+            {
+                cache = new InventoryCache(storage);
+                INVENTORY_CACHES.put(storage, cache);
+            }
+            return cache.snapshot(storage);
         }
-        List<Entry> entries = aggregated.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey(Comparator.comparing(ResourceLocation::toString)))
-                .map(entry -> new Entry(entry.getKey(), entry.getValue())).toList();
-        return new Snapshot(entries, fingerprint(entries));
     }
 
     public static long recipeEpoch(Level level, Set<String> availableFamilies)
@@ -81,23 +85,6 @@ public final class PlanningSnapshotService
         });
     }
 
-    private static long fingerprint(List<Entry> entries)
-    {
-        long hash = offset();
-        for (Entry entry : entries)
-        {
-            hash = mix(hash, entry.item().toString());
-            long value = entry.amount();
-            for (int i = 0; i < Long.BYTES; i++)
-            {
-                hash ^= value & 0xFF;
-                hash *= 0x100000001B3L;
-                value >>>= 8;
-            }
-        }
-        return positive(hash);
-    }
-
     private static long offset() { return 0xCBF29CE484222325L; }
     private static long mix(long hash, String value)
     {
@@ -121,16 +108,79 @@ public final class PlanningSnapshotService
         }
     }
 
-    public record Snapshot(List<Entry> entries, long revision)
+    public record ComponentEntry(ItemStackKey key, long amount)
     {
-        public Snapshot { entries = List.copyOf(entries); }
+        public ComponentEntry
+        {
+            if (key == null || key == ItemStackKey.EMPTY || amount < 1)
+                throw new IllegalArgumentException("invalid component stock entry");
+        }
+        public ResourceLocation item() { return BuiltInRegistries.ITEM.getKey(key.getSource()); }
+    }
+
+    public record Snapshot(List<ComponentEntry> componentEntries, long revision)
+    {
+        public Snapshot { componentEntries = List.copyOf(componentEntries); }
+        public List<Entry> entries()
+        {
+            LinkedHashMap<ResourceLocation, Long> aggregated = new LinkedHashMap<>();
+            for (ComponentEntry entry : componentEntries)
+                aggregated.merge(entry.item(), entry.amount(), SaturatingLongMath::add);
+            return aggregated.entrySet().stream()
+                    .map(entry -> new Entry(entry.getKey(), entry.getValue())).toList();
+        }
         public Map<ResourceLocation, Long> asMap()
         {
             LinkedHashMap<ResourceLocation, Long> result = new LinkedHashMap<>();
-            for (Entry entry : entries) result.put(entry.item(), entry.amount());
+            for (Entry entry : entries()) result.put(entry.item(), entry.amount());
             return result;
         }
     }
 
     private record RecipeIdentity(String family, String value) {}
+
+    /** Main-thread cache maintained from Beyond Dimensions' exact-key storage deltas. */
+    private static final class InventoryCache
+    {
+        private final IncrementalStock<ItemStackKey> stock = new IncrementalStock<>();
+        private boolean rebuildRequired;
+        private Snapshot materialized;
+
+        private InventoryCache(UnifiedStorage storage)
+        {
+            rebuild(storage);
+            storage.subscribeDeltaWeak(this, InventoryCache::onDelta);
+            storage.subscribeAnyWeak(this, cache -> cache.rebuildRequired = true);
+        }
+
+        private void onDelta(IStackKey<?> changed, long amount, boolean inserted)
+        {
+            if (!(changed instanceof ItemStackKey key) || amount <= 0) return;
+            stock.apply(key, amount, inserted);
+            materialized = null;
+        }
+
+        private Snapshot snapshot(UnifiedStorage storage)
+        {
+            if (rebuildRequired) rebuild(storage);
+            if (materialized == null)
+            {
+                List<ComponentEntry> entries = stock.snapshot().entrySet().stream()
+                        .map(entry -> new ComponentEntry(entry.getKey(), entry.getValue())).toList();
+                materialized = new Snapshot(entries, stock.revision());
+            }
+            return materialized;
+        }
+
+        private void rebuild(UnifiedStorage storage)
+        {
+            LinkedHashMap<ItemStackKey, Long> exact = new LinkedHashMap<>();
+            for (var stored : storage.getStorage())
+                if (stored.key() instanceof ItemStackKey key && stored.amount() > 0)
+                    exact.merge(key, stored.amount(), SaturatingLongMath::add);
+            stock.replace(exact);
+            rebuildRequired = false;
+            materialized = null;
+        }
+    }
 }

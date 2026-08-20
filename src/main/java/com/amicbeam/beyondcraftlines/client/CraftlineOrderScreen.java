@@ -35,9 +35,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class CraftlineOrderScreen extends AbstractContainerScreen<CraftlineOrderMenu>
 {
+    private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
+    private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
     private static final int MAX_ROWS = 10;
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
@@ -85,6 +91,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int snapshotNextPage;
     private final Map<ResourceLocation, Long> planningStock = new LinkedHashMap<>();
     private ClientRecipePlanner.Catalog planningCatalog;
+    private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
     private long proposalStockRevision;
     private long proposalRecipeEpoch;
     private boolean proposalReady;
@@ -94,6 +101,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private long planningRecipeEpoch;
     private int planningMaxDepth;
     private int planningMaxNodes;
+    private Future<?> planningTask;
+    private long planningGeneration;
 
     public CraftlineOrderScreen(CraftlineOrderMenu menu, Inventory inventory, Component title)
     {
@@ -162,7 +171,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
-        planningCatalog = ClientRecipePlanner.capture(minecraft.level, menu.recipes());
+        if (planningCatalog == null && planningCatalogBuilder == null)
+            planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
+        if (planningCatalog == null && planningCatalogBuilder.complete())
+            planningCatalog = planningCatalogBuilder.catalog();
+        else if (planningCatalog == null) previewError = "Indexing recipes "
+                + planningCatalogBuilder.completedRecipes() + "/" + planningCatalogBuilder.totalRecipes();
         PacketDistributor.sendToServer(new RequestOrderStatusPayload());
         selectInitialTarget();
         refresh();
@@ -180,6 +194,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
+        if (planningCatalog == null && planningCatalogBuilder != null)
+        {
+            planningCatalogBuilder.advance(16);
+            if (planningCatalogBuilder.complete())
+            {
+                planningCatalog = planningCatalogBuilder.catalog();
+                previewError = "";
+                markPreviewDirty();
+            }
+            else previewError = "Indexing recipes " + planningCatalogBuilder.completedRecipes()
+                    + "/" + planningCatalogBuilder.totalRecipes();
+        }
         if (canonicalHighlightTicks > 0) canonicalHighlightTicks--;
         if (++statusTicks >= 40)
         {
@@ -187,7 +213,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             PacketDistributor.sendToServer(new RequestOrderStatusPayload());
             requestNetworkAmount();
         }
-        if (previewDirty && ++previewDelay >= 5) requestPlanPreview();
+        if (planningCatalog != null && previewDirty && ++previewDelay >= 5) requestPlanPreview();
     }
 
     private void receiveOrders(net.minecraft.nbt.CompoundTag root)
@@ -682,6 +708,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void markPreviewDirty()
     {
+        cancelPlanningTask();
         previewDirty = true;
         previewDelay = 0;
         previewNonce++;
@@ -761,22 +788,57 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Map<ClientRecipePlanner.IngredientKey, ResourceLocation> ingredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> ingredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
-        java.util.concurrent.CompletableFuture.supplyAsync(() -> ClientRecipePlanner.plan(planningCatalog,
-                        stock, target, count, manualRecipes, ingredients, maxDepth, maxNodes))
-                .whenComplete((proposal, failure) -> minecraft.execute(() -> {
+        cancelPlanningTask();
+        long generation = planningGeneration;
+        planningTask = PLANNING_EXECUTOR.submit(() -> {
+            ClientRecipePlanner.Proposal proposal = null;
+            RuntimeException failure = null;
+            try { proposal = ClientRecipePlanner.plan(planningCatalog,
+                    stock, target, count, manualRecipes, ingredients, maxDepth, maxNodes); }
+            catch (RuntimeException exception) { failure = exception; }
+            ClientRecipePlanner.Proposal completed = proposal;
+            RuntimeException completedFailure = failure;
+            minecraft.execute(() -> {
+                    if (generation != planningGeneration) return;
+                    planningTask = null;
                     if (nonce != previewNonce || selected == null || !target.equals(outputId(selected))) return;
-                    if (failure != null)
+                    if (completedFailure != null)
                     {
-                        previewError = failure.getCause() == null ? failure.getMessage() : failure.getCause().getMessage();
+                        if (completedFailure instanceof CancellationException
+                                || "client planning cancelled".equals(completedFailure.getMessage())) return;
+                        previewError = completedFailure.getMessage();
                         return;
                     }
-                    if (!proposal.craftable())
+                    if (!completed.craftable())
                     {
-                        previewError = "missing: " + proposal.missing();
+                        previewError = "missing: " + completed.missing();
                         return;
                     }
-                    uploadProposal(nonce, target, count, stockRevision, recipeEpoch, proposal);
-                }));
+                    uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
+                });
+        });
+    }
+
+    private void cancelPlanningTask()
+    {
+        planningGeneration++;
+        Future<?> task = planningTask;
+        planningTask = null;
+        if (task != null) task.cancel(true);
+        PLANNING_EXECUTOR.purge();
+    }
+
+    private static ScheduledThreadPoolExecutor planningExecutor()
+    {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, runnable -> {
+            Thread thread = new Thread(runnable,
+                    "beyond-craftlines-planner-" + PLANNER_THREAD_ID.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        });
+        executor.setRemoveOnCancelPolicy(true);
+        executor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
+        return executor;
     }
 
     private void uploadProposal(long nonce, ResourceLocation target, long count, long stockRevision,
@@ -915,6 +977,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     @Override public void removed()
     {
+        cancelPlanningTask();
         super.removed();
         OrderStatusPayload.clientReceiver = ignored -> {};
         NetworkAmountPayload.clientReceiver = (ignoredId, ignoredAmount) -> {};

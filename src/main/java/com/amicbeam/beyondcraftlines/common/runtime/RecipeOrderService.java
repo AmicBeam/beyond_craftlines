@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
+import com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService;
 import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
 import com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting;
 import com.amicbeam.beyondcraftlines.common.data.BindingRecord;
@@ -19,6 +20,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +31,7 @@ import java.util.Comparator;
 
 public final class RecipeOrderService
 {
+    private static final String RETURN_AFTER_ERROR = "execution failed; waiting to return reserved materials: ";
     private static final Set<String> NATIVE_FURNACE_FAMILIES = Set.of("smelting", "blasting", "smoking");
     private RecipeOrderService() {}
 
@@ -59,10 +62,19 @@ public final class RecipeOrderService
                 || active.stream().filter(job -> job.owner().equals(owner)).count()
                 >= CraftlinesConfig.MAX_ACTIVE_ORDERS_PER_PLAYER.get())
             throw new IllegalStateException("too many active recipe orders");
+        DimensionsNet network = DimensionsNet.getNetFromId(networkId);
+        if (network == null) throw new IllegalStateException("network unavailable");
+        List<RecipePlan.ReservedMaterial> reserved = reserveInitial(
+                network.getUnifiedStorage(), plan.reserved());
         RecipeOrderJob job = new RecipeOrderJob(UUID.randomUUID(), owner, networkId, target, count,
                 plan.steps(), 0, blockingMode, plan.steps().isEmpty() ? RecipeOrderJob.Status.COMPLETE
-                : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(), 0, null);
-        RecipeOrderSavedData.get(level.getServer()).put(job);
+                : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(), 0, null, reserved);
+        try { RecipeOrderSavedData.get(level.getServer()).put(job); }
+        catch (RuntimeException exception)
+        {
+            releaseReservations(network.getUnifiedStorage(), reserved);
+            throw exception;
+        }
         return job;
     }
 
@@ -71,7 +83,10 @@ public final class RecipeOrderService
         RecipeOrderSavedData data = RecipeOrderSavedData.get(server);
         RecipeOrderJob job = data.get(id);
         if (job == null || !job.owner().equals(owner) || terminal(job.status())) return false;
-        data.put(job.with(RecipeOrderJob.Status.CANCELLED, "cancelled by owner"));
+        DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+        if (network == null) return false;
+        releaseReservations(network.getUnifiedStorage(), job.reserved());
+        data.put(job.withReserved(List.of()).with(RecipeOrderJob.Status.CANCELLED, "cancelled by owner"));
         return true;
     }
 
@@ -87,6 +102,21 @@ public final class RecipeOrderService
                     job.externalWait().machineDimension(), job.externalWait().machinePosition()));
         for (RecipeOrderJob job : jobs)
         {
+            if (job.message().startsWith(RETURN_AFTER_ERROR))
+            {
+                DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+                if (network != null)
+                {
+                    try
+                    {
+                        releaseReservations(network.getUnifiedStorage(), job.reserved());
+                        data.put(job.withReserved(List.of()).with(
+                                RecipeOrderJob.Status.ERROR, "execution failed"));
+                    }
+                    catch (RuntimeException ignored) {}
+                }
+                continue;
+            }
             if (!index.claimNetwork(job.networkId()))
             {
                 String reason = "waiting for network order transaction";
@@ -94,9 +124,48 @@ public final class RecipeOrderService
                     data.put(job.with(RecipeOrderJob.Status.PAUSED, reason));
                 continue;
             }
-            try { data.put(executeStep(server, job, index)); }
+            try
+            {
+                RecipeOrderJob result = executeStep(server, job, index);
+                if (terminal(result.status()) && !result.reserved().isEmpty())
+                {
+                    DimensionsNet network = DimensionsNet.getNetFromId(result.networkId());
+                    if (network != null)
+                    {
+                        try
+                        {
+                            releaseReservations(network.getUnifiedStorage(), result.reserved());
+                            result = result.withReserved(List.of());
+                        }
+                        catch (RuntimeException exception)
+                        {
+                            result = result.with(RecipeOrderJob.Status.PAUSED,
+                                    "waiting to return reserved materials: " + exception.getMessage());
+                        }
+                    }
+                }
+                data.put(result);
+            }
             catch (RuntimeException exception)
-            { data.put(job.with(RecipeOrderJob.Status.ERROR, exception.getMessage())); }
+            {
+                DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+                RecipeOrderJob failed = job;
+                if (network != null)
+                {
+                    try
+                    {
+                        releaseReservations(network.getUnifiedStorage(), job.reserved());
+                        failed = failed.withReserved(List.of());
+                    }
+                    catch (RuntimeException releaseFailure)
+                    {
+                        data.put(failed.with(RecipeOrderJob.Status.PAUSED,
+                                RETURN_AFTER_ERROR + releaseFailure.getMessage()));
+                        continue;
+                    }
+                }
+                data.put(failed.with(RecipeOrderJob.Status.ERROR, exception.getMessage()));
+            }
         }
     }
 
@@ -119,7 +188,8 @@ public final class RecipeOrderService
         }
         Optional<DeviceBindingRegistry.ProvisionerTarget> provisioner =
                 DeviceBindingRegistry.provisionerFor(server, job.networkId(), step.family());
-        if (provisioner.isPresent()) return deliverToProvisioner(network, job, step, provisioner.get());
+        if (provisioner.isPresent()) return deliverToProvisioner(
+                server.overworld(), network, job, step, provisioner.get());
         Optional<DeviceBindingRegistry.BoundMachine> machine =
                 DeviceBindingRegistry.machineFor(server, job.networkId(), step.family());
         if (machine.isPresent()) return reserveMachine(job, step, machine.get(), index);
@@ -131,30 +201,36 @@ public final class RecipeOrderService
         return executeCrafting(server.overworld(), network, job, step, gameTime);
     }
 
-    private static RecipeOrderJob deliverToProvisioner(DimensionsNet network, RecipeOrderJob job,
+    private static RecipeOrderJob deliverToProvisioner(ServerLevel level, DimensionsNet network, RecipeOrderJob job,
                                                         RecipePlan.Step step,
                                                         DeviceBindingRegistry.ProvisionerTarget target)
     {
         ProvisionerStorage provisioner = target.provisioner().storage();
-        for (RecipePlan.Material input : step.inputs())
-            if (!provisioner.insertFromOrder(key(input.item()), input.amount(), true).isEmpty())
-                return job.with(RecipeOrderJob.Status.PAUSED, "provisioner has no room for " + input.item());
+        InputSelection selection = selectInputs(level, network.getUnifiedStorage(), job, step, step.inputs());
+        if (selection == null)
+            return job.with(RecipeOrderJob.Status.PAUSED, "waiting for matching provisioner inputs");
+        for (InputChunk input : selection.chunks())
+            if (!provisioner.insertFromOrder(input.key(), input.amount(), true).isEmpty())
+                return job.with(RecipeOrderJob.Status.PAUSED, "provisioner has no room for " + input.key());
 
         List<KeyAmount> extracted = new ArrayList<>();
-        for (RecipePlan.Material input : step.inputs())
+        for (InputChunk input : selection.chunks())
         {
-            KeyAmount result = network.getUnifiedStorage().extract(key(input.item()), input.amount(), false, false);
+            if (input.fromReserved()) continue;
+            KeyAmount result = network.getUnifiedStorage().extract(input.key(), input.amount(), false, false);
             if (!StorageTransfer.isComplete(input.amount(), result.amount()))
             {
                 if (!result.isEmpty()) extracted.add(result);
                 extracted.forEach(value -> network.getUnifiedStorage().insert(value.key(), value.amount(), false));
-                return job.with(RecipeOrderJob.Status.PAUSED, "waiting for " + input.item());
+                return job.with(RecipeOrderJob.Status.PAUSED, "waiting for " + input.key());
             }
             extracted.add(result);
         }
 
         List<KeyAmount> inserted = new ArrayList<>();
-        for (KeyAmount value : extracted)
+        List<KeyAmount> delivery = selection.chunks().stream()
+                .map(input -> new KeyAmount(input.key(), input.amount())).toList();
+        for (KeyAmount value : delivery)
         {
             KeyAmount remainder = provisioner.insertFromOrder(value.key(), value.amount(), false);
             long accepted = value.amount() - remainder.amount();
@@ -168,7 +244,7 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, "provisioner delivery rolled back");
             }
         }
-        return job.advance();
+        return consumeReserved(job, selection.consumedReserved()).advance();
     }
 
     private static RecipeOrderJob executeCrafting(ServerLevel level, DimensionsNet network, RecipeOrderJob job,
@@ -176,11 +252,15 @@ public final class RecipeOrderService
     {
         UnifiedStorage storage = network.getUnifiedStorage();
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
-                level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections());
+                level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections(),
+                job.reserved(), job.nextStep() + 1 < job.steps().size(),
+                PlanningSnapshotService.capture(job.networkId()));
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);
-        return job.completeCrafts(attempt.crafts(), nextTick);
+        RecipeOrderJob updated = addReserved(consumeReserved(job, attempt.consumedReserved()),
+                attempt.producedReserved());
+        return updated.completeCrafts(attempt.crafts(), nextTick);
     }
 
     private static RecipeOrderJob reserveMachine(RecipeOrderJob job,
@@ -207,7 +287,7 @@ public final class RecipeOrderService
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(binding.dimension(),
-                binding.position(), step.output(), false, baseline, 0, 0, output, 0, batchInputs);
+                binding.position(), step.output(), false, baseline, 0, 0, output, 0, batchInputs, List.of());
         index.occupyMachine(machineKey);
         return job.awaitExternal(wait, "bound machine reserved; preparing inputs");
     }
@@ -236,7 +316,8 @@ public final class RecipeOrderService
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(
                 nativeFurnace.level().dimension(), furnace.getBlockPos(), step.output(), true,
                 0,
-                networkAmount(network.getUnifiedStorage(), step.output()), 0, output, 0, batchInputs);
+                networkAmount(job.networkId(), step.output()), 0, output, 0, batchInputs,
+                outputBaseline(job.networkId(), step.output()));
         index.occupyMachine(machineKey);
         return job.awaitExternal(wait, "BD network furnace reserved; preparing inputs");
     }
@@ -259,25 +340,43 @@ public final class RecipeOrderService
         if (!wait.remainingInputs().isEmpty())
         {
             List<RecipePlan.Material> remaining = new ArrayList<>();
+            RecipeOrderJob working = job;
+            RecipePlan.Step step = job.steps().get(job.nextStep());
             for (RecipePlan.Material input : wait.remainingInputs())
             {
-                long capacity = BoundMachineAutomation.insertCapacity(level, wait.machinePosition(),
-                        input.item(), input.amount());
-                if (capacity <= 0)
+                InputSelection selection = selectInputs(level, network.getUnifiedStorage(),
+                        working, step, List.of(input));
+                if (selection == null)
                 {
                     remaining.add(input);
                     continue;
                 }
-                KeyAmount taken = network.getUnifiedStorage().extract(key(input.item()), capacity, false, false);
-                long inserted = BoundMachineAutomation.insert(level, wait.machinePosition(),
-                        input.item(), taken.amount());
-                if (inserted < taken.amount())
-                    network.getUnifiedStorage().insert(taken.key(), taken.amount() - inserted, false);
-                long left = ExternalOrderLogic.remainingInput(input.amount(), taken.amount(), inserted);
-                if (left > 0) remaining.add(new RecipePlan.Material(input.item(), left));
+                long delivered = 0;
+                List<RecipePlan.ReservedMaterial> consumed = new ArrayList<>();
+                for (InputChunk chunk : selection.chunks())
+                {
+                    long capacity = BoundMachineAutomation.insertCapacity(
+                            level, wait.machinePosition(), chunk.key(), chunk.amount());
+                    if (capacity <= 0) continue;
+                    long offered = capacity;
+                    KeyAmount taken = chunk.fromReserved() ? new KeyAmount(chunk.key(), offered)
+                            : network.getUnifiedStorage().extract(chunk.key(), offered, false, false);
+                    long inserted = BoundMachineAutomation.insert(
+                            level, wait.machinePosition(), chunk.key(), taken.amount());
+                    if (!chunk.fromReserved() && inserted < taken.amount())
+                        network.getUnifiedStorage().insert(taken.key(), taken.amount() - inserted, false);
+                    if (chunk.fromReserved() && inserted > 0)
+                        consumed.add(new RecipePlan.ReservedMaterial(chunk.key(), inserted));
+                    delivered = SaturatingLongMath.add(delivered, inserted);
+                }
+                working = consumeReserved(working, consumed);
+                long left = Math.max(0, input.amount() - delivered);
+                if (left > 0) remaining.add(new RecipePlan.Material(
+                        input.item(), left, input.ingredientSlot()));
             }
             wait = wait.withInputs(remaining);
-            if (!remaining.isEmpty()) return job.awaitExternal(wait, "feeding bound machine inputs");
+            if (!remaining.isEmpty()) return working.awaitExternal(wait, "feeding bound machine inputs");
+            job = working;
         }
 
         long current = BoundMachineAutomation.countExtractable(level, wait.machinePosition(), wait.output());
@@ -285,15 +384,26 @@ public final class RecipeOrderService
         long transferable = Math.min(available, wait.amount() - wait.collected());
         if (transferable > 0)
         {
-            KeyAmount simulatedRemainder = network.getUnifiedStorage().insert(key(wait.output()), transferable, true);
-            long networkCapacity = transferable - simulatedRemainder.amount();
-            long extracted = BoundMachineAutomation.extract(
-                    level, wait.machinePosition(), wait.output(), networkCapacity);
-            if (extracted > 0)
+            long inserted = 0;
+            List<RecipePlan.ReservedMaterial> produced = new ArrayList<>();
+            boolean escrowOutput = job.nextStep() + 1 < job.steps().size();
+            for (KeyAmount output : BoundMachineAutomation.extractStacks(
+                    level, wait.machinePosition(), wait.output(), transferable))
             {
-                KeyAmount remainder = network.getUnifiedStorage().insert(key(wait.output()), extracted, false);
-                wait = wait.withCollected(wait.collected() + extracted - remainder.amount());
+                if (escrowOutput)
+                {
+                    produced.add(new RecipePlan.ReservedMaterial(
+                            (ItemStackKey) output.key(), output.amount()));
+                    inserted = SaturatingLongMath.add(inserted, output.amount());
+                    continue;
+                }
+                KeyAmount remainder = network.getUnifiedStorage().insert(output.key(), output.amount(), false);
+                inserted = SaturatingLongMath.add(inserted, output.amount() - remainder.amount());
+                if (!remainder.isEmpty()) BoundMachineAutomation.insert(level, wait.machinePosition(),
+                        (ItemStackKey) remainder.key(), remainder.amount());
             }
+            job = addReserved(job, produced);
+            wait = wait.withCollected(wait.collected() + inserted);
         }
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
         return job.awaitExternal(wait,
@@ -317,28 +427,61 @@ public final class RecipeOrderService
         if (!wait.remainingInputs().isEmpty())
         {
             List<RecipePlan.Material> remaining = new ArrayList<>();
+            RecipeOrderJob working = job;
+            RecipePlan.Step step = job.steps().get(job.nextStep());
             for (RecipePlan.Material input : wait.remainingInputs())
             {
-                long capacity = NativeFurnaceAutomation.insertCapacity(furnace, input.item(), input.amount());
-                if (capacity <= 0)
+                InputSelection selection = selectInputs(level, network.getUnifiedStorage(),
+                        working, step, List.of(input));
+                if (selection == null)
                 {
                     remaining.add(input);
                     continue;
                 }
-                KeyAmount taken = network.getUnifiedStorage().extract(key(input.item()), capacity, false, false);
-                long inserted = NativeFurnaceAutomation.insert(furnace, input.item(), taken.amount());
-                if (inserted < taken.amount())
-                    network.getUnifiedStorage().insert(taken.key(), taken.amount() - inserted, false);
-                long left = ExternalOrderLogic.remainingInput(input.amount(), taken.amount(), inserted);
-                if (left > 0) remaining.add(new RecipePlan.Material(input.item(), left));
+                long delivered = 0;
+                List<RecipePlan.ReservedMaterial> consumed = new ArrayList<>();
+                for (InputChunk chunk : selection.chunks())
+                {
+                    long capacity = NativeFurnaceAutomation.insertCapacity(
+                            furnace, chunk.key(), chunk.amount());
+                    if (capacity <= 0) continue;
+                    KeyAmount taken = chunk.fromReserved() ? new KeyAmount(chunk.key(), capacity)
+                            : network.getUnifiedStorage().extract(chunk.key(), capacity, false, false);
+                    long inserted = NativeFurnaceAutomation.insert(furnace, chunk.key(), taken.amount());
+                    if (!chunk.fromReserved() && inserted < taken.amount())
+                        network.getUnifiedStorage().insert(taken.key(), taken.amount() - inserted, false);
+                    if (chunk.fromReserved() && inserted > 0)
+                        consumed.add(new RecipePlan.ReservedMaterial(chunk.key(), inserted));
+                    delivered = SaturatingLongMath.add(delivered, inserted);
+                }
+                working = consumeReserved(working, consumed);
+                long left = Math.max(0, input.amount() - delivered);
+                if (left > 0) remaining.add(new RecipePlan.Material(
+                        input.item(), left, input.ingredientSlot()));
             }
             wait = wait.withInputs(remaining);
-            if (!remaining.isEmpty()) return job.awaitExternal(wait, "feeding BD network furnace inputs");
+            if (!remaining.isEmpty()) return working.awaitExternal(wait, "feeding BD network furnace inputs");
+            job = working;
         }
 
-        long currentNetwork = networkAmount(network.getUnifiedStorage(), wait.output());
+        long currentNetwork = networkAmount(job.networkId(), wait.output());
         ExternalOrderLogic.NetworkCredit networkCredit = ExternalOrderLogic.creditNetworkOutput(
                 wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
+        long credited = Math.max(0, networkCredit.collected() - wait.collected());
+        if (credited > 0 && job.nextStep() + 1 < job.steps().size())
+        {
+            List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
+                    wait.output(), credited, wait.networkBaselineStacks());
+            long capturedAmount = 0;
+            for (KeyAmount value : captured)
+                capturedAmount = SaturatingLongMath.add(capturedAmount, value.amount());
+            job = addReserved(job, captured.stream().map(value ->
+                    new RecipePlan.ReservedMaterial((ItemStackKey) value.key(), value.amount())).toList());
+            long afterCapture = networkAmount(job.networkId(), wait.output());
+            networkCredit = new ExternalOrderLogic.NetworkCredit(
+                    ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterCapture),
+                    wait.collected() + capturedAmount);
+        }
         wait = wait.withProgress(networkCredit.observed(), networkCredit.collected());
 
         long machineOutput = NativeFurnaceAutomation.countOutput(furnace, wait.output());
@@ -346,39 +489,211 @@ public final class RecipeOrderService
         long transferable = Math.min(available, wait.amount() - wait.collected());
         if (transferable > 0)
         {
-            KeyAmount simulated = network.getUnifiedStorage().insert(key(wait.output()), transferable, true);
-            long capacity = transferable - simulated.amount();
-            long extracted = NativeFurnaceAutomation.extractOutput(furnace, wait.output(), capacity);
-            if (extracted > 0)
+            long inserted = 0;
+            List<RecipePlan.ReservedMaterial> produced = new ArrayList<>();
+            boolean escrowOutput = job.nextStep() + 1 < job.steps().size();
+            for (KeyAmount output : NativeFurnaceAutomation.extractOutputStacks(
+                    furnace, wait.output(), transferable))
             {
-                KeyAmount remainder = network.getUnifiedStorage().insert(key(wait.output()), extracted, false);
-                long inserted = extracted - remainder.amount();
+                if (escrowOutput)
+                {
+                    produced.add(new RecipePlan.ReservedMaterial(
+                            (ItemStackKey) output.key(), output.amount()));
+                    inserted = SaturatingLongMath.add(inserted, output.amount());
+                    continue;
+                }
+                KeyAmount remainder = network.getUnifiedStorage().insert(output.key(), output.amount(), false);
+                inserted = SaturatingLongMath.add(inserted, output.amount() - remainder.amount());
                 if (!remainder.isEmpty()) NativeFurnaceAutomation.restoreOutput(
-                        furnace, wait.output(), remainder.amount());
-                long afterInsert = networkAmount(network.getUnifiedStorage(), wait.output());
-                long afterObserved = ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterInsert);
-                wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved),
-                        Math.min(wait.amount(), wait.collected() + inserted));
+                        furnace, (ItemStackKey) remainder.key(), remainder.amount());
             }
+            job = addReserved(job, produced);
+            long afterInsert = networkAmount(job.networkId(), wait.output());
+            long afterObserved = ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterInsert);
+            wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved),
+                    Math.min(wait.amount(), wait.collected() + inserted));
         }
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
         return job.awaitExternal(wait,
                 "BD network furnace processing; returned " + wait.collected() + "/" + wait.amount());
     }
 
-    private static long networkAmount(UnifiedStorage storage, ResourceLocation itemId)
+    private static long networkAmount(int networkId, ResourceLocation itemId)
     {
-        return Math.max(0, storage.getStackByKey(key(itemId)).amount());
+        long amount = 0;
+        for (PlanningSnapshotService.ComponentEntry value :
+                PlanningSnapshotService.capture(networkId).componentEntries())
+            if (value.item().equals(itemId)) amount = SaturatingLongMath.add(amount, value.amount());
+        return amount;
+    }
+
+    private static List<KeyAmount> extractOutputDelta(int networkId, UnifiedStorage storage,
+                                                      ResourceLocation itemId, long amount,
+                                                      List<RecipePlan.ReservedMaterial> baseline)
+    {
+        java.util.HashMap<ItemStackKey, Long> original = new java.util.HashMap<>();
+        for (RecipePlan.ReservedMaterial value : baseline)
+            original.merge(value.key(), value.amount(), SaturatingLongMath::add);
+        List<KeyAmount> result = new ArrayList<>();
+        long remaining = amount;
+        for (PlanningSnapshotService.ComponentEntry value :
+                PlanningSnapshotService.capture(networkId).componentEntries())
+        {
+            if (remaining <= 0) break;
+            if (!value.item().equals(itemId)) continue;
+            long delta = Math.max(0, value.amount() - original.getOrDefault(value.key(), 0L));
+            if (delta <= 0) continue;
+            KeyAmount taken = storage.extract(value.key(), Math.min(remaining, delta), false, false);
+            if (!taken.isEmpty())
+            {
+                result.add(taken);
+                remaining -= taken.amount();
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static List<RecipePlan.ReservedMaterial> outputBaseline(int networkId, ResourceLocation itemId)
+    {
+        return PlanningSnapshotService.capture(networkId).componentEntries().stream()
+                .filter(value -> value.item().equals(itemId))
+                .map(value -> new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList();
     }
 
     private static List<RecipePlan.Material> inputsToDispatch(boolean blockingMode, RecipePlan.Step step)
     {
         return step.inputs().stream().map(input -> new RecipePlan.Material(input.item(),
-                BlockingModeLogic.amountToDispatch(blockingMode, input.amount(), step.crafts()))).toList();
+                BlockingModeLogic.amountToDispatch(blockingMode, input.amount(), step.crafts()),
+                input.ingredientSlot())).toList();
     }
 
     private static ItemStackKey key(ResourceLocation id)
     { return new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(id))); }
+
+    private static List<RecipePlan.ReservedMaterial> reserveInitial(
+            UnifiedStorage storage, List<RecipePlan.ReservedMaterial> requested)
+    {
+        List<RecipePlan.ReservedMaterial> reserved = new ArrayList<>();
+        for (RecipePlan.ReservedMaterial material : requested)
+        {
+            KeyAmount taken = storage.extract(material.key(), material.amount(), false, false);
+            if (taken.amount() != material.amount())
+            {
+                if (!taken.isEmpty()) reserved.add(new RecipePlan.ReservedMaterial(
+                        (ItemStackKey) taken.key(), taken.amount()));
+                releaseReservations(storage, reserved);
+                throw new IllegalStateException("required ingredients changed: " + material.item());
+            }
+            reserved.add(new RecipePlan.ReservedMaterial(material.key(), material.amount()));
+        }
+        return List.copyOf(reserved);
+    }
+
+    private static void releaseReservations(UnifiedStorage storage,
+                                            List<RecipePlan.ReservedMaterial> reserved)
+    {
+        List<KeyAmount> inserted = new ArrayList<>();
+        for (RecipePlan.ReservedMaterial material : reserved)
+        {
+            KeyAmount remainder = storage.insert(material.key(), material.amount(), false);
+            long accepted = material.amount() - remainder.amount();
+            if (accepted > 0) inserted.add(new KeyAmount(material.key(), accepted));
+            if (!remainder.isEmpty())
+            {
+                inserted.forEach(value -> storage.extract(value.key(), value.amount(), false, false));
+                throw new IllegalStateException("network has no room to return reserved material: "
+                        + material.item());
+            }
+        }
+    }
+
+    private static RecipeOrderJob consumeReserved(RecipeOrderJob job,
+                                                   List<RecipePlan.ReservedMaterial> consumed)
+    {
+        if (consumed.isEmpty()) return job;
+        java.util.LinkedHashMap<ItemStackKey, Long> remaining = new java.util.LinkedHashMap<>();
+        for (RecipePlan.ReservedMaterial material : job.reserved())
+            remaining.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        java.util.LinkedHashMap<ItemStackKey, Long> used = new java.util.LinkedHashMap<>();
+        for (RecipePlan.ReservedMaterial material : consumed)
+            used.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        remaining = ReservationLedger.subtract(remaining, used);
+        return job.withReserved(remaining.entrySet().stream().map(entry ->
+                new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList());
+    }
+
+    private static RecipeOrderJob addReserved(RecipeOrderJob job,
+                                              List<RecipePlan.ReservedMaterial> added)
+    {
+        if (added.isEmpty()) return job;
+        java.util.LinkedHashMap<ItemStackKey, Long> values = new java.util.LinkedHashMap<>();
+        for (RecipePlan.ReservedMaterial material : job.reserved())
+            values.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        for (RecipePlan.ReservedMaterial material : added)
+            values.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        return job.withReserved(values.entrySet().stream().map(entry ->
+                new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList());
+    }
+
+    private static InputSelection selectInputs(ServerLevel level, UnifiedStorage storage,
+                                               RecipeOrderJob job, RecipePlan.Step step,
+                                               List<RecipePlan.Material> materials)
+    {
+        java.util.LinkedHashMap<ItemStackKey, Long> reserved = new java.util.LinkedHashMap<>();
+        for (RecipePlan.ReservedMaterial material : job.reserved())
+            reserved.merge(material.key(), material.amount(), SaturatingLongMath::add);
+        java.util.LinkedHashMap<ItemStackKey, Long> network = new java.util.LinkedHashMap<>();
+        for (PlanningSnapshotService.ComponentEntry available :
+                PlanningSnapshotService.capture(job.networkId()).componentEntries())
+            network.merge(available.key(), available.amount(), SaturatingLongMath::add);
+
+        List<InputChunk> chunks = new ArrayList<>();
+        for (RecipePlan.Material material : materials)
+        {
+            Ingredient ingredient = ingredient(level, step, material.ingredientSlot());
+            long needed = material.amount();
+            needed = selectFrom(reserved, material.item(), ingredient, needed, true, chunks);
+            needed = selectFrom(network, material.item(), ingredient, needed, false, chunks);
+            if (needed > 0) return null;
+        }
+        List<RecipePlan.ReservedMaterial> consumed = chunks.stream().filter(InputChunk::fromReserved)
+                .collect(java.util.stream.Collectors.groupingBy(InputChunk::key, java.util.LinkedHashMap::new,
+                        java.util.stream.Collectors.summingLong(InputChunk::amount)))
+                .entrySet().stream().map(entry ->
+                        new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList();
+        return new InputSelection(List.copyOf(chunks), consumed);
+    }
+
+    private static long selectFrom(java.util.LinkedHashMap<ItemStackKey, Long> available,
+                                   ResourceLocation item, Ingredient ingredient, long needed,
+                                   boolean reserved, List<InputChunk> selected)
+    {
+        if (needed <= 0) return 0;
+        for (var entry : available.entrySet())
+        {
+            if (entry.getValue() <= 0
+                    || !BuiltInRegistries.ITEM.getKey(entry.getKey().getSource()).equals(item)
+                    || ingredient != null && !ingredient.test(entry.getKey().getReadOnlyStack())) continue;
+            long amount = Math.min(entry.getValue(), needed);
+            entry.setValue(entry.getValue() - amount);
+            selected.add(new InputChunk(entry.getKey(), amount, reserved));
+            needed -= amount;
+            if (needed == 0) break;
+        }
+        return needed;
+    }
+
+    private static Ingredient ingredient(ServerLevel level, RecipePlan.Step step, int slot)
+    {
+        if (slot < 0) return null;
+        var holder = level.getRecipeManager().byKey(step.recipe()).orElse(null);
+        if (holder == null || slot >= holder.value().getIngredients().size()) return null;
+        return holder.value().getIngredients().get(slot);
+    }
+
+    private record InputChunk(ItemStackKey key, long amount, boolean fromReserved) {}
+    private record InputSelection(List<InputChunk> chunks,
+                                  List<RecipePlan.ReservedMaterial> consumedReserved) {}
 
     private static boolean terminal(RecipeOrderJob.Status status)
     {

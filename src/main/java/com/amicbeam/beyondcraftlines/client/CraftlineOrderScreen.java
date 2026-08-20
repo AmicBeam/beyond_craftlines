@@ -60,6 +60,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private double treeOffsetX = 18;
     private double treeOffsetY = 14;
     private double treeZoom = 1.0;
+    private GraphNode treeRoot;
+    private List<GraphNode> treeNodes = List.of();
 
     public CraftlineOrderScreen(CraftlineOrderMenu menu, Inventory inventory, Component title)
     {
@@ -208,6 +210,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             treeOffsetX = 18;
             treeOffsetY = 14;
             treeZoom = 1.0;
+            rebuildTree();
             requestNetworkAmount();
         }
     }
@@ -219,6 +222,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             ItemStack result = holder.value().getResultItem(minecraft.level.registryAccess());
             return BuiltInRegistries.ITEM.getKey(result.getItem()).equals(menu.initialTarget());
         }).findFirst().orElse(null);
+        rebuildTree();
         requestNetworkAmount();
     }
 
@@ -371,11 +375,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void renderTree(GuiGraphics graphics, int mouseX, int mouseY)
     {
-        if (selected == null || minecraft.level == null) return;
-        GraphNode root = buildTree(selected, 0, new HashSet<>(), new int[]{0});
-        layout(root, new int[]{0});
-        List<GraphNode> nodes = new ArrayList<>();
-        flatten(root, nodes);
+        if (treeRoot == null || minecraft.level == null) return;
+        List<GraphNode> nodes = treeNodes;
 
         graphics.enableScissor(treeLeft() + 1, treeTop() + 1, treeRight() - 1, treeBottom() - 1);
         for (GraphNode node : nodes)
@@ -406,6 +407,21 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
         String zoom = Math.round(treeZoom * 100) + "%";
         graphics.drawString(font, zoom, treeRight() - font.width(zoom) - 5, treeBottom() - 12, 0x8296A8, false);
+    }
+
+    private void rebuildTree()
+    {
+        if (selected == null || minecraft.level == null)
+        {
+            treeRoot = null;
+            treeNodes = List.of();
+            return;
+        }
+        treeRoot = buildTree(selected, 0, new HashSet<>(), new int[]{0});
+        layout(treeRoot, new int[]{0});
+        List<GraphNode> nodes = new ArrayList<>();
+        flatten(treeRoot, nodes);
+        treeNodes = List.copyOf(nodes);
     }
 
     private int nodeX(GraphNode node) { return treeLeft() + (int) treeOffsetX + (int) (node.depth * 78 * treeZoom); }
@@ -445,10 +461,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             GraphNode child = null;
             if (visiting.add(itemId))
             {
-                RecipeHolder<?> childRecipe = menu.recipes().stream().filter(candidate -> {
-                    ItemStack candidateOutput = candidate.value().getResultItem(minecraft.level.registryAccess());
-                    return BuiltInRegistries.ITEM.getKey(candidateOutput.getItem()).equals(itemId);
-                }).findFirst().orElse(null);
+                RecipeHolder<?> childRecipe = menu.recipeForOutput(itemId);
                 if (childRecipe != null) child = buildTree(childRecipe, depth + 1, visiting, count);
                 visiting.remove(itemId);
             }

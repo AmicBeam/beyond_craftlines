@@ -26,6 +26,7 @@ public final class BindingSavedData extends SavedData
     private final Map<UUID, List<BindingRecord>> byPlayer = new HashMap<>();
     private final Map<Integer, List<BindingRecord>> byNetwork = new HashMap<>();
     private final Map<BindingKey, BindingRecord> byPosition = new HashMap<>();
+    private final Map<BindingKey, List<BindingRecord>> byProvisionerEndpoint = new HashMap<>();
 
     public static BindingSavedData load(CompoundTag tag, HolderLookup.Provider registries)
     {
@@ -104,11 +105,7 @@ public final class BindingSavedData extends SavedData
 
     private List<BindingRecord> provisionerRecords(ResourceKey<Level> dimension, BlockPos position)
     {
-        return records.stream().filter(record -> record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
-                .filter(record -> (dimension.equals(record.dimension()) && position.equals(record.position()))
-                        || (dimension.equals(record.provisionerDimension())
-                        && position.equals(record.provisionerPosition())))
-                .toList();
+        return List.copyOf(byProvisionerEndpoint.getOrDefault(new BindingKey(dimension, position), List.of()));
     }
 
     private void addLoaded(BindingRecord record)
@@ -123,6 +120,17 @@ public final class BindingSavedData extends SavedData
         byPlayer.computeIfAbsent(record.owner(), ignored -> new ArrayList<>()).add(record);
         byNetwork.computeIfAbsent(record.networkId(), ignored -> new ArrayList<>()).add(record);
         byPosition.put(new BindingKey(record.dimension(), record.position()), record);
+        if (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
+        {
+            BindingKey primary = new BindingKey(record.dimension(), record.position());
+            byProvisionerEndpoint.computeIfAbsent(primary, ignored -> new ArrayList<>()).add(record);
+            if (record.provisionerDimension() != null && record.provisionerPosition() != null)
+            {
+                BindingKey provisioner = new BindingKey(record.provisionerDimension(), record.provisionerPosition());
+                if (!provisioner.equals(primary))
+                    byProvisionerEndpoint.computeIfAbsent(provisioner, ignored -> new ArrayList<>()).add(record);
+            }
+        }
     }
 
     private void removeInternal(BindingRecord record)
@@ -131,6 +139,10 @@ public final class BindingSavedData extends SavedData
         removeFrom(byPlayer, record.owner(), record);
         removeFrom(byNetwork, record.networkId(), record);
         byPosition.remove(new BindingKey(record.dimension(), record.position()));
+        removeFrom(byProvisionerEndpoint, new BindingKey(record.dimension(), record.position()), record);
+        if (record.provisionerDimension() != null && record.provisionerPosition() != null)
+            removeFrom(byProvisionerEndpoint,
+                    new BindingKey(record.provisionerDimension(), record.provisionerPosition()), record);
     }
 
     private static <K> void removeFrom(Map<K, List<BindingRecord>> index, K key, BindingRecord record)

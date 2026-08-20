@@ -4,6 +4,7 @@ import com.wintercogs.beyonddimensions.api.storage.handler.impl.StackHandler;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.common.block.entity.BaseNetFurnaceBlockEntity;
+import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -94,7 +95,8 @@ public final class NativeFurnaceAutomation
     private static long count(StackHandler storage, ResourceLocation itemId)
     {
         long total = 0;
-        for (KeyAmount value : storage.getStorage()) if (matches(value, itemId)) total += value.amount();
+        for (KeyAmount value : storage.getStorage()) if (matches(value, itemId))
+            total = SaturatingLongMath.add(total, value.amount());
         return total;
     }
 

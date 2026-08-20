@@ -21,11 +21,16 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.HashSet;
+import java.util.TreeSet;
 
 /** Runtime index of loaded BD network furnaces. No persistent copy is needed. */
 public final class NativeFurnaceRegistry
 {
     private static final Map<Location, Entry> LOADED = new HashMap<>();
+    private static final Map<NetworkFamily, TreeSet<Location>> BY_NETWORK_FAMILY = new HashMap<>();
+    private static final Comparator<Location> LOCATION_ORDER = Comparator
+            .comparing((Location location) -> location.dimension().location().toString())
+            .thenComparingLong(location -> location.position().asLong());
 
     private NativeFurnaceRegistry() {}
 
@@ -36,7 +41,7 @@ public final class NativeFurnaceRegistry
 
     public static void onUnbound(NetedBlockEvent.Unbound event)
     {
-        LOADED.remove(new Location(event.getLevel().dimension(), event.getPos()));
+        remove(new Location(event.getLevel().dimension(), event.getPos()));
     }
 
     public static void onChunkLoad(ChunkEvent.Load event)
@@ -50,23 +55,26 @@ public final class NativeFurnaceRegistry
         if (!(event.getLevel() instanceof ServerLevel level)) return;
         int chunkX = event.getChunk().getPos().x;
         int chunkZ = event.getChunk().getPos().z;
-        LOADED.keySet().removeIf(location -> location.dimension().equals(level.dimension())
+        java.util.List.copyOf(LOADED.keySet()).stream()
+                .filter(location -> location.dimension().equals(level.dimension())
                 && (location.position().getX() >> 4) == chunkX
-                && (location.position().getZ() >> 4) == chunkZ);
+                && (location.position().getZ() >> 4) == chunkZ).forEach(NativeFurnaceRegistry::remove);
     }
 
     public static void onLevelUnload(LevelEvent.Unload event)
     {
         if (event.getLevel() instanceof ServerLevel level)
-            LOADED.keySet().removeIf(location -> location.dimension().equals(level.dimension()));
+            java.util.List.copyOf(LOADED.keySet()).stream()
+                    .filter(location -> location.dimension().equals(level.dimension()))
+                    .forEach(NativeFurnaceRegistry::remove);
     }
 
     public static Optional<NativeFurnace> furnaceFor(MinecraftServer server, int networkId, String family)
     {
-        return java.util.List.copyOf(LOADED.values()).stream()
-                .filter(entry -> entry.networkId() == networkId && entry.family().equals(family))
-                .sorted(Comparator.comparing((Entry entry) -> entry.dimension().location().toString())
-                        .thenComparingLong(entry -> entry.position().asLong()))
+        TreeSet<Location> indexed = BY_NETWORK_FAMILY.get(new NetworkFamily(networkId, family));
+        if (indexed == null) return Optional.empty();
+        return java.util.List.copyOf(indexed).stream()
+                .map(LOADED::get).filter(java.util.Objects::nonNull)
                 .map(entry -> validate(server, entry))
                 .flatMap(Optional::stream)
                 .findFirst();
@@ -92,7 +100,11 @@ public final class NativeFurnaceRegistry
         String family = family(furnace);
         if (family == null) return;
         Location location = new Location(level.dimension(), furnace.getBlockPos());
-        LOADED.put(location, new Entry(level.dimension(), furnace.getBlockPos(), furnace.getNetId(), family));
+        remove(location);
+        Entry entry = new Entry(level.dimension(), furnace.getBlockPos(), furnace.getNetId(), family);
+        LOADED.put(location, entry);
+        BY_NETWORK_FAMILY.computeIfAbsent(new NetworkFamily(entry.networkId(), entry.family()),
+                ignored -> new TreeSet<>(LOCATION_ORDER)).add(location);
     }
 
     private static Optional<NativeFurnace> validate(MinecraftServer server, Entry entry)
@@ -103,10 +115,23 @@ public final class NativeFurnaceRegistry
         if (!(blockEntity instanceof BaseNetFurnaceBlockEntity<?> furnace)
                 || furnace.getNetId() != entry.networkId() || !entry.family().equals(family(furnace)))
         {
-            LOADED.remove(new Location(entry.dimension(), entry.position()));
+            remove(new Location(entry.dimension(), entry.position()));
             return Optional.empty();
         }
         return Optional.of(new NativeFurnace(level, furnace, entry.family()));
+    }
+
+    private static void remove(Location location)
+    {
+        Entry removed = LOADED.remove(location);
+        if (removed == null) return;
+        NetworkFamily key = new NetworkFamily(removed.networkId(), removed.family());
+        TreeSet<Location> locations = BY_NETWORK_FAMILY.get(key);
+        if (locations != null)
+        {
+            locations.remove(location);
+            if (locations.isEmpty()) BY_NETWORK_FAMILY.remove(key);
+        }
     }
 
     private static String family(BaseNetFurnaceBlockEntity<?> furnace)
@@ -126,6 +151,8 @@ public final class NativeFurnaceRegistry
     {
         private Entry { position = position.immutable(); }
     }
+
+    private record NetworkFamily(int networkId, String family) {}
 
     public record NativeFurnace(ServerLevel level, BaseNetFurnaceBlockEntity<?> blockEntity, String family) {}
 }

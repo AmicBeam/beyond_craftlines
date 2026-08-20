@@ -8,6 +8,7 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.event.OnDatapackSyncEvent;
 
 @EventBusSubscriber(modid = "beyond_craftlines")
 public final class CraftlinesEvents
@@ -51,4 +52,8 @@ public final class CraftlinesEvents
     @SubscribeEvent
     public static void onLevelUnload(LevelEvent.Unload event)
     { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onLevelUnload(event); }
+
+    @SubscribeEvent
+    public static void onDatapackSync(OnDatapackSyncEvent event)
+    { com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache(); }
 }

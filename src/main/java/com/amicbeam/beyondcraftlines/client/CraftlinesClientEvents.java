@@ -8,6 +8,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
 
 public final class CraftlinesClientEvents
 {
@@ -33,5 +34,8 @@ public final class CraftlinesClientEvents
 
         @SubscribeEvent public static void render(RenderLevelStageEvent event)
         { ClientBindingVisuals.render(event); }
+
+        @SubscribeEvent public static void recipesUpdated(RecipesUpdatedEvent event)
+        { com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache(); }
     }
 }

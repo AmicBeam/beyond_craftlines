@@ -16,7 +16,7 @@ public record NetworkAmountPayload(String itemId, long amount) implements Custom
     public static final Type<NetworkAmountPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "network_amount"));
     public static final StreamCodec<ByteBuf, NetworkAmountPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.STRING_UTF8, NetworkAmountPayload::itemId,
+            ByteBufCodecs.stringUtf8(256), NetworkAmountPayload::itemId,
             ByteBufCodecs.VAR_LONG, NetworkAmountPayload::amount,
             NetworkAmountPayload::new);
     public static BiConsumer<String, Long> clientReceiver = (ignoredId, ignoredAmount) -> {};

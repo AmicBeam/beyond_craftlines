@@ -37,6 +37,11 @@ public final class RecipeOrderService
     public static RecipeOrderJob enqueue(ServerLevel level, UUID owner, int networkId,
                                          ResourceLocation target, long count, boolean blockingMode)
     {
+        List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
+        if (active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get()
+                || active.stream().filter(job -> job.owner().equals(owner)).count()
+                >= CraftlinesConfig.MAX_ACTIVE_ORDERS_PER_PLAYER.get())
+            throw new IllegalStateException("too many active recipe orders");
         RecipePlan plan = RecipePlanningService.plan(level, networkId, target, count);
         if (!plan.craftable()) throw new IllegalStateException("missing: " + plan.missing());
         RecipeOrderJob job = new RecipeOrderJob(UUID.randomUUID(), owner, networkId, target, count,
@@ -58,10 +63,9 @@ public final class RecipeOrderService
     public static void tick(MinecraftServer server)
     {
         RecipeOrderSavedData data = RecipeOrderSavedData.get(server);
-        List<RecipeOrderJob> jobs = data.all().stream()
-                .filter(job -> !terminal(job.status()))
+        List<RecipeOrderJob> jobs = data.active().stream()
                 .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt)
-                        .thenComparing(job -> job.id().toString())).toList();
+                        .thenComparing(RecipeOrderJob::id)).toList();
         Set<Integer> activeNetworks = new HashSet<>();
         for (RecipeOrderJob job : jobs)
         {
@@ -150,11 +154,12 @@ public final class RecipeOrderService
                                                   RecipePlan.Step step, long gameTime)
     {
         UnifiedStorage storage = network.getUnifiedStorage();
-        SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftOne(level, storage, step.recipe(), step.output());
+        SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
+                level, storage, step.recipe(), step.output(), step.crafts());
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);
-        return job.completeSingleCraft(nextTick);
+        return job.completeCrafts(attempt.crafts(), nextTick);
     }
 
     private static RecipeOrderJob reserveMachine(MinecraftServer server, RecipeOrderJob job,
@@ -162,7 +167,7 @@ public final class RecipeOrderService
                                                   DeviceBindingRegistry.BoundMachine machine)
     {
         BindingRecord binding = machine.binding();
-        boolean busy = RecipeOrderSavedData.get(server).all().stream()
+        boolean busy = RecipeOrderSavedData.get(server).active().stream()
                 .filter(other -> !other.id().equals(job.id()) && !terminal(other.status()))
                 .map(RecipeOrderJob::externalWait).filter(Objects::nonNull)
                 .anyMatch(wait -> wait.machineDimension().equals(binding.dimension())
@@ -192,7 +197,7 @@ public final class RecipeOrderService
                                                         NativeFurnaceRegistry.NativeFurnace nativeFurnace)
     {
         BaseNetFurnaceBlockEntity<?> furnace = nativeFurnace.blockEntity();
-        boolean busy = RecipeOrderSavedData.get(server).all().stream()
+        boolean busy = RecipeOrderSavedData.get(server).active().stream()
                 .filter(other -> !other.id().equals(job.id()) && !terminal(other.status()))
                 .map(RecipeOrderJob::externalWait).filter(Objects::nonNull)
                 .anyMatch(wait -> wait.machineDimension().equals(nativeFurnace.level().dimension())
@@ -344,12 +349,7 @@ public final class RecipeOrderService
 
     private static long networkAmount(UnifiedStorage storage, ResourceLocation itemId)
     {
-        long total = 0;
-        for (KeyAmount value : storage.getStorage())
-            if (value.key() instanceof ItemStackKey itemKey
-                    && BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(itemId))
-                total = SaturatingLongMath.add(total, value.amount());
-        return total;
+        return Math.max(0, storage.getStackByKey(key(itemId)).amount());
     }
 
     private static List<RecipePlan.Material> inputsToDispatch(boolean blockingMode, RecipePlan.Step step)

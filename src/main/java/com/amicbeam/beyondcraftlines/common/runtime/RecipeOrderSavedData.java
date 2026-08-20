@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -44,13 +45,38 @@ public final class RecipeOrderSavedData extends SavedData
             }
             catch (RuntimeException ignored) {}
         }
+        if (data.pruneTerminalHistory()) data.setDirty();
         return data;
     }
 
     public List<RecipeOrderJob> all() { return List.copyOf(jobs.values()); }
+    public List<RecipeOrderJob> active()
+    {
+        return jobs.values().stream().filter(job -> !terminal(job.status())).toList();
+    }
     public List<RecipeOrderJob> forOwner(UUID owner) { return jobs.values().stream().filter(j -> j.owner().equals(owner)).toList(); }
     public RecipeOrderJob get(UUID id) { return jobs.get(id); }
-    public void put(RecipeOrderJob job) { jobs.put(job.id(), job); setDirty(); }
+    public void put(RecipeOrderJob job)
+    {
+        RecipeOrderJob previous = jobs.put(job.id(), job);
+        boolean pruned = terminal(job.status()) && pruneTerminalHistory();
+        if (!job.equals(previous) || pruned) setDirty();
+    }
+
+    private boolean pruneTerminalHistory()
+    {
+        List<UUID> excess = jobs.values().stream().filter(job -> terminal(job.status()))
+                .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt).reversed())
+                .skip(CraftlinesConfig.TERMINAL_ORDER_HISTORY_LIMIT.get()).map(RecipeOrderJob::id).toList();
+        excess.forEach(jobs::remove);
+        return !excess.isEmpty();
+    }
+
+    private static boolean terminal(RecipeOrderJob.Status status)
+    {
+        return status == RecipeOrderJob.Status.COMPLETE || status == RecipeOrderJob.Status.CANCELLED
+                || status == RecipeOrderJob.Status.ERROR;
+    }
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries)

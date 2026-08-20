@@ -26,6 +26,13 @@ public final class SimulatedCrafting
     public static Attempt craftOne(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
                                    ResourceLocation expectedOutput)
     {
+        return craftBatch(level, storage, recipeId, expectedOutput, 1);
+    }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
+                                     ResourceLocation expectedOutput, long requestedCrafts)
+    {
+        if (requestedCrafts < 1) return Attempt.failed("invalid crafting batch size");
         var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed("crafting recipe is no longer available: " + recipeId);
@@ -47,19 +54,36 @@ public final class SimulatedCrafting
         if (output.isEmpty() || !output.getItemHolder().is(expectedOutput))
             return Attempt.failed("recipe produced an unexpected item");
 
+        boolean[] persistentSlots = new boolean[prepared.input().size()];
+        boolean statefulRemainder = false;
+        for (int i = 0; i < prepared.input().size(); i++)
+        {
+            ItemStack input = prepared.input().getItem(i);
+            ItemStack remainder = remainders.get(i);
+            if (input.isEmpty() || remainder.isEmpty()) continue;
+            if (ItemStack.isSameItemSameComponents(input, remainder)) persistentSlots[i] = true;
+            else if (ItemStack.isSameItem(input, remainder)) statefulRemainder = true;
+        }
+
+        long batch = statefulRemainder ? 1 : availableBatch(storage, prepared, persistentSlots, requestedCrafts);
+        if (batch < 1) return Attempt.failed("waiting for matching crafting ingredients");
+
         Map<ItemStackKey, Long> returns = new LinkedHashMap<>();
-        add(returns, output);
-        remainders.forEach(stack -> add(returns, stack));
+        add(returns, output, batch);
+        for (int i = 0; i < remainders.size(); i++)
+            add(returns, remainders.get(i), persistentSlots[i] ? 1 : batch);
         for (var entry : returns.entrySet())
             if (!storage.insert(entry.getKey(), entry.getValue(), true).isEmpty())
                 return Attempt.failed("network has no room for crafting output or remaining items");
 
+        Map<ItemStackKey, Long> consumption = consumption(prepared, persistentSlots, batch);
         List<KeyAmount> extracted = new ArrayList<>();
-        for (ItemStackKey key : prepared.consumed())
+        for (var entry : consumption.entrySet())
         {
-            KeyAmount taken = storage.extract(key, 1, false, false);
-            if (taken.amount() != 1)
+            KeyAmount taken = storage.extract(entry.getKey(), entry.getValue(), false, false);
+            if (taken.amount() != entry.getValue())
             {
+                if (!taken.isEmpty()) extracted.add(taken);
                 rollbackInputs(storage, extracted);
                 return Attempt.failed("crafting ingredients changed before execution");
             }
@@ -79,24 +103,26 @@ public final class SimulatedCrafting
                 return Attempt.failed("crafting transaction rolled back because network capacity changed");
             }
         }
-        return new Attempt(true, "", output.getCount());
+        return new Attempt(true, "", SaturatingLongMath.multiply(output.getCount(), batch), batch);
     }
 
     private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level)
     {
         List<Ingredient> ingredients = recipe.getIngredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
-        List<ItemStackKey> consumed = new ArrayList<>();
+        List<ItemStackKey> slotKeys = new ArrayList<>();
         Map<ItemStackKey, Long> reserved = new LinkedHashMap<>();
+        List<KeyAmount> availableStacks = List.copyOf(storage.getStorage());
         for (Ingredient ingredient : ingredients)
         {
             if (ingredient.isEmpty())
             {
                 chosen.add(ItemStack.EMPTY);
+                slotKeys.add(ItemStackKey.EMPTY);
                 continue;
             }
             ItemStackKey selected = null;
-            for (KeyAmount available : storage.getStorage())
+            for (KeyAmount available : availableStacks)
             {
                 if (!(available.key() instanceof ItemStackKey key)
                         || available.amount() <= reserved.getOrDefault(key, 0L)) continue;
@@ -105,12 +131,12 @@ public final class SimulatedCrafting
             }
             if (selected == null) return null;
             reserved.merge(selected, 1L, Long::sum);
-            consumed.add(selected);
+            slotKeys.add(selected);
             chosen.add(selected.getReadOnlyStack().copyWithCount(1));
         }
 
         CraftingInput input = matchingInput(recipe, chosen, level);
-        return input == null ? null : new Prepared(input, List.copyOf(consumed));
+        return input == null ? null : new Prepared(input, List.copyOf(slotKeys));
     }
 
     static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, ServerLevel level)
@@ -158,9 +184,44 @@ public final class SimulatedCrafting
         return CraftingInput.of(width, height, slots);
     }
 
-    private static void add(Map<ItemStackKey, Long> values, ItemStack stack)
+    private static long availableBatch(UnifiedStorage storage, Prepared prepared, boolean[] persistent,
+                                       long requested)
     {
-        if (!stack.isEmpty()) values.merge(new ItemStackKey(stack), (long) stack.getCount(),
+        Map<ItemStackKey, Long> fixed = new LinkedHashMap<>();
+        Map<ItemStackKey, Long> perBatch = new LinkedHashMap<>();
+        for (int i = 0; i < prepared.slotKeys().size(); i++)
+        {
+            ItemStackKey key = prepared.slotKeys().get(i);
+            if (key == ItemStackKey.EMPTY) continue;
+            (persistent[i] ? fixed : perBatch).merge(key, 1L, Long::sum);
+        }
+        long batch = requested;
+        for (var entry : perBatch.entrySet())
+        {
+            long available = storage.getStackByKey(entry.getKey()).amount()
+                    - fixed.getOrDefault(entry.getKey(), 0L);
+            if (available < 0) return 0;
+            batch = Math.min(batch, available / entry.getValue());
+        }
+        return batch;
+    }
+
+    private static Map<ItemStackKey, Long> consumption(Prepared prepared, boolean[] persistent, long batch)
+    {
+        Map<ItemStackKey, Long> result = new LinkedHashMap<>();
+        for (int i = 0; i < prepared.slotKeys().size(); i++)
+        {
+            ItemStackKey key = prepared.slotKeys().get(i);
+            if (key == ItemStackKey.EMPTY) continue;
+            result.merge(key, persistent[i] ? 1L : batch, SaturatingLongMath::add);
+        }
+        return result;
+    }
+
+    private static void add(Map<ItemStackKey, Long> values, ItemStack stack, long multiplier)
+    {
+        if (!stack.isEmpty()) values.merge(new ItemStackKey(stack),
+                SaturatingLongMath.multiply(stack.getCount(), multiplier),
                 SaturatingLongMath::add);
     }
 
@@ -169,9 +230,9 @@ public final class SimulatedCrafting
         extracted.forEach(value -> storage.insert(value.key(), value.amount(), false));
     }
 
-    private record Prepared(CraftingInput input, List<ItemStackKey> consumed) {}
+    private record Prepared(CraftingInput input, List<ItemStackKey> slotKeys) {}
 
-    public record Attempt(boolean success, String reason, long output) {
-        static Attempt failed(String reason) { return new Attempt(false, reason, 0); }
+    public record Attempt(boolean success, String reason, long output, long crafts) {
+        static Attempt failed(String reason) { return new Attempt(false, reason, 0, 0); }
     }
 }

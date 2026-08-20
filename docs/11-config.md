@@ -59,7 +59,14 @@ pasteBlocksPerTick = 2048
 maxActiveChainsPerPlayer = 3
 
 [crafting]
-virtualCraftingNodeIntervalTicks = 20 # 普通合成树每个模拟合成节点的执行间隔；节点内批量不受堆叠上限影响
+virtualCraftingNodeIntervalTicks = 20 # 模拟合成批次间隔
+maxPlanningDepth = 48
+maxPlanningNodes = 4096
+maxPlanningTimeMillis = 50
+orderSubmitCooldownTicks = 10       # 0 可关闭提交节流
+maxActiveOrders = 1024
+maxActiveOrdersPerPlayer = 64
+terminalOrderHistoryLimit = 200     # 0 不保留终态历史
 
 [security]
 dangerousBlockBlacklist = [
@@ -102,6 +109,7 @@ showBoundaryParticles = true
 
 [binding]
 showBoundMachineFrames = true # 显示已绑定机器的黑蓝超维边框
+boundMachineFrameRenderDistance = 96
 ```
 
 ## 4. 配置原则

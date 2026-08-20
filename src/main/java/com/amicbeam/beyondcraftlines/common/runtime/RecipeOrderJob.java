@@ -40,18 +40,18 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
 
     public RecipeOrderJob completeSingleCraft(long nextAllowedTick)
     {
+        return completeCrafts(1, nextAllowedTick);
+    }
+
+    public RecipeOrderJob completeCrafts(long completedCrafts, long nextAllowedTick)
+    {
         RecipePlan.Step current = steps.get(nextStep);
-        if (current.crafts() <= 1) return advanceAfterCrafting(nextAllowedTick);
+        if (completedCrafts < 1 || completedCrafts > current.crafts())
+            throw new IllegalArgumentException("invalid completed craft count");
+        if (completedCrafts == current.crafts()) return advanceAfterCrafting(nextAllowedTick);
         List<RecipePlan.Step> remaining = new java.util.ArrayList<>(steps);
-        List<RecipePlan.Material> remainingInputs = new java.util.ArrayList<>();
-        for (RecipePlan.Material input : current.inputs())
-        {
-            long amount = input.amount() - BlockingModeLogic.amountToDispatch(
-                    true, input.amount(), current.crafts());
-            if (amount > 0) remainingInputs.add(new RecipePlan.Material(input.item(), amount));
-        }
         remaining.set(nextStep, new RecipePlan.Step(current.recipe(), current.family(), current.output(),
-                current.outputPerCraft(), current.crafts() - 1, remainingInputs));
+                current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs()));
         return new RecipeOrderJob(id, owner, networkId, target, requested, remaining, nextStep,
                 blockingMode, Status.RUNNING, "", createdAt, nextAllowedTick, null);
     }

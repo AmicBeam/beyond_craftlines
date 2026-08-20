@@ -26,7 +26,7 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
             BeyondCraftlines.MOD_ID, "bind_machine"));
     public static final StreamCodec<ByteBuf, BindMachinePayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_LONG, BindMachinePayload::targetPosition,
-            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.STRING_UTF8),
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(256), 32),
             BindMachinePayload::jeiRecipeTypes,
             ByteBufCodecs.BOOL, BindMachinePayload::remove,
             BindMachinePayload::new);

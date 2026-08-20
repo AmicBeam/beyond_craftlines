@@ -13,6 +13,8 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.LinkedHashMap;
 
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
@@ -20,6 +22,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private final int networkId;
     private final ResourceLocation initialTarget;
     private final Set<String> availableFamilies;
+    private final List<RecipeHolder<?>> recipes;
+    private final Map<ResourceLocation, RecipeHolder<?>> recipeByOutput;
 
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
@@ -34,18 +38,24 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.networkId = networkId;
         this.initialTarget = initialTarget;
         this.availableFamilies = Set.copyOf(availableFamilies);
+        this.recipes = RecipePlanningService.visibleRecipes(player.level()).stream()
+                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
+                        || this.availableFamilies.contains(RecipePlanningService.family(holder)))
+                .toList();
+        LinkedHashMap<ResourceLocation, RecipeHolder<?>> byOutput = new LinkedHashMap<>();
+        for (RecipeHolder<?> holder : recipes)
+        {
+            ItemStack output = holder.value().getResultItem(player.level().registryAccess());
+            byOutput.putIfAbsent(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(output.getItem()), holder);
+        }
+        this.recipeByOutput = Map.copyOf(byOutput);
     }
 
     public int networkId() { return networkId; }
     public ResourceLocation initialTarget() { return initialTarget; }
     public Set<String> availableFamilies() { return availableFamilies; }
-    public List<RecipeHolder<?>> recipes()
-    {
-        return RecipePlanningService.visibleRecipes(player.level()).stream()
-                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
-                        || availableFamilies.contains(RecipePlanningService.family(holder)))
-                .toList();
-    }
+    public List<RecipeHolder<?>> recipes() { return recipes; }
+    public RecipeHolder<?> recipeForOutput(ResourceLocation output) { return recipeByOutput.get(output); }
 
     private static Set<String> readFamilies(FriendlyByteBuf data)
     {

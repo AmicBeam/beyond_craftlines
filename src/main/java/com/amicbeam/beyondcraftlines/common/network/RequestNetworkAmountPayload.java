@@ -20,7 +20,7 @@ public record RequestNetworkAmountPayload(String itemId) implements CustomPacket
     public static final Type<RequestNetworkAmountPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "request_network_amount"));
     public static final StreamCodec<ByteBuf, RequestNetworkAmountPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.STRING_UTF8, RequestNetworkAmountPayload::itemId,
+            ByteBufCodecs.stringUtf8(256), RequestNetworkAmountPayload::itemId,
             RequestNetworkAmountPayload::new);
 
     public static void handle(RequestNetworkAmountPayload payload, IPayloadContext context)

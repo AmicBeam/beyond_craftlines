@@ -21,7 +21,7 @@ public record OpenOrderMenuPayload(String targetItemId) implements CustomPacketP
     public static final Type<OpenOrderMenuPayload> TYPE = new Type<>(
             net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "open_order_menu"));
     public static final StreamCodec<ByteBuf, OpenOrderMenuPayload> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.STRING_UTF8, OpenOrderMenuPayload::targetItemId, OpenOrderMenuPayload::new);
+            ByteBufCodecs.stringUtf8(256), OpenOrderMenuPayload::targetItemId, OpenOrderMenuPayload::new);
 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
     {

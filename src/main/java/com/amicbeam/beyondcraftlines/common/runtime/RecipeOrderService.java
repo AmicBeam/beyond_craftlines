@@ -22,11 +22,9 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.HashSet;
 import java.util.Comparator;
 
 public final class RecipeOrderService
@@ -37,13 +35,30 @@ public final class RecipeOrderService
     public static RecipeOrderJob enqueue(ServerLevel level, UUID owner, int networkId,
                                          ResourceLocation target, long count, boolean blockingMode)
     {
+        return enqueue(level, owner, networkId, target, count, blockingMode,
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides.EMPTY);
+    }
+
+    public static RecipeOrderJob enqueue(ServerLevel level, UUID owner, int networkId,
+                                         ResourceLocation target, long count, boolean blockingMode,
+                                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides overrides)
+    {
+        RecipePlan plan = RecipePlanningService.plan(level, networkId, target, count, overrides);
+        if (!plan.craftable()) throw new IllegalStateException("missing: " + plan.missing());
+        return enqueueValidated(level, owner, networkId, target, count, blockingMode, plan);
+    }
+
+    public static RecipeOrderJob enqueueValidated(ServerLevel level, UUID owner, int networkId,
+                                                  ResourceLocation target, long count, boolean blockingMode,
+                                                  RecipePlan plan)
+    {
+        if (!plan.target().equals(target) || plan.requested() != count || !plan.craftable())
+            throw new IllegalArgumentException("validated plan does not match the order");
         List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
         if (active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get()
                 || active.stream().filter(job -> job.owner().equals(owner)).count()
                 >= CraftlinesConfig.MAX_ACTIVE_ORDERS_PER_PLAYER.get())
             throw new IllegalStateException("too many active recipe orders");
-        RecipePlan plan = RecipePlanningService.plan(level, networkId, target, count);
-        if (!plan.craftable()) throw new IllegalStateException("missing: " + plan.missing());
         RecipeOrderJob job = new RecipeOrderJob(UUID.randomUUID(), owner, networkId, target, count,
                 plan.steps(), 0, blockingMode, plan.steps().isEmpty() ? RecipeOrderJob.Status.COMPLETE
                 : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(), 0, null);
@@ -66,21 +81,27 @@ public final class RecipeOrderService
         List<RecipeOrderJob> jobs = data.active().stream()
                 .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt)
                         .thenComparing(RecipeOrderJob::id)).toList();
-        Set<Integer> activeNetworks = new HashSet<>();
+        RuntimeOrderIndex<Integer, MachineKey> index = new RuntimeOrderIndex<>();
+        for (RecipeOrderJob job : jobs)
+            if (job.externalWait() != null) index.occupyMachine(new MachineKey(
+                    job.externalWait().machineDimension(), job.externalWait().machinePosition()));
         for (RecipeOrderJob job : jobs)
         {
-            if (!activeNetworks.add(job.networkId()))
+            if (!index.claimNetwork(job.networkId()))
             {
-                data.put(job.with(RecipeOrderJob.Status.PAUSED, "waiting for network order transaction"));
+                String reason = "waiting for network order transaction";
+                if (job.status() != RecipeOrderJob.Status.PAUSED || !job.message().equals(reason))
+                    data.put(job.with(RecipeOrderJob.Status.PAUSED, reason));
                 continue;
             }
-            try { data.put(executeStep(server, job)); }
+            try { data.put(executeStep(server, job, index)); }
             catch (RuntimeException exception)
             { data.put(job.with(RecipeOrderJob.Status.ERROR, exception.getMessage())); }
         }
     }
 
-    private static RecipeOrderJob executeStep(MinecraftServer server, RecipeOrderJob job)
+    private static RecipeOrderJob executeStep(MinecraftServer server, RecipeOrderJob job,
+                                               RuntimeOrderIndex<Integer, MachineKey> index)
     {
         DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
         if (network == null) return job.with(RecipeOrderJob.Status.PAUSED, "network unavailable");
@@ -92,7 +113,7 @@ public final class RecipeOrderService
         {
             Optional<NativeFurnaceRegistry.NativeFurnace> furnace =
                     NativeFurnaceRegistry.furnaceFor(server, job.networkId(), step.family());
-            return furnace.isPresent() ? reserveNativeFurnace(server, network, job, step, furnace.get())
+            return furnace.isPresent() ? reserveNativeFurnace(network, job, step, furnace.get(), index)
                     : job.with(RecipeOrderJob.Status.PAUSED,
                     "BD network furnace unavailable for " + step.family());
         }
@@ -101,7 +122,7 @@ public final class RecipeOrderService
         if (provisioner.isPresent()) return deliverToProvisioner(network, job, step, provisioner.get());
         Optional<DeviceBindingRegistry.BoundMachine> machine =
                 DeviceBindingRegistry.machineFor(server, job.networkId(), step.family());
-        if (machine.isPresent()) return reserveMachine(server, job, step, machine.get());
+        if (machine.isPresent()) return reserveMachine(job, step, machine.get(), index);
         if (!"crafting".equals(step.family()))
             return job.with(RecipeOrderJob.Status.PAUSED, "bound machine unavailable for " + step.family());
         long gameTime = server.overworld().getGameTime();
@@ -155,24 +176,22 @@ public final class RecipeOrderService
     {
         UnifiedStorage storage = network.getUnifiedStorage();
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
-                level, storage, step.recipe(), step.output(), step.crafts());
+                level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections());
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);
         return job.completeCrafts(attempt.crafts(), nextTick);
     }
 
-    private static RecipeOrderJob reserveMachine(MinecraftServer server, RecipeOrderJob job,
+    private static RecipeOrderJob reserveMachine(RecipeOrderJob job,
                                                   RecipePlan.Step step,
-                                                  DeviceBindingRegistry.BoundMachine machine)
+                                                  DeviceBindingRegistry.BoundMachine machine,
+                                                  RuntimeOrderIndex<Integer, MachineKey> index)
     {
         BindingRecord binding = machine.binding();
-        boolean busy = RecipeOrderSavedData.get(server).active().stream()
-                .filter(other -> !other.id().equals(job.id()) && !terminal(other.status()))
-                .map(RecipeOrderJob::externalWait).filter(Objects::nonNull)
-                .anyMatch(wait -> wait.machineDimension().equals(binding.dimension())
-                        && wait.machinePosition().equals(binding.position()));
-        if (busy) return job.with(RecipeOrderJob.Status.PAUSED, "bound machine is busy");
+        MachineKey machineKey = new MachineKey(binding.dimension(), binding.position());
+        if (index.isMachineOccupied(machineKey))
+            return job.with(RecipeOrderJob.Status.PAUSED, "bound machine is busy");
         if (step.inputs().stream().anyMatch(input -> input.item().equals(step.output())))
             return job.with(RecipeOrderJob.Status.ERROR,
                     "generic machine automation does not support output items that are also inputs");
@@ -189,20 +208,19 @@ public final class RecipeOrderService
         List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(binding.dimension(),
                 binding.position(), step.output(), false, baseline, 0, 0, output, 0, batchInputs);
+        index.occupyMachine(machineKey);
         return job.awaitExternal(wait, "bound machine reserved; preparing inputs");
     }
 
-    private static RecipeOrderJob reserveNativeFurnace(MinecraftServer server, DimensionsNet network,
+    private static RecipeOrderJob reserveNativeFurnace(DimensionsNet network,
                                                         RecipeOrderJob job, RecipePlan.Step step,
-                                                        NativeFurnaceRegistry.NativeFurnace nativeFurnace)
+                                                        NativeFurnaceRegistry.NativeFurnace nativeFurnace,
+                                                        RuntimeOrderIndex<Integer, MachineKey> index)
     {
         BaseNetFurnaceBlockEntity<?> furnace = nativeFurnace.blockEntity();
-        boolean busy = RecipeOrderSavedData.get(server).active().stream()
-                .filter(other -> !other.id().equals(job.id()) && !terminal(other.status()))
-                .map(RecipeOrderJob::externalWait).filter(Objects::nonNull)
-                .anyMatch(wait -> wait.machineDimension().equals(nativeFurnace.level().dimension())
-                        && wait.machinePosition().equals(furnace.getBlockPos()));
-        if (busy) return job.with(RecipeOrderJob.Status.PAUSED, "BD network furnace is busy");
+        MachineKey machineKey = new MachineKey(nativeFurnace.level().dimension(), furnace.getBlockPos());
+        if (index.isMachineOccupied(machineKey))
+            return job.with(RecipeOrderJob.Status.PAUSED, "BD network furnace is busy");
         Set<ResourceLocation> inputItems = step.inputs().stream().map(RecipePlan.Material::item)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (BlockingModeLogic.shouldWait(job.blockingMode(),
@@ -219,6 +237,7 @@ public final class RecipeOrderService
                 nativeFurnace.level().dimension(), furnace.getBlockPos(), step.output(), true,
                 0,
                 networkAmount(network.getUnifiedStorage(), step.output()), 0, output, 0, batchInputs);
+        index.occupyMachine(machineKey);
         return job.awaitExternal(wait, "BD network furnace reserved; preparing inputs");
     }
 
@@ -366,4 +385,7 @@ public final class RecipeOrderService
         return status == RecipeOrderJob.Status.COMPLETE || status == RecipeOrderJob.Status.CANCELLED
                 || status == RecipeOrderJob.Status.ERROR;
     }
+
+    private record MachineKey(net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension,
+                              net.minecraft.core.BlockPos position) {}
 }

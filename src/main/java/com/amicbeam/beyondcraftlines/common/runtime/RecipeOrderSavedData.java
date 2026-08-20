@@ -135,7 +135,17 @@ public final class RecipeOrderSavedData extends SavedData
             CompoundTag value = new CompoundTag(); value.putString("item", input.item().toString());
             value.putLong("amount", input.amount()); inputs.add(value);
         }
-        tag.put("inputs", inputs); return tag;
+        tag.put("inputs", inputs);
+        ListTag selections = new ListTag();
+        for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
+        {
+            CompoundTag value = new CompoundTag();
+            value.putInt("slot", selection.slot());
+            value.putString("item", selection.item().toString());
+            selections.add(value);
+        }
+        tag.put("ingredient_selections", selections);
+        return tag;
     }
 
     private static RecipePlan.Step readStep(CompoundTag tag)
@@ -147,8 +157,17 @@ public final class RecipeOrderSavedData extends SavedData
             CompoundTag value = encoded.getCompound(i);
             inputs.add(new RecipePlan.Material(ResourceLocation.parse(value.getString("item")), value.getLong("amount")));
         }
+        List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
+        ListTag encodedSelections = tag.getList("ingredient_selections", Tag.TAG_COMPOUND);
+        for (int i = 0; i < encodedSelections.size(); i++)
+        {
+            CompoundTag value = encodedSelections.getCompound(i);
+            selections.add(new RecipePlan.IngredientSelection(value.getInt("slot"),
+                    ResourceLocation.parse(value.getString("item"))));
+        }
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
-                ResourceLocation.parse(tag.getString("output")), tag.getLong("per"), tag.getLong("crafts"), inputs);
+                ResourceLocation.parse(tag.getString("output")), tag.getLong("per"), tag.getLong("crafts"),
+                inputs, selections);
     }
 
     private static RecipeOrderJob.ExternalWait readExternalWait(CompoundTag job)

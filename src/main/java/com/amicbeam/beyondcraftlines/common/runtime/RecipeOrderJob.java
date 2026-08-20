@@ -51,7 +51,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         if (completedCrafts == current.crafts()) return advanceAfterCrafting(nextAllowedTick);
         List<RecipePlan.Step> remaining = new java.util.ArrayList<>(steps);
         remaining.set(nextStep, new RecipePlan.Step(current.recipe(), current.family(), current.output(),
-                current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs()));
+                current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs(),
+                current.ingredientSelections()));
         return new RecipeOrderJob(id, owner, networkId, target, requested, remaining, nextStep,
                 blockingMode, Status.RUNNING, "", createdAt, nextAllowedTick, null);
     }
@@ -69,7 +70,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
             if (amount > 0) remainingInputs.add(new RecipePlan.Material(input.item(), amount));
         }
         remaining.set(nextStep, new RecipePlan.Step(current.recipe(), current.family(), current.output(),
-                current.outputPerCraft(), current.crafts() - 1, remainingInputs));
+                current.outputPerCraft(), current.crafts() - 1, remainingInputs,
+                current.ingredientSelections()));
         return new RecipeOrderJob(id, owner, networkId, target, requested, remaining, nextStep,
                 true, Status.RUNNING, "", createdAt, nextCraftingTick, null);
     }

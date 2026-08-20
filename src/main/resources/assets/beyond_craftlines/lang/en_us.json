@@ -43,11 +43,13 @@
   "gui.beyond_craftlines.network_owned": "In network: %s",
   "gui.beyond_craftlines.network_owned_loading": "In network: …",
   "gui.beyond_craftlines.recipe_tree": "Recipe tree",
+  "gui.beyond_craftlines.tree_resolution_help": "Left-click reference · Right-click recipe · Shift ingredient · Ctrl auto",
   "gui.beyond_craftlines.no_selection": "Select a product on the left",
   "gui.beyond_craftlines.orders": "Order status",
   "gui.beyond_craftlines.blocking_mode_on": "B: On",
   "gui.beyond_craftlines.blocking_mode_off": "B: Off",
   "tooltip.beyond_craftlines.blocking_mode_on": "Blocking mode is enabled: send one craft at a time and wait for its output; pre-existing recipe inputs in the target also block dispatch.",
   "tooltip.beyond_craftlines.blocking_mode_off": "Blocking mode is disabled: ignore existing target inputs and insert according to available capacity.",
-  "gui.beyond_craftlines.cancel": "Cancel"
+  "gui.beyond_craftlines.cancel": "Cancel",
+  "tooltip.beyond_craftlines.cancel": "Cancellation does not recover materials already sent to machines or providers, or consumed by completed steps."
 }

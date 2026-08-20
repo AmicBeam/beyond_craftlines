@@ -25,7 +25,8 @@ public record RecipePlan(ResourceLocation target, long requested, List<Step> ste
     }
 
     public record Step(ResourceLocation recipe, String family, ResourceLocation output,
-                       long outputPerCraft, long crafts, List<Material> inputs)
+                       long outputPerCraft, long crafts, List<Material> inputs,
+                       List<IngredientSelection> ingredientSelections)
     {
         public Step
         {
@@ -33,6 +34,16 @@ public record RecipePlan(ResourceLocation target, long requested, List<Step> ste
                     || outputPerCraft < 1 || crafts < 1)
                 throw new IllegalArgumentException("invalid recipe step");
             inputs = List.copyOf(inputs);
+            ingredientSelections = List.copyOf(ingredientSelections);
+        }
+    }
+
+    /** Concrete item selected for one recipe ingredient slot. Empty recipe slots are omitted. */
+    public record IngredientSelection(int slot, ResourceLocation item)
+    {
+        public IngredientSelection
+        {
+            if (slot < 0 || item == null) throw new IllegalArgumentException("invalid ingredient selection");
         }
     }
 }

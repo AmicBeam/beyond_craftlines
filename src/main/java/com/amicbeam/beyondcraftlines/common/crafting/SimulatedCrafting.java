@@ -4,8 +4,10 @@ import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
@@ -26,18 +28,19 @@ public final class SimulatedCrafting
     public static Attempt craftOne(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
                                    ResourceLocation expectedOutput)
     {
-        return craftBatch(level, storage, recipeId, expectedOutput, 1);
+        return craftBatch(level, storage, recipeId, expectedOutput, 1, List.of());
     }
 
     public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
-                                     ResourceLocation expectedOutput, long requestedCrafts)
+                                     ResourceLocation expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections)
     {
         if (requestedCrafts < 1) return Attempt.failed("invalid crafting batch size");
         var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed("crafting recipe is no longer available: " + recipeId);
 
-        Prepared prepared = prepare(storage, recipe, level);
+        Prepared prepared = prepare(storage, recipe, level, selections);
         if (prepared == null) return Attempt.failed("waiting for matching crafting ingredients");
 
         ItemStack output;
@@ -106,15 +109,20 @@ public final class SimulatedCrafting
         return new Attempt(true, "", SaturatingLongMath.multiply(output.getCount(), batch), batch);
     }
 
-    private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level)
+    private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level,
+                                    List<RecipePlan.IngredientSelection> selections)
     {
         List<Ingredient> ingredients = recipe.getIngredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
         List<ItemStackKey> slotKeys = new ArrayList<>();
         Map<ItemStackKey, Long> reserved = new LinkedHashMap<>();
         List<KeyAmount> availableStacks = List.copyOf(storage.getStorage());
-        for (Ingredient ingredient : ingredients)
+        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        for (RecipePlan.IngredientSelection selection : selections)
+            selectedItems.put(selection.slot(), selection.item());
+        for (int ingredientIndex = 0; ingredientIndex < ingredients.size(); ingredientIndex++)
         {
+            Ingredient ingredient = ingredients.get(ingredientIndex);
             if (ingredient.isEmpty())
             {
                 chosen.add(ItemStack.EMPTY);
@@ -127,6 +135,9 @@ public final class SimulatedCrafting
                 if (!(available.key() instanceof ItemStackKey key)
                         || available.amount() <= reserved.getOrDefault(key, 0L)) continue;
                 ItemStack candidate = key.getReadOnlyStack();
+                ResourceLocation selectedItem = selectedItems.get(ingredientIndex);
+                if (selectedItem != null && !BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selectedItem))
+                    continue;
                 if (ingredient.test(candidate)) { selected = key; break; }
             }
             if (selected == null) return null;
@@ -139,13 +150,26 @@ public final class SimulatedCrafting
         return input == null ? null : new Prepared(input, List.copyOf(slotKeys));
     }
 
-    static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, ServerLevel level)
+    static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
+                                             List<RecipePlan.IngredientSelection> selections)
     {
         List<Ingredient> ingredients = holder.value().getIngredients();
         boolean[] reusable = new boolean[ingredients.size()];
         if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;
-        List<ItemStack> samples = ingredients.stream().map(ingredient -> ingredient.isEmpty()
-                || ingredient.getItems().length == 0 ? ItemStack.EMPTY : ingredient.getItems()[0].copyWithCount(1)).toList();
+        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        for (RecipePlan.IngredientSelection selection : selections)
+            selectedItems.put(selection.slot(), selection.item());
+        List<ItemStack> samples = new ArrayList<>(ingredients.size());
+        for (int i = 0; i < ingredients.size(); i++)
+        {
+            Ingredient ingredient = ingredients.get(i);
+            ItemStack sample = ItemStack.EMPTY;
+            ResourceLocation selected = selectedItems.get(i);
+            for (ItemStack candidate : ingredient.getItems())
+                if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+                { sample = candidate.copyWithCount(1); break; }
+            samples.add(sample);
+        }
         try
         {
             CraftingInput input = matchingInput(recipe, samples, level);
@@ -159,7 +183,7 @@ public final class SimulatedCrafting
         return reusable;
     }
 
-    private static CraftingInput matchingInput(CraftingRecipe recipe, List<ItemStack> chosen, ServerLevel level)
+    private static CraftingInput matchingInput(CraftingRecipe recipe, List<ItemStack> chosen, Level level)
     {
         if (chosen.size() > 9) return null;
         if (recipe instanceof ShapedRecipe shaped)

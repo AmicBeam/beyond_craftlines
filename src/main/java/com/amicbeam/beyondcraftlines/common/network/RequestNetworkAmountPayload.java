@@ -27,7 +27,8 @@ public record RequestNetworkAmountPayload(String itemId) implements CustomPacket
     {
         context.enqueueWork(() -> {
             if (!(context.player() instanceof ServerPlayer player)
-                    || !(player.containerMenu instanceof CraftlineOrderMenu menu)) return;
+                    || !(player.containerMenu instanceof CraftlineOrderMenu menu)
+                    || !menu.canAccessNetwork(player)) return;
             ResourceLocation itemId = ResourceLocation.tryParse(payload.itemId());
             if (itemId == null || !BuiltInRegistries.ITEM.containsKey(itemId)) return;
             DimensionsNet network = DimensionsNet.getNetFromId(menu.networkId());

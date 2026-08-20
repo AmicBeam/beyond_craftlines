@@ -43,11 +43,13 @@
   "gui.beyond_craftlines.network_owned": "网络已有：%s",
   "gui.beyond_craftlines.network_owned_loading": "网络已有：…",
   "gui.beyond_craftlines.recipe_tree": "配方树",
+  "gui.beyond_craftlines.tree_resolution_help": "左键跳转引用 · 右键换配方 · Shift换原料 · Ctrl恢复自动",
   "gui.beyond_craftlines.no_selection": "请从左侧选择产物",
   "gui.beyond_craftlines.orders": "订单状态",
   "gui.beyond_craftlines.blocking_mode_on": "阻挡 开",
   "gui.beyond_craftlines.blocking_mode_off": "阻挡 关",
   "tooltip.beyond_craftlines.blocking_mode_on": "阻挡模式已开启：每次只发送一批；上一批完成并回收后才发送下一批，目标机器预存本配方输入时也会等待。",
   "tooltip.beyond_craftlines.blocking_mode_off": "阻挡模式已关闭：忽略目标机器中的已有输入，只按可用容量投料。",
-  "gui.beyond_craftlines.cancel": "取消"
+  "gui.beyond_craftlines.cancel": "取消",
+  "tooltip.beyond_craftlines.cancel": "取消不会追回已送入机器、供给器或已由完成步骤消耗的材料。"
 }

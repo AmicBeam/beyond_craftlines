@@ -1,0 +1,149 @@
+package com.amicbeam.beyondcraftlines.common.runtime;
+
+import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.saveddata.SavedData;
+
+import java.util.*;
+
+public final class RecipeOrderSavedData extends SavedData
+{
+    private static final String NAME = "beyond_craftlines_recipe_orders";
+    private final Map<UUID, RecipeOrderJob> jobs = new LinkedHashMap<>();
+
+    public static RecipeOrderSavedData get(MinecraftServer server)
+    {
+        return server.overworld().getDataStorage().computeIfAbsent(
+                new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME);
+    }
+
+    public static RecipeOrderSavedData load(CompoundTag tag, HolderLookup.Provider registries)
+    {
+        RecipeOrderSavedData data = new RecipeOrderSavedData();
+        ListTag jobs = tag.getList("jobs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < jobs.size(); i++)
+        {
+            try
+            {
+                CompoundTag value = jobs.getCompound(i);
+                List<RecipePlan.Step> steps = new ArrayList<>();
+                ListTag encodedSteps = value.getList("steps", Tag.TAG_COMPOUND);
+                for (int j = 0; j < encodedSteps.size(); j++) steps.add(readStep(encodedSteps.getCompound(j)));
+                RecipeOrderJob job = new RecipeOrderJob(value.getUUID("id"), value.getUUID("owner"),
+                        value.getInt("network"), ResourceLocation.parse(value.getString("target")),
+                        value.getLong("requested"), steps, value.getInt("next"),
+                        value.getBoolean("blocking_mode"),
+                        RecipeOrderJob.Status.valueOf(value.getString("status")), value.getString("message"),
+                        value.getLong("created"), value.getLong("next_crafting_tick"), readExternalWait(value));
+                data.jobs.put(job.id(), job);
+            }
+            catch (RuntimeException ignored) {}
+        }
+        return data;
+    }
+
+    public List<RecipeOrderJob> all() { return List.copyOf(jobs.values()); }
+    public List<RecipeOrderJob> forOwner(UUID owner) { return jobs.values().stream().filter(j -> j.owner().equals(owner)).toList(); }
+    public RecipeOrderJob get(UUID id) { return jobs.get(id); }
+    public void put(RecipeOrderJob job) { jobs.put(job.id(), job); setDirty(); }
+
+    @Override
+    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries)
+    {
+        ListTag list = new ListTag();
+        for (RecipeOrderJob job : jobs.values())
+        {
+            CompoundTag value = new CompoundTag();
+            value.putUUID("id", job.id()); value.putUUID("owner", job.owner());
+            value.putInt("network", job.networkId()); value.putString("target", job.target().toString());
+            value.putLong("requested", job.requested()); value.putInt("next", job.nextStep());
+            value.putBoolean("blocking_mode", job.blockingMode());
+            value.putString("status", job.status().name()); value.putString("message", job.message());
+            value.putLong("created", job.createdAt());
+            value.putLong("next_crafting_tick", job.nextCraftingTick());
+            if (job.externalWait() != null)
+            {
+                CompoundTag wait = new CompoundTag();
+                wait.putString("dimension", job.externalWait().machineDimension().location().toString());
+                wait.putLong("position", job.externalWait().machinePosition().asLong());
+                wait.putString("output", job.externalWait().output().toString());
+                wait.putBoolean("native_furnace", job.externalWait().nativeFurnace());
+                wait.putLong("baseline", job.externalWait().baseline());
+                wait.putLong("network_baseline", job.externalWait().networkBaseline());
+                wait.putLong("network_observed", job.externalWait().networkObserved());
+                wait.putLong("amount", job.externalWait().amount());
+                wait.putLong("collected", job.externalWait().collected());
+                ListTag remaining = new ListTag();
+                for (RecipePlan.Material input : job.externalWait().remainingInputs())
+                {
+                    CompoundTag encoded = new CompoundTag();
+                    encoded.putString("item", input.item().toString());
+                    encoded.putLong("amount", input.amount());
+                    remaining.add(encoded);
+                }
+                wait.put("remaining_inputs", remaining);
+                value.put("external_wait", wait);
+            }
+            ListTag steps = new ListTag();
+            job.steps().forEach(step -> steps.add(writeStep(step)));
+            value.put("steps", steps); list.add(value);
+        }
+        tag.put("jobs", list);
+        return tag;
+    }
+
+    private static CompoundTag writeStep(RecipePlan.Step step)
+    {
+        CompoundTag tag = new CompoundTag();
+        tag.putString("recipe", step.recipe().toString()); tag.putString("family", step.family());
+        tag.putString("output", step.output().toString()); tag.putLong("per", step.outputPerCraft());
+        tag.putLong("crafts", step.crafts());
+        ListTag inputs = new ListTag();
+        for (RecipePlan.Material input : step.inputs())
+        {
+            CompoundTag value = new CompoundTag(); value.putString("item", input.item().toString());
+            value.putLong("amount", input.amount()); inputs.add(value);
+        }
+        tag.put("inputs", inputs); return tag;
+    }
+
+    private static RecipePlan.Step readStep(CompoundTag tag)
+    {
+        List<RecipePlan.Material> inputs = new ArrayList<>();
+        ListTag encoded = tag.getList("inputs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < encoded.size(); i++)
+        {
+            CompoundTag value = encoded.getCompound(i);
+            inputs.add(new RecipePlan.Material(ResourceLocation.parse(value.getString("item")), value.getLong("amount")));
+        }
+        return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
+                ResourceLocation.parse(tag.getString("output")), tag.getLong("per"), tag.getLong("crafts"), inputs);
+    }
+
+    private static RecipeOrderJob.ExternalWait readExternalWait(CompoundTag job)
+    {
+        if (!job.contains("external_wait", Tag.TAG_COMPOUND)) return null;
+        CompoundTag wait = job.getCompound("external_wait");
+        List<RecipePlan.Material> remaining = new ArrayList<>();
+        ListTag encoded = wait.getList("remaining_inputs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < encoded.size(); i++)
+        {
+            CompoundTag input = encoded.getCompound(i);
+            remaining.add(new RecipePlan.Material(ResourceLocation.parse(input.getString("item")),
+                    input.getLong("amount")));
+        }
+        return new RecipeOrderJob.ExternalWait(
+                net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                        ResourceLocation.parse(wait.getString("dimension"))),
+                net.minecraft.core.BlockPos.of(wait.getLong("position")),
+                ResourceLocation.parse(wait.getString("output")),
+                wait.getBoolean("native_furnace"), wait.getLong("baseline"),
+                wait.getLong("network_baseline"), wait.getLong("network_observed"), wait.getLong("amount"),
+                wait.getLong("collected"), remaining);
+    }
+}

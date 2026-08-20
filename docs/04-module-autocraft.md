@@ -15,8 +15,7 @@
 - 配方树预览（EMI 视觉风格）
 - BD 维度网络界面内的下单执行
 - 进度与取消
-- 稳态构象图节点嵌套调用入口
-- 网络物品“可由构象图产出”的标记数据
+- 第三方机器直连后的自动投料、真实加工等待与产物回收
 
 不负责：结构捕获、沙盒、驱动器 GUI（只调用其黑盒执行器）。
 
@@ -39,7 +38,7 @@
 2. `smelting`：对接 BD `NetFurnace`（可配允许原版熔炉绑定执行）。
 3. `blasting`：`NetBlastFurnace`
 4. `smoking`：`NetSmoker`
-5. `blueprint_blackbox`：稳态构象图
+5. 由网络联结器直接绑定的第三方 `RecipeType`；自动投料，等待真实加工并回收产物
 6. 扩展族：数据包/`RecipeFamilyProvider`（默认仍受总闸配置）
 
 ## 4. 核心链路：预览
@@ -47,9 +46,9 @@
 ```text
 PreviewRequest
   net = NetAccessService.resolve(player, hint)
-  snapshot = StorageSnapshot.from(net) + playerInv + knownBlueprints
+  snapshot = StorageSnapshot.from(net) + playerInv
   root = RecipeIndex.findCandidates(target)
-  plan = PlanBuilder.build(root, count, snapshot, limits)
+  plan = PlanBuilder.build(root, manufacturingCount, snapshot.withoutTargetStock(), limits)
   validate no cycle / depth / timeout
   return PlanSummaryDTO
 ```
@@ -60,10 +59,9 @@ PreviewRequest
 PlanNode build(Goal goal, Snapshot snap, Context ctx) {
   if (snap.covers(goal)) return networkNode(goal);
   if (ctx.depth > maxDepth) return missing(goal);
-  Optional<CompiledBlueprint> bp = blueprintIndex.findProducer(goal);
   List<RecipeRecord> recipes = index.find(goal);
-  // 默认优先：network > native recipes > blueprint > missing
-  RecipeRecord chosen = select(recipes, bp, ctx.preferences);
+  // 默认优先：network > native/bound recipes > missing
+  RecipeRecord chosen = select(recipes, ctx.preferences);
   if (chosen == null) return missing(goal);
   List<PlanNode> deps = new ArrayList<>();
   for (IngredientNeed need : expand(chosen, goal.count)) {
@@ -72,6 +70,10 @@ PlanNode build(Goal goal, Snapshot snap, Context ctx) {
   return craftNode(chosen, deps);
 }
 ```
+
+根目标的数量始终表示“本次额外制造多少”，并在界面中另行显示服务端查询到的网络现有数量。现有目标成品不参与抵扣；递归展开后的原料和中间产物仍优先使用网络库存。例如网络已有 5 个目标物、输入 10，下单完成后网络应有 15 个（不考虑玩家同时取用）。
+
+配方批次不可按比例拆分。若请求数量小于单次配方产出，`crafts = ceil(requested / outputPerCraft)`，仍执行一次完整配方并保留全部实际产物。例如祭坛配方固定消耗 8 份供品并产出 8 个目标物时，请求 1 也必须交付完整一批原料并实际产出 8；多出的 7 个是合法批次余量，不能销毁。
 
 ## 5. 核心链路：执行
 
@@ -118,8 +120,17 @@ interface DeviceExecutor {
 }
 ```
 
-`CraftingVirtualExecutor`：直接在服务端用配方匹配合成，写入网络。  
-`NetFurnaceExecutor`：向绑定网络熔炉投放输入与燃料，轮询输出槽/进度。
+`CraftingVirtualExecutor`：从网络中按 `Ingredient.test` 选择保留完整 Data Components 的实际输入，每次构造一次 `CraftingInput`，依次调用原配方的 `matches`、`assemble` 与 `getRemainingItems`，并以事务方式把动态产物和返还物写回网络。定制 serializer、升级时复制组件、耐久工具及容器返还物不走“物品 ID 扣料后直接变产物”的捷径。
+`NetFurnaceExecutor`：通过 BD 已公开的网络方块事件维护已加载炉索引，向对应网络炉输入存储投料，等待产物回网；不创建联结器绑定记录，也不要求 BD 提供订单 API。
+`BoundMachineExecutor`：通过第三方机器公开的带方向物品能力渐进投料、轮询并回收本订单新增产物。
+
+当前订单事务由 Craftlines 自己按 BD 网络严格 FIFO 调度；提取不足时暂停，机器拒收的余量立即退回网络。BD 只提供存储和机器能力，不负责附属订单预留。
+
+普通合成按实际合成次数限速。每到一个允许的执行时点，原子执行一次原配方模拟；同一节点的超大批次保留为 `long` 剩余次数并逐次推进。节点间隔由服务端配置 `crafting.virtualCraftingNodeIntervalTicks` 控制，默认 `20` tick。这种执行方式确保上一轮返还的受损工具或带组件容器会成为下一轮的真实输入。
+
+订单数量、配方次数、材料需求和网络计数均使用正 `long`。界面与网络包允许超过 `Integer.MAX_VALUE`，上限为 `Long.MAX_VALUE`；规划中的加法、乘法与向上取整采用饱和算术，超出存储计量范围时钳制为 `Long.MAX_VALUE`，不得回绕为负数或抛出算术溢出。
+
+下单界面的阻挡模式沿用 AE2 Pattern Provider 语义，默认关闭。开启后，每次只向目标机器推送一次配方所需的输入，必须等该批产物完成并回收后才推送下一批；若目标机器事先存在当前配方的任一输入材料，首批同样等待。关闭后按机器可接收容量投放当前步骤的全部批次。检查范围是目标机器，不是整个 BD 网络。
 
 ## 6. UI 细节（最终态，EMI 风格）
 
@@ -141,22 +152,13 @@ interface DeviceExecutor {
 
 1. `PlanBuilderTest`：简单链、多输出、标签原料、替代配方
 2. `CycleDetectionTest`
-3. `BlueprintNestingTest`：图纸嵌套与防环
-4. `LedgerReserveRefundTest`
-5. `SchedulerParallelismTest`：无依赖节点并行
-6. `VariantPinningTest`：同槽不混变体
-7. `PermissionDeniedTest`
-8. `PlanCacheInvalidationTest`：库存变化后旧计划失效
+3. `LedgerReserveRefundTest`
+4. `SchedulerParallelismTest`：无依赖节点并行
+5. `VariantPinningTest`：同槽不混变体
+6. `PermissionDeniedTest`
+7. `PlanCacheInvalidationTest`：库存变化后旧计划失效
 
-## 8. 网络界面标记
-
-`NetworkProductMarkerService`：
-
-- 输入：当前网络可见物品列表 + 玩家可见稳态构象图库
-- 输出：可被构象图生产的 item key 集合
-- 客户端在 BD 网络格子上画角标；中键命中后打开对应目标的配方树
-
-## 9. 版本适配点
+## 8. 版本适配点
 
 - JEI API 在 1.20.1 / 1.21+ 包名差异 → versions 源集
 - BD GUI 类名/菜单类型差异 → `NetAccessService` 版本实现

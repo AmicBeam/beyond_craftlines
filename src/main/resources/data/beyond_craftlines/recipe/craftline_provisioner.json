@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": [
+    "IHI",
+    "RCR",
+    "ISI"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "H": {
+      "item": "minecraft:hopper"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "C": {
+      "item": "beyonddimensions:shattered_space_time_crystallization"
+    },
+    "S": {
+      "item": "minecraft:chest"
+    }
+  },
+  "result": {
+    "id": "beyond_craftlines:craftline_provisioner",
+    "count": 1
+  }
+}

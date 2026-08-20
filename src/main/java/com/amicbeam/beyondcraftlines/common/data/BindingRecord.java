@@ -15,13 +15,17 @@ public record BindingRecord(
         ResourceKey<Level> dimension,
         BlockPos position,
         DeviceType deviceType,
+        Set<ResourceLocation> jeiRecipeTypes,
         Set<String> recipeFamilies,
         ResourceLocation lastBlockId,
+        ResourceKey<Level> provisionerDimension,
+        BlockPos provisionerPosition,
         String nickname,
         boolean favorite,
         long boundGameTime
 ) {
     public BindingRecord {
+        jeiRecipeTypes = Set.copyOf(jeiRecipeTypes);
         recipeFamilies = Set.copyOf(recipeFamilies);
     }
 }

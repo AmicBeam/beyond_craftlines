@@ -94,9 +94,10 @@ beyond_craftlines-<mod_version>+<minecraft_version>.jar
 
 - Beyond Dimensions：`mandatory=true`，`ordering=AFTER`
 
-### 5.2 软依赖
+### 5.2 依赖
 
-- Sky Logistics / JEI / Jade：`mandatory=false`（无 EMI）
+- JEI：必需依赖（无 EMI）
+- Sky Logistics / Jade：可选依赖
 - 兼容代码放独立源集或 `integrate/*` 包，类加载用 mod presence 守卫
 
 ### 5.3 本地/离线构建

@@ -1,0 +1,24 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "pattern": [
+    " I ",
+    "RCR",
+    " I "
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "C": {
+      "item": "beyonddimensions:shattered_space_time_crystallization"
+    }
+  },
+  "result": {
+    "id": "beyond_craftlines:network_linker",
+    "count": 1
+  }
+}

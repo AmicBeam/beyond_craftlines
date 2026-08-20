@@ -14,23 +14,19 @@ enableDrive = true
 enableDuplicator = true
 enableJeiButtons = true          # 仅 BD 维度网络界面打开时生效
 enableNetworkMiddleClickOrder = true
-enableCompiledProductMarker = true
 
 [recipeFamilies]
 enableCrafting = true
 enableSmelting = true
 enableBlasting = true
 enableSmoking = true
-enableBlueprintBlackbox = true
 enableExternalExecutors = false
 allowVanillaFurnaceExecution = false
 
 [planning]
 preferNetworkStock = true
-preferNativeRecipesOverBlueprint = true
 maxDepth = 64
 maxNodes = 4096
-maxBlueprintNesting = 4
 
 [capture]
 maxVolumeBlocks = 32768   # e.g. 32*32*32
@@ -62,6 +58,9 @@ mainThreadExecNodesPerTick = 16
 pasteBlocksPerTick = 2048
 maxActiveChainsPerPlayer = 3
 
+[crafting]
+virtualCraftingNodeIntervalTicks = 20 # 普通合成树每个模拟合成节点的执行间隔；节点内批量不受堆叠上限影响
+
 [security]
 dangerousBlockBlacklist = [
   "minecraft:command_block",
@@ -88,7 +87,6 @@ retainFinishedReports = 32
 ```toml
 [ui]
 showJeiButtons = true            # still requires BD network GUI context
-showCompiledProductMarker = true
 middleClickOpensOrderTree = true
 rememberOutputDestination = true
 planZoomSensitivity = 1.0
@@ -101,6 +99,9 @@ hudY = 8
 
 [anchor]
 showBoundaryParticles = true
+
+[binding]
+showBoundMachineFrames = true # 显示已绑定机器的黑蓝超维边框
 ```
 
 ## 4. 配置原则

@@ -40,4 +40,9 @@
 - [x] 配方树界面学习 EMI 风格（无 EMI 联动）
 - [x] BD 网络界面下单入口 + 中键 + 稳态产物标记
 - [x] 原版屏障围挡；观察者出界 5 秒退出
-- [x] 超维风命名（时空联结器/构象图等）
+- [x] 超维风命名（网络联结器/构象图等）
+# 当前边界提示
+
+构象捕获、沙盒试产、报告、稳定构象图和产线执行已迁移到独立的 `Sky Logistics: Linefold`。本目录旧章节中描述构象域的部分仅保留为拆分前设计历史；当前 `beyond_craftlines` 只实现 JEI/BD 下单、配方树、第三方机器绑定与供给器。详见 [18-linefold-split.md](18-linefold-split.md)。
+
+完整人工验收流程见 [manual-acceptance.md](manual-acceptance.md)。

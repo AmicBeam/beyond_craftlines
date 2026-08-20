@@ -1,10 +1,12 @@
 package com.amicbeam.beyondcraftlines.common.event;
 
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
+import com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockEvent;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 @EventBusSubscriber(modid = "beyond_craftlines")
@@ -16,28 +18,7 @@ public final class CraftlinesEvents
     public static void onServerTick(ServerTickEvent.Post event)
     {
         var server = event.getServer();
-        com.amicbeam.beyondcraftlines.common.structure.TrialSessionTickService.tick(server);
-        com.amicbeam.beyondcraftlines.common.runtime.ProductionQueueService.tick(server);
-        for (var session : com.amicbeam.beyondcraftlines.common.structure.SandboxSessionSavedData
-                .get(server).all())
-        {
-            if (com.amicbeam.beyondcraftlines.common.structure.SandboxPasteRuntimeService
-                    .tick(server, session.id()))
-            {
-                var player = server.getPlayerList().getPlayer(session.owner());
-                if (player != null && com.amicbeam.beyondcraftlines.common.structure.SandboxPlayerStateSavedData
-                        .get(server).get(player.getUUID()) == null)
-                    com.amicbeam.beyondcraftlines.common.structure.SandboxExitService.enter(
-                            server, player, session);
-            }
-        }
-    }
-
-    @SubscribeEvent
-    public static void onPlayerTick(PlayerTickEvent.Post event)
-    {
-        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)
-            com.amicbeam.beyondcraftlines.common.structure.SandboxRuntimeService.tickPlayer(player);
+        com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService.tick(server);
     }
 
     @SubscribeEvent
@@ -47,6 +28,27 @@ public final class CraftlinesEvents
         {
             DeviceBindingRegistry.removeAt(event.getPlayer().getServer(),
                     event.getPlayer().level().dimension(), event.getPos());
+            BindingVisualsPayload.broadcast((net.minecraft.server.level.ServerLevel) event.getPlayer().level());
         }
     }
+
+    @SubscribeEvent
+    public static void onNetedBlockBound(com.wintercogs.beyonddimensions.api.event.dimensionnet.NetedBlockEvent.Bound event)
+    { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onBound(event); }
+
+    @SubscribeEvent
+    public static void onNetedBlockUnbound(com.wintercogs.beyonddimensions.api.event.dimensionnet.NetedBlockEvent.Unbound event)
+    { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onUnbound(event); }
+
+    @SubscribeEvent
+    public static void onChunkLoad(ChunkEvent.Load event)
+    { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onChunkLoad(event); }
+
+    @SubscribeEvent
+    public static void onChunkUnload(ChunkEvent.Unload event)
+    { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onChunkUnload(event); }
+
+    @SubscribeEvent
+    public static void onLevelUnload(LevelEvent.Unload event)
+    { com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.onLevelUnload(event); }
 }

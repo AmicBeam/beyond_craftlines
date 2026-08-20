@@ -5,14 +5,33 @@ public enum DeviceType
     BEYOND_FURNACE,
     BEYOND_BLAST_FURNACE,
     BEYOND_SMOKER,
-    EXTERNAL_GUI_ONLY;
+    EXTERNAL_RECIPE_MACHINE,
+    PROVISIONER_RECIPE_BINDING;
+
+    public boolean isNativeBeyondRecipeMachine()
+    {
+        return this == BEYOND_FURNACE || this == BEYOND_BLAST_FURNACE || this == BEYOND_SMOKER;
+    }
+
+    public static boolean isThirdPartyMachine(String blockId)
+    {
+        int separator = blockId.indexOf(':');
+        if (separator <= 0) return false;
+        String namespace = blockId.substring(0, separator);
+        return !"minecraft".equals(namespace) && !"beyonddimensions".equals(namespace)
+                && !"beyond_craftlines".equals(namespace);
+    }
 
     public static DeviceType fromBlockId(String id)
     {
-        String path = id.substring(id.indexOf(':') + 1);
-        if (path.contains("blast_furnace")) return BEYOND_BLAST_FURNACE;
-        if (path.contains("smoker")) return BEYOND_SMOKER;
-        if (path.contains("furnace")) return BEYOND_FURNACE;
-        return EXTERNAL_GUI_ONLY;
+        int separator = id.indexOf(':');
+        if (separator <= 0) return EXTERNAL_RECIPE_MACHINE;
+        String namespace = id.substring(0, separator);
+        String path = id.substring(separator + 1);
+        if (!"beyonddimensions".equals(namespace)) return EXTERNAL_RECIPE_MACHINE;
+        if (path.equals("net_blast_furnace_block")) return BEYOND_BLAST_FURNACE;
+        if (path.equals("net_smoker_block")) return BEYOND_SMOKER;
+        if (path.equals("net_furnace_block")) return BEYOND_FURNACE;
+        return EXTERNAL_RECIPE_MACHINE;
     }
 }

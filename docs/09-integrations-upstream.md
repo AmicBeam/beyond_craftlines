@@ -2,32 +2,25 @@
 
 原则：能在本模组侧用桥接/mixin 完成的先完成；**仅当收益显著、可稳定复用**时，才建议上游增加正式 API。以下均标注优先级。
 
-## 1. Beyond Dimensions（建议）
+## 1. Beyond Dimensions（核心功能无反向依赖）
 
-### P0（强烈建议）
+Craftlines 已直接使用 BD 公开的 `UnifiedStorage`、`UnifiedStorage.getNet()`、网络方块绑定事件和网络炉输入/输出存储。真实网络炉投料、等待回网以及订单 FIFO 事务均由附属实现，**不要求 BD 提供网络炉作业 API 或订单事务 API**。
 
-1. **网络操作审计友好的批量 extract/insert 回调或事件**
-   - 用途：材料账本、驱动器、复制台统一监听成败
-   - 现状：可直接调 `UnifiedStorage`；有事件可减少反射/包装
-2. **稳定的“当前打开 GUI 对应 DimensionsNet”查询 API**
-   - 用途：JEI 按钮判断网络上下文
-   - 现状：多菜单各自持有 storage；建议 BD 提供 `NetGuiContext.get(player)`
+### P1（可选体验增强）
 
-### P1（很值得）
-
-3. **网络熔炉执行进度/可投放性正式 API**
-   - 用途：`NetFurnaceExecutor` 不必依赖 accessor mixin
-4. **资源键规范化工具公开化**（item/fluid/energy 比较策略）
+1. **资源键规范化工具公开化**（item/fluid/energy 比较策略）
    - 用途：报告与规划共用同一匹配语义
-5. **JEI transfer SPI / BD GUI 上下文 API**（除 fill 外允许第三方挂“计划执行/下单”按钮，且能判断当前是否是维度网络界面）
+2. **JEI transfer SPI / BD GUI 上下文 API**（除 fill 外允许第三方挂“计划执行/下单”按钮）
    - 用途：准确实现“仅网络界面显示下单按钮”
+3. **带调用来源的存储变更事件**
+   - 用途：试产审计时区分 Craftlines、玩家和其他机器流量；不用于订单事务
 
 ### P2（可选）
 
-6. 网络侧“虚拟合成桥”方块或服务：允许官方认可的无世界工作台合成记账  
-7. 图纸/外部黑盒配方的能力注册表（若 BD 想原生吸收该玩法）
+4. 网络侧“虚拟合成桥”方块或服务：允许官方认可的无世界工作台合成记账
+5. 外部 `RecipeType` 到只出不进供给端点的能力注册表（若 BD 想原生吸收该玩法）
 
-> 无以上支持时，本模组仍可落地；P0/P1 主要是降 mixin 率与提升版本稳定性。
+> 无以上支持时不影响 Craftlines 核心订单与机器执行。
 
 ## 2. Sky Logistics（建议）
 

@@ -1,10 +1,10 @@
-# 05 · 模块设计：时空联结器与设备绑定
+# 05 · 模块设计：网络联结器与设备绑定
 
-> 旧称“维度工具”已废弃，统一为 `spacetime_linker` / 时空联结器。
+> 统一名称为 `network_linker` / 网络联结器。
 
 ## 1. 职责
 
-把“世界上的方块设备”登记为某 BD 网络可调度资源。
+把第三方模组机器直接登记为某 BD 网络可调度资源。BD 网络熔炉、网络高炉、网络烟熏炉已有原生能力，不进入绑定系统。
 
 ## 2. 数据模型
 
@@ -35,17 +35,20 @@ BindingRecord {
 ### 3.1 绑定
 
 ```text
-Shift-right-click block with spacetime_linker
-  resolve net from tool/player primary net
+Right-click a third-party machine with network_linker
+  reject minecraft / beyonddimensions / beyond_craftlines blocks
+  reject BD NetFurnace / NetBlastFurnace / NetSmoker explicitly
+  resolve player's current BD net
   check permission + claim
-  detect DeviceType via DeviceProbe
+  resolve JEI catalyst category -> loaded RecipeType family
+  require a sided item capability
   create BindingRecord
-  sync to client binding list
+  sync client binding frame
 ```
 
 ### 3.2 解绑
 
-- 再潜行右键同一方块
+- 潜行右键已绑定的第三方机器
 - 管理界面点解绑
 - 方块破坏事件懒清理
 
@@ -59,19 +62,14 @@ from linker UI action (no global order hotkey)
   report counts: bound / skippedClaim / unsupported
 ```
 
-## 4. DeviceProbe
+## 4. 自动调度
 
-```java
-interface DeviceProbe {
-  Optional<DeviceType> probe(Level level, BlockPos pos, BlockState state, BlockEntity be);
-}
-```
-
-内置：
-
-- BD NetFurnace / Blast / Smoker
-- 通用 `EXTERNAL_GUI_ONLY`
-- （扩展）其它模组执行器注册时升级为 `EXTERNAL_EXECUTABLE`
+1. 同一机器一次只分配一个订单。
+2. 记录机器中目标产物的可抽取基线，避免回收绑定前已有库存。
+3. 按各方向公开的 `IItemHandler` 模拟可插入量，只从 BD 网络抽取机器当前能接收的材料。
+4. 分 tick 渐进投料；槽满或网络缺料时保持等待，未插入部分立即退回网络。
+5. 机器真实加工后，仅抽取超过基线的目标产物，并在确认 BD 网络有空间后写回。
+6. 订单的剩余输入、产物基线和已回收数量持久化，服务器重启后继续。
 
 ## 5. 与自动合成的关系
 
@@ -79,17 +77,18 @@ interface DeviceProbe {
 
 1. 同 netId
 2. family 匹配
-3. 已加载区块
-4. 未忙碌
-5. 负载均衡（最少队列）
+3. 方块 ID 与绑定时一致
+4. 区块已加载且物品能力仍可用
+5. 未被其它订单占用
 
 没有可用设备时：该节点失败或等待（可配）。
 
 ## 6. UT
 
-1. 绑定/解绑幂等
+1. BD 三种网络炉和非第三方方块拒绝绑定
 2. 权限不足拒绝
 3. 破坏方块后查询自动剔除
 4. 同位置重复绑定覆盖策略
-5. 扫描预算不超时（分 tick）
-6. 设备选择负载均衡
+5. 部分投料不复制、不重复扣料
+6. 只回收超过绑定任务基线的新产物
+7. 机器忙碌时订单排队

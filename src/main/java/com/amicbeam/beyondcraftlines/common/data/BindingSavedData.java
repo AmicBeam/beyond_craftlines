@@ -34,8 +34,10 @@ public final class BindingSavedData extends SavedData
         for (int i = 0; i < list.size(); i++)
         {
             BindingRecord record = readRecord(list.getCompound(i));
-            if (record != null) data.addLoaded(record);
+            if (record != null && (record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                    || record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)) data.addLoaded(record);
         }
+        if (data.records.size() != list.size()) data.setDirty();
         return data;
     }
 
@@ -48,6 +50,18 @@ public final class BindingSavedData extends SavedData
     public List<BindingRecord> records() { return List.copyOf(records); }
     public List<BindingRecord> forPlayer(UUID player) { return List.copyOf(byPlayer.getOrDefault(player, List.of())); }
     public List<BindingRecord> forNetwork(int networkId) { return List.copyOf(byNetwork.getOrDefault(networkId, List.of())); }
+    public Set<ResourceLocation> recipeTypesForProvisioner(ResourceKey<Level> dimension, BlockPos position)
+    {
+        HashSet<ResourceLocation> result = new HashSet<>();
+        provisionerRecords(dimension, position).forEach(record -> result.addAll(record.jeiRecipeTypes()));
+        return Set.copyOf(result);
+    }
+    public Set<String> recipeFamiliesForProvisioner(ResourceKey<Level> dimension, BlockPos position)
+    {
+        HashSet<String> result = new HashSet<>();
+        provisionerRecords(dimension, position).forEach(record -> result.addAll(record.recipeFamilies()));
+        return Set.copyOf(result);
+    }
     public BindingRecord at(ResourceKey<Level> dimension, BlockPos position)
     {
         return byPosition.get(new BindingKey(dimension, position));
@@ -69,6 +83,32 @@ public final class BindingSavedData extends SavedData
         removeInternal(record);
         setDirty();
         return true;
+    }
+
+    public boolean removeForProvisioner(ResourceKey<Level> dimension, BlockPos position)
+    {
+        List<BindingRecord> matches = provisionerRecords(dimension, position);
+        matches.forEach(this::removeInternal);
+        if (!matches.isEmpty()) setDirty();
+        return !matches.isEmpty();
+    }
+
+    public void replaceProvisionerBinding(ResourceKey<Level> dimension, BlockPos position,
+                                           BindingRecord replacement)
+    {
+        provisionerRecords(dimension, position).forEach(this::removeInternal);
+        records.add(replacement);
+        index(replacement);
+        setDirty();
+    }
+
+    private List<BindingRecord> provisionerRecords(ResourceKey<Level> dimension, BlockPos position)
+    {
+        return records.stream().filter(record -> record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
+                .filter(record -> (dimension.equals(record.dimension()) && position.equals(record.position()))
+                        || (dimension.equals(record.provisionerDimension())
+                        && position.equals(record.provisionerPosition())))
+                .toList();
     }
 
     private void addLoaded(BindingRecord record)
@@ -124,12 +164,20 @@ public final class BindingSavedData extends SavedData
         entry.putInt("z", record.position().getZ());
         entry.putString("device", record.deviceType().name());
         entry.putString("block", record.lastBlockId().toString());
+        if (record.provisionerDimension() != null && record.provisionerPosition() != null)
+        {
+            entry.putString("provisioner_dimension", record.provisionerDimension().location().toString());
+            entry.putLong("provisioner_position", record.provisionerPosition().asLong());
+        }
         entry.putString("name", record.nickname());
         entry.putBoolean("favorite", record.favorite());
         entry.putLong("time", record.boundGameTime());
         ListTag families = new ListTag();
         record.recipeFamilies().forEach(family -> families.add(StringTag.valueOf(family)));
         entry.put("families", families);
+        ListTag jeiTypes = new ListTag();
+        record.jeiRecipeTypes().forEach(type -> jeiTypes.add(StringTag.valueOf(type.toString())));
+        entry.put("jei_types", jeiTypes);
         return entry;
     }
 
@@ -140,13 +188,26 @@ public final class BindingSavedData extends SavedData
             Set<String> families = new HashSet<>();
             ListTag familyList = entry.getList("families", Tag.TAG_STRING);
             for (int i = 0; i < familyList.size(); i++) families.add(familyList.getString(i));
+            Set<ResourceLocation> jeiTypes = new HashSet<>();
+            ListTag jeiTypeList = entry.getList("jei_types", Tag.TAG_STRING);
+            for (int i = 0; i < jeiTypeList.size(); i++)
+            {
+                ResourceLocation type = ResourceLocation.tryParse(jeiTypeList.getString(i));
+                if (type != null) jeiTypes.add(type);
+            }
+            ResourceKey<Level> provisionerDimension = entry.contains("provisioner_dimension", Tag.TAG_STRING)
+                    ? ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                    ResourceLocation.parse(entry.getString("provisioner_dimension"))) : null;
+            BlockPos provisionerPosition = entry.contains("provisioner_position", Tag.TAG_LONG)
+                    ? BlockPos.of(entry.getLong("provisioner_position")) : null;
             return new BindingRecord(
                     entry.getUUID("id"), entry.getUUID("owner"), entry.getInt("network"),
                     ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                             ResourceLocation.parse(entry.getString("dimension"))),
                     new BlockPos(entry.getInt("x"), entry.getInt("y"), entry.getInt("z")),
-                    parseDevice(entry.getString("device")), families,
-                    ResourceLocation.parse(entry.getString("block")), entry.getString("name"),
+                    readDeviceType(entry.getString("device")), jeiTypes, families,
+                    ResourceLocation.parse(entry.getString("block")), provisionerDimension, provisionerPosition,
+                    entry.getString("name"),
                     entry.getBoolean("favorite"), entry.getLong("time"));
         }
         catch (RuntimeException ignored)
@@ -155,10 +216,10 @@ public final class BindingSavedData extends SavedData
         }
     }
 
-    private static DeviceType parseDevice(String value)
+    private static DeviceType readDeviceType(String name)
     {
-        try { return DeviceType.valueOf(value); }
-        catch (IllegalArgumentException ignored) { return DeviceType.EXTERNAL_GUI_ONLY; }
+        if ("PROVISIONER_RECIPE_TARGET".equals(name)) return DeviceType.PROVISIONER_RECIPE_BINDING;
+        return DeviceType.valueOf(name);
     }
 
     private record BindingKey(ResourceKey<Level> dimension, BlockPos position) {}

@@ -15,11 +15,14 @@ final class DeviceTypeTest
     }
 
     @Test
-    void acceptsOnlyThirdPartyNamespaces()
+    void acceptsVanillaAndThirdPartyMachinesButRejectsNetworkComponents()
     {
-        assertTrue(DeviceType.isThirdPartyMachine("example:processing_machine"));
-        assertFalse(DeviceType.isThirdPartyMachine("minecraft:furnace"));
-        assertFalse(DeviceType.isThirdPartyMachine("beyonddimensions:net_furnace_block"));
-        assertFalse(DeviceType.isThirdPartyMachine("beyond_craftlines:schematic_executor"));
+        assertTrue(DeviceType.isBindableMachine("minecraft:furnace"));
+        assertTrue(DeviceType.isBindableMachine("minecraft:brewing_stand"));
+        assertTrue(DeviceType.isBindableMachine("example:processing_machine"));
+        assertFalse(DeviceType.isBindableMachine("beyonddimensions:net_furnace_block"));
+        assertFalse(DeviceType.isBindableMachine("beyonddimensions:net_hopper_block"));
+        assertFalse(DeviceType.isBindableMachine("beyond_craftlines:craftline_provisioner"));
+        assertFalse(DeviceType.isBindableMachine("invalid"));
     }
 }

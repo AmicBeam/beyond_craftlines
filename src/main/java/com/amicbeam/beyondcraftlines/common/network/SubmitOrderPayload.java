@@ -65,30 +65,46 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         || !validated.target().isSame(menu.initialTarget()) || validated.count() != count
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
-                var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.capture(menu.networkId());
                 long recipeEpoch = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.recipeEpoch(
                         player.level(), menu.availableFamilies());
                 if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
                     throw new IllegalStateException("recipes changed; refresh the preview");
-                var currentPlan = RecipePlanningService.validateFixed(player.serverLevel(), menu.initialTarget(), count, snapshot,
-                        menu.availableFamilies(), validated.overrides());
-                if (!validated.overrides().completelyResolves(currentPlan))
-                    throw new IllegalStateException("client plan is incomplete; refresh the preview");
-                if (PlanningFreshness.evaluate(payload.stockRevision(), snapshot.revision(),
-                        validated.recipeEpoch(), recipeEpoch, currentPlan.craftable())
-                        == PlanningFreshness.Result.REQUIRED_MATERIALS_CHANGED)
-                    throw new IllegalStateException("required ingredients changed: " + currentPlan.missing());
+                var currentPlan = validated.plan();
                 var job = RecipeOrderService.enqueueValidated(player.serverLevel(), player.getUUID(), menu.networkId(),
                         currentPlan.target(), count, payload.blockingMode(), currentPlan);
                 player.displayClientMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()), false);
-                OpenOrderStatusMenuPayload.open(player, menu.networkId());
+                OpenOrderStatusMenuPayload.open(player, menu.networkId(), job);
             }
             catch (RuntimeException exception)
             {
-                player.displayClientMessage(Component.translatable("error.beyond_craftlines.order_failed", exception.getMessage()), false);
+                player.displayClientMessage(localizedFailure(exception.getMessage()), false);
             }
         });
+    }
+
+    private static Component localizedFailure(String error)
+    {
+        if ("orders are being submitted too quickly".equals(error))
+            return Component.translatable("error.beyond_craftlines.order_submit_cooldown");
+        if ("too many active recipe orders".equals(error))
+            return Component.translatable("error.beyond_craftlines.order_limit");
+        if ("network unavailable".equals(error) || "network not found".equals(error))
+            return Component.translatable("error.beyond_craftlines.planning_network_unavailable");
+        if ("target is not available in this order menu".equals(error))
+            return Component.translatable("error.beyond_craftlines.planning_target_unavailable");
+        if (error != null && (error.contains("refresh the preview") || error.equals("recipes changed")))
+            return Component.translatable("error.beyond_craftlines.planning_stale");
+        if (error != null && (error.startsWith("missing:")
+                || error.startsWith("required ingredients changed:")
+                || error.startsWith("required resource changed:")))
+            return Component.translatable("error.beyond_craftlines.planning_materials_changed");
+        if (error != null && error.startsWith("network has no room to return reserved resource:"))
+            return Component.translatable("error.beyond_craftlines.order_network_capacity");
+        if ("client plan is incomplete".equals(error)
+                || "validated plan does not match the order".equals(error))
+            return Component.translatable("error.beyond_craftlines.planning_protocol_invalid");
+        return Component.translatable("error.beyond_craftlines.order_failed_generic");
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

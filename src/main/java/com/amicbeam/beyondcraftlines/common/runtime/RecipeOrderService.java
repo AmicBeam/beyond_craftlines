@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService;
 import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
@@ -33,9 +34,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.Comparator;
 
+import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage.encode;
+import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage.hasId;
+
 public final class RecipeOrderService
 {
-    private static final String RETURN_AFTER_ERROR = "execution failed; waiting to return reserved materials: ";
+    private static final String RETURN_AFTER_ERROR = encode("execution_failed_returning");
     private static final Set<String> NATIVE_FURNACE_FAMILIES = Set.of("smelting", "blasting", "smoking");
     private RecipeOrderService() {}
 
@@ -91,7 +95,7 @@ public final class RecipeOrderService
         DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
         if (network == null) return false;
         releaseReservations(network.getUnifiedStorage(), job.reserved());
-        data.put(job.withReserved(List.of()).with(RecipeOrderJob.Status.CANCELLED, "cancelled by owner")
+        data.put(job.withReserved(List.of()).with(RecipeOrderJob.Status.CANCELLED, encode("cancelled_by_owner"))
                 .finishedAt(server.overworld().getGameTime()));
         return true;
     }
@@ -110,7 +114,7 @@ public final class RecipeOrderService
                     job.externalWait().machineDimension(), job.externalWait().machinePosition()));
         for (RecipeOrderJob job : jobs)
         {
-            if (job.message().startsWith(RETURN_AFTER_ERROR))
+            if (hasId(job.message(), "execution_failed_returning"))
             {
                 DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
                 if (network != null)
@@ -119,7 +123,7 @@ public final class RecipeOrderService
                     {
                         releaseReservations(network.getUnifiedStorage(), job.reserved());
                         data.put(job.withReserved(List.of()).with(
-                                RecipeOrderJob.Status.ERROR, "execution failed").finishedAt(gameTime));
+                                RecipeOrderJob.Status.ERROR, encode("execution_failed")).finishedAt(gameTime));
                     }
                     catch (RuntimeException ignored) {}
                 }
@@ -127,7 +131,7 @@ public final class RecipeOrderService
             }
             if (!index.claimNetwork(job.networkId()))
             {
-                String reason = "waiting for network order transaction";
+                String reason = encode("waiting_network_transaction");
                 if (job.status() != RecipeOrderJob.Status.PAUSED || !job.message().equals(reason))
                     data.put(job.with(RecipeOrderJob.Status.PAUSED, reason));
                 continue;
@@ -147,8 +151,7 @@ public final class RecipeOrderService
                         }
                         catch (RuntimeException exception)
                         {
-                            result = result.with(RecipeOrderJob.Status.PAUSED,
-                                    "waiting to return reserved materials: " + exception.getMessage());
+                            result = result.with(RecipeOrderJob.Status.PAUSED, encode("waiting_return_reserved"));
                         }
                     }
                 }
@@ -169,12 +172,11 @@ public final class RecipeOrderService
                     }
                     catch (RuntimeException releaseFailure)
                     {
-                        data.put(failed.with(RecipeOrderJob.Status.PAUSED,
-                                RETURN_AFTER_ERROR + releaseFailure.getMessage()));
+                        data.put(failed.with(RecipeOrderJob.Status.PAUSED, RETURN_AFTER_ERROR));
                         continue;
                     }
                 }
-                data.put(failed.with(RecipeOrderJob.Status.ERROR, exception.getMessage()).finishedAt(gameTime));
+                data.put(failed.with(RecipeOrderJob.Status.ERROR, encode("execution_failed")).finishedAt(gameTime));
             }
         }
     }
@@ -183,7 +185,7 @@ public final class RecipeOrderService
                                                RuntimeOrderIndex<Integer, MachineKey> index)
     {
         DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
-        if (network == null) return job.with(RecipeOrderJob.Status.PAUSED, "network unavailable");
+        if (network == null) return job.with(RecipeOrderJob.Status.PAUSED, encode("network_unavailable"));
         if (job.externalWait() != null) return job.externalWait().provisioner()
                 ? tickProvisioner(server, network, job) : job.externalWait().nativeFurnace()
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
@@ -195,7 +197,7 @@ public final class RecipeOrderService
                     NativeFurnaceRegistry.furnaceFor(server, job.networkId(), step.family());
             return furnace.isPresent() ? reserveNativeFurnace(network, job, step, furnace.get(), index)
                     : job.with(RecipeOrderJob.Status.PAUSED,
-                    "BD network furnace unavailable for " + step.family());
+                    encode("native_furnace_unavailable", step.family()));
         }
         Optional<DeviceBindingRegistry.ProvisionerTarget> provisioner =
                 DeviceBindingRegistry.provisionerFor(server, job.networkId(), step.family());
@@ -205,10 +207,10 @@ public final class RecipeOrderService
                 DeviceBindingRegistry.machineFor(server, job.networkId(), step.family());
         if (machine.isPresent()) return reserveMachine(job, step, machine.get(), index);
         if (!"crafting".equals(step.family()))
-            return job.with(RecipeOrderJob.Status.PAUSED, "bound machine unavailable for " + step.family());
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("bound_machine_unavailable", step.family()));
         long gameTime = server.overworld().getGameTime();
         if (!VirtualCraftingThrottle.ready(gameTime, job.nextCraftingTick()))
-            return job.with(RecipeOrderJob.Status.PAUSED, "waiting for virtual crafting node interval");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("virtual_crafting_interval"));
         return executeCrafting(server.overworld(), network, job, step, gameTime);
     }
 
@@ -224,15 +226,15 @@ public final class RecipeOrderService
                 ? binding.position() : binding.provisionerPosition();
         MachineKey machineKey = new MachineKey(dimension, position);
         if (index.isMachineOccupied(machineKey))
-            return job.with(RecipeOrderJob.Status.PAUSED, "provisioner is waiting for an earlier output");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_waiting_earlier"));
         ProvisionerStorage provisioner = target.provisioner().storage();
         List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
         InputSelection selection = selectInputs(level, network.getUnifiedStorage(), job, step, batchInputs);
         if (selection == null)
-            return job.with(RecipeOrderJob.Status.PAUSED, "waiting for matching provisioner inputs");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("matching_provisioner_inputs"));
         for (InputChunk input : selection.chunks())
             if (!provisioner.insertFromOrder(input.key(), input.amount(), true).isEmpty())
-                return job.with(RecipeOrderJob.Status.PAUSED, "provisioner has no room for " + input.key());
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_no_room", input.key()));
 
         List<KeyAmount> extracted = new ArrayList<>();
         for (InputChunk input : selection.chunks())
@@ -243,7 +245,7 @@ public final class RecipeOrderService
             {
                 if (!result.isEmpty()) extracted.add(result);
                 extracted.forEach(value -> network.getUnifiedStorage().insert(value.key(), value.amount(), false));
-                return job.with(RecipeOrderJob.Status.PAUSED, "waiting for " + input.key());
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_resource", input.key()));
             }
             extracted.add(result);
         }
@@ -262,7 +264,7 @@ public final class RecipeOrderService
                         delivered.key(), delivered.amount(), false, false));
                 extracted.forEach(original -> network.getUnifiedStorage().insert(
                         original.key(), original.amount(), false));
-                return job.with(RecipeOrderJob.Status.PAUSED, "provisioner delivery rolled back");
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_delivery_rolled_back"));
             }
         }
         long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
@@ -273,7 +275,7 @@ public final class RecipeOrderService
                 outputBaseline(job.networkId(), step.outputKey()));
         index.occupyMachine(machineKey);
         return consumeReserved(job, selection.consumedReserved()).awaitExternal(wait,
-                "provisioner inputs delivered; waiting for network output 0/" + output);
+                encode("provisioner_waiting_output", 0, output));
     }
 
     private static RecipeOrderJob executeCrafting(ServerLevel level, DimensionsNet network, RecipeOrderJob job,
@@ -300,17 +302,20 @@ public final class RecipeOrderService
         BindingRecord binding = machine.binding();
         MachineKey machineKey = new MachineKey(binding.dimension(), binding.position());
         if (index.isMachineOccupied(machineKey))
-            return job.with(RecipeOrderJob.Status.PAUSED, "bound machine is busy");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("bound_machine_busy"));
         if (step.inputs().stream().map(RecipePlan.Material::item)
                 .anyMatch(item -> step.output().equals(item)))
-            return job.with(RecipeOrderJob.Status.ERROR,
-                    "generic machine automation does not support output items that are also inputs");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("shared_input_output_unsupported"));
         if (BlockingModeLogic.shouldWait(job.blockingMode(), BoundMachineAutomation.containsAnyResources(
                 machine.level(), binding.position(), step.inputs())))
-            return job.with(RecipeOrderJob.Status.PAUSED,
-                    "blocking mode: target machine still contains a recipe input");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("blocking_machine_input"));
         long baseline = BoundMachineAutomation.countExtractable(
                 machine.level(), binding.position(), step.outputKey());
+        for (KeyAmount output : recipeOutputs(machine.level(), step))
+            if (!step.outputKey().isSame(output.key()) && BoundMachineAutomation.countExtractable(
+                    machine.level(), binding.position(), output.key()) > 0)
+                return job.with(RecipeOrderJob.Status.PAUSED,
+                        encode("bound_machine_byproducts_clear"));
         long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
@@ -318,7 +323,7 @@ public final class RecipeOrderService
                 binding.position(), step.outputKey(), false, false, baseline, 0, 0, output, 0,
                 batchInputs, List.of());
         index.occupyMachine(machineKey);
-        return job.awaitExternal(wait, "bound machine reserved; preparing inputs");
+        return job.awaitExternal(wait, encode("bound_machine_preparing"));
     }
 
     private static RecipeOrderJob reserveNativeFurnace(DimensionsNet network,
@@ -329,17 +334,15 @@ public final class RecipeOrderService
         BaseNetFurnaceBlockEntity<?> furnace = nativeFurnace.blockEntity();
         MachineKey machineKey = new MachineKey(nativeFurnace.level().dimension(), furnace.getBlockPos());
         if (index.isMachineOccupied(machineKey))
-            return job.with(RecipeOrderJob.Status.PAUSED, "BD network furnace is busy");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("native_furnace_busy"));
         Set<ResourceLocation> inputItems = step.inputs().stream().map(RecipePlan.Material::item)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         if (BlockingModeLogic.shouldWait(job.blockingMode(),
                 NativeFurnaceAutomation.containsAnyInput(furnace, inputItems)))
-            return job.with(RecipeOrderJob.Status.PAUSED,
-                    "blocking mode: BD network furnace still contains a recipe input");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("blocking_native_furnace_input"));
         if (NativeFurnaceAutomation.countOutput(furnace, step.output()) > 0)
-            return job.with(RecipeOrderJob.Status.PAUSED,
-                    "waiting for pre-existing BD network furnace output to clear");
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("native_furnace_output_clear"));
         long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
@@ -349,7 +352,7 @@ public final class RecipeOrderService
                 networkAmount(job.networkId(), step.output()), 0, output, 0, batchInputs,
                 outputBaseline(job.networkId(), step.output()));
         index.occupyMachine(machineKey);
-        return job.awaitExternal(wait, "BD network furnace reserved; preparing inputs");
+        return job.awaitExternal(wait, encode("native_furnace_preparing"));
     }
 
     private static RecipeOrderJob tickBoundMachine(MinecraftServer server, DimensionsNet network,
@@ -365,7 +368,7 @@ public final class RecipeOrderService
                 || !BuiltInRegistries.BLOCK.getKey(level.getBlockState(wait.machinePosition()).getBlock())
                 .equals(binding.lastBlockId())
                 || !BoundMachineAutomation.isAutomatable(level, wait.machinePosition()))
-            return job.with(RecipeOrderJob.Status.ERROR, "bound machine was removed or changed");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("bound_machine_removed"));
 
         if (!wait.remainingInputs().isEmpty())
         {
@@ -405,9 +408,11 @@ public final class RecipeOrderService
                         input.key(), left, input.ingredientSlot()));
             }
             wait = wait.withInputs(remaining);
-            if (!remaining.isEmpty()) return working.awaitExternal(wait, "feeding bound machine inputs");
+            if (!remaining.isEmpty()) return working.awaitExternal(wait, encode("feeding_bound_machine"));
             job = working;
         }
+
+        drainBoundMachineByproducts(level, network.getUnifiedStorage(), job.steps().get(job.nextStep()), wait);
 
         long current = BoundMachineAutomation.countExtractable(level, wait.machinePosition(), wait.outputKey());
         long available = ExternalOrderLogic.availableMachineOutput(wait.baseline(), current);
@@ -435,8 +440,37 @@ public final class RecipeOrderService
             wait = wait.withCollected(wait.collected() + inserted);
         }
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
-        return job.awaitExternal(wait,
-                "machine processing; returned " + wait.collected() + "/" + wait.amount());
+        return job.awaitExternal(wait, encode("machine_processing", wait.collected(), wait.amount()));
+    }
+
+    private static void drainBoundMachineByproducts(ServerLevel level, UnifiedStorage storage,
+                                                     RecipePlan.Step step, RecipeOrderJob.ExternalWait wait)
+    {
+        long batchCrafts = SaturatingLongMath.ceilDiv(wait.amount(), step.outputPerCraft());
+        for (KeyAmount expected : recipeOutputs(level, step))
+        {
+            if (wait.outputKey().isSame(expected.key())) continue;
+            long visible = BoundMachineAutomation.countExtractable(
+                    level, wait.machinePosition(), expected.key());
+            long limit = Math.min(visible, SaturatingLongMath.multiply(expected.amount(), batchCrafts));
+            if (limit <= 0) continue;
+            KeyAmount simulatedRemainder = storage.insert(expected.key(), limit, true);
+            long transferable = limit - simulatedRemainder.amount();
+            if (transferable <= 0) continue;
+            for (KeyAmount output : BoundMachineAutomation.extractStacks(
+                    level, wait.machinePosition(), expected.key(), transferable))
+            {
+                KeyAmount remainder = storage.insert(output.key(), output.amount(), false);
+                if (!remainder.isEmpty()) BoundMachineAutomation.insert(
+                        level, wait.machinePosition(), remainder.key(), remainder.amount());
+            }
+        }
+    }
+
+    private static List<KeyAmount> recipeOutputs(ServerLevel level, RecipePlan.Step step)
+    {
+        var holder = level.getRecipeManager().byKey(step.recipe()).orElse(null);
+        return holder == null ? List.of() : RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
     }
 
     private static RecipeOrderJob tickProvisioner(MinecraftServer server, DimensionsNet network,
@@ -448,14 +482,14 @@ public final class RecipeOrderService
                 || !(level.getBlockEntity(wait.machinePosition())
                 instanceof CraftlineProvisionerBlockEntity provisioner)
                 || provisioner.getNetId() != job.networkId())
-            return job.with(RecipeOrderJob.Status.ERROR, "provisioner was removed or unbound");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("provisioner_removed"));
         RecipePlan.Step step = job.steps().get(job.nextStep());
         BindingRecord binding = BindingSavedData.get(server).at(wait.machineDimension(), wait.machinePosition());
         boolean stillAssigned = binding != null && binding.networkId() == job.networkId()
                 && binding.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                 && binding.recipeFamilies().contains(step.family());
         if (!stillAssigned)
-            return job.with(RecipeOrderJob.Status.ERROR, "provisioner recipe assignment changed");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("provisioner_assignment_changed"));
 
         long currentNetwork = networkAmount(job.networkId(), wait.outputKey());
         ExternalOrderLogic.NetworkCredit credit = ExternalOrderLogic.creditNetworkOutput(
@@ -477,8 +511,7 @@ public final class RecipeOrderService
         }
         wait = wait.withProgress(credit.observed(), credit.collected());
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
-        return job.awaitExternal(wait,
-                "waiting for provisioner output in network " + wait.collected() + "/" + wait.amount());
+        return job.awaitExternal(wait, encode("provisioner_waiting_output", wait.collected(), wait.amount()));
     }
 
     private static RecipeOrderJob tickNativeFurnace(MinecraftServer server, DimensionsNet network,
@@ -489,11 +522,11 @@ public final class RecipeOrderService
         if (level == null || !level.isLoaded(wait.machinePosition())
                 || !(level.getBlockEntity(wait.machinePosition()) instanceof BaseNetFurnaceBlockEntity<?> furnace)
                 || furnace.getNetId() != job.networkId())
-            return job.with(RecipeOrderJob.Status.ERROR, "BD network furnace was removed or unbound");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("native_furnace_removed"));
 
         String expectedFamily = job.steps().get(job.nextStep()).family();
         if (!NativeFurnaceRegistry.supports(furnace, expectedFamily))
-            return job.with(RecipeOrderJob.Status.ERROR, "BD network furnace type changed");
+            return job.with(RecipeOrderJob.Status.ERROR, encode("native_furnace_type_changed"));
 
         if (!wait.remainingInputs().isEmpty())
         {
@@ -531,7 +564,7 @@ public final class RecipeOrderService
                         input.key(), left, input.ingredientSlot()));
             }
             wait = wait.withInputs(remaining);
-            if (!remaining.isEmpty()) return working.awaitExternal(wait, "feeding BD network furnace inputs");
+            if (!remaining.isEmpty()) return working.awaitExternal(wait, encode("feeding_native_furnace"));
             job = working;
         }
 
@@ -585,8 +618,7 @@ public final class RecipeOrderService
                     Math.min(wait.amount(), wait.collected() + inserted));
         }
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
-        return job.awaitExternal(wait,
-                "BD network furnace processing; returned " + wait.collected() + "/" + wait.amount());
+        return job.awaitExternal(wait, encode("native_furnace_processing", wait.collected(), wait.amount()));
     }
 
     private static long networkAmount(int networkId, ResourceLocation itemId)

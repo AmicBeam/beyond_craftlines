@@ -60,7 +60,7 @@ public final class DeviceBindingRegistry
             return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
         var state = level.getBlockState(position);
         ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-        if (!DeviceType.isThirdPartyMachine(blockId.toString()) || level.getBlockEntity(position) == null)
+        if (!DeviceType.isBindableMachine(blockId.toString()) || level.getBlockEntity(position) == null)
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
         Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());

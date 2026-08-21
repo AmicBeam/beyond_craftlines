@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineStatusMenu;
+import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderJob;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
 import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
@@ -38,13 +39,28 @@ public record OpenOrderStatusMenuPayload() implements CustomPacketPayload
     }
 
     public static void open(ServerPlayer player, int networkId)
+    { open(player, networkId, null); }
+
+    public static void open(ServerPlayer player, int networkId, RecipeOrderJob initialOrder)
     {
         DimensionsNet network = DimensionsNet.getNetFromId(networkId);
         if (network == null || !(network.isOwner(player) || network.isManager(player)
                 || network.getPlayers().contains(player.getUUID()))) return;
         player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                new CraftlineStatusMenu(id, inventory, networkId),
-                Component.translatable("menu.beyond_craftlines.status")), buffer -> buffer.writeVarInt(networkId));
+                new CraftlineStatusMenu(id, inventory, networkId, initialOrder == null ? null
+                        : new CraftlineStatusMenu.InitialOrder(initialOrder.id(), initialOrder.target().toString(),
+                        initialOrder.requested(), initialOrder.blockingMode())),
+                Component.translatable("menu.beyond_craftlines.status")), buffer -> {
+                    buffer.writeVarInt(networkId);
+                    buffer.writeBoolean(initialOrder != null);
+                    if (initialOrder != null)
+                    {
+                        buffer.writeUUID(initialOrder.id());
+                        buffer.writeUtf(initialOrder.target().toString(), 256);
+                        buffer.writeVarLong(initialOrder.requested());
+                        buffer.writeBoolean(initialOrder.blockingMode());
+                    }
+                });
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

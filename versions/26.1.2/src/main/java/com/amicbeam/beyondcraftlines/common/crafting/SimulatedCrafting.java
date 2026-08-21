@@ -20,6 +20,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage.encode;
+
 /** Executes one real crafting-table operation against network stacks, including dynamic output and remainders. */
 public final class SimulatedCrafting
 {
@@ -101,15 +103,15 @@ public final class SimulatedCrafting
                                      List<RecipePlan.ReservedMaterial> orderReserved,
                                      boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot)
     {
-        if (requestedCrafts < 1) return Attempt.failed("invalid crafting batch size");
+        if (requestedCrafts < 1) return Attempt.failed(encode("crafting_invalid_batch"));
         var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
                 net.minecraft.core.registries.Registries.RECIPE, recipeId)).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
-            return Attempt.failed("crafting recipe is no longer available: " + recipeId);
+            return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
 
         Map<ItemStackKey, Long> reservedAmounts = reservedAmounts(orderReserved);
         Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts, networkSnapshot);
-        if (prepared == null) return Attempt.failed("waiting for matching crafting ingredients");
+        if (prepared == null) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         ItemStack output;
         NonNullList<ItemStack> remainders;
@@ -120,10 +122,10 @@ public final class SimulatedCrafting
         }
         catch (RuntimeException exception)
         {
-            return Attempt.failed("recipe simulation failed: " + exception.getMessage());
+            return Attempt.failed(encode("crafting_simulation_failed"));
         }
         if (output.isEmpty() || !BuiltInRegistries.ITEM.getKey(output.getItem()).equals(expectedOutput))
-            return Attempt.failed("recipe produced an unexpected item");
+            return Attempt.failed(encode("crafting_unexpected_output"));
 
         boolean[] persistentSlots = new boolean[prepared.input().size()];
         boolean statefulRemainder = false;
@@ -138,7 +140,7 @@ public final class SimulatedCrafting
 
         long batch = statefulRemainder ? 1 : availableBatch(
                 storage, networkSnapshot, reservedAmounts, prepared, persistentSlots, requestedCrafts);
-        if (batch < 1) return Attempt.failed("waiting for matching crafting ingredients");
+        if (batch < 1) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         Map<ItemStackKey, Long> returns = new LinkedHashMap<>();
         if (!escrowOutput) add(returns, output, batch);
@@ -146,7 +148,7 @@ public final class SimulatedCrafting
             add(returns, remainders.get(i), persistentSlots[i] ? 1 : batch);
         for (var entry : returns.entrySet())
             if (!storage.insert(entry.getKey(), entry.getValue(), true).isEmpty())
-                return Attempt.failed("network has no room for crafting output or remaining items");
+                return Attempt.failed(encode("crafting_network_full"));
 
         Map<ItemStackKey, Long> consumption = consumption(prepared, persistentSlots, batch);
         List<KeyAmount> extracted = new ArrayList<>();
@@ -161,7 +163,7 @@ public final class SimulatedCrafting
             {
                 if (!taken.isEmpty()) extracted.add(taken);
                 rollbackInputs(storage, extracted);
-                return Attempt.failed("crafting ingredients changed before execution");
+                return Attempt.failed(encode("crafting_inputs_changed"));
             }
             extracted.add(taken);
         }
@@ -176,7 +178,7 @@ public final class SimulatedCrafting
             {
                 inserted.forEach(value -> storage.extract(value.key(), value.amount(), false, false));
                 rollbackInputs(storage, extracted);
-                return Attempt.failed("crafting transaction rolled back because network capacity changed");
+                return Attempt.failed(encode("crafting_rolled_back"));
             }
         }
         return new Attempt(true, "", SaturatingLongMath.multiply(output.getCount(), batch), batch,

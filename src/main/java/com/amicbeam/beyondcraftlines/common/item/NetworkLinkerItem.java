@@ -71,10 +71,10 @@ public final class NetworkLinkerItem extends Item
                     Component.translatable("error.beyond_craftlines.native_machine_not_bindable"), false);
             return InteractionResult.FAIL;
         }
-        if (!DeviceType.isThirdPartyMachine(blockId.toString()))
+        if (!DeviceType.isBindableMachine(blockId.toString()))
         {
             if (context.getLevel().isClientSide()) context.getPlayer().displayClientMessage(
-                    Component.translatable("error.beyond_craftlines.only_third_party_machines"), false);
+                    Component.translatable("error.beyond_craftlines.network_component_not_bindable"), false);
             return InteractionResult.FAIL;
         }
         if (context.getPlayer().isShiftKeyDown())

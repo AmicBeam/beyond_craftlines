@@ -13,13 +13,12 @@ public enum DeviceType
         return this == BEYOND_FURNACE || this == BEYOND_BLAST_FURNACE || this == BEYOND_SMOKER;
     }
 
-    public static boolean isThirdPartyMachine(String blockId)
+    public static boolean isBindableMachine(String blockId)
     {
         int separator = blockId.indexOf(':');
         if (separator <= 0) return false;
         String namespace = blockId.substring(0, separator);
-        return !"minecraft".equals(namespace) && !"beyonddimensions".equals(namespace)
-                && !"beyond_craftlines".equals(namespace);
+        return !"beyonddimensions".equals(namespace) && !"beyond_craftlines".equals(namespace);
     }
 
     public static DeviceType fromBlockId(String id)

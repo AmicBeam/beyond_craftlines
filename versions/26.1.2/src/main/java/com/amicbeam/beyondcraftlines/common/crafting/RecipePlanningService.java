@@ -206,7 +206,7 @@ public final class RecipePlanningService
             Identifier bestRecipe = null;
             for (RecipeHolder<?> holder : candidates)
             {
-                budget.enterBranch();
+                if (mode == ResolutionMode.SEARCH) budget.enterBranch();
                 PlanningState branch = state.copy();
                 try
                 {
@@ -264,7 +264,7 @@ public final class RecipePlanningService
         for (List<KeyAmount> variant : SingleSubstitutionVariants.from(
                 options, (left, right) -> left.key().isSameTypeSameComponents(right.key())))
         {
-            budget.enterBranch();
+            if (mode == ResolutionMode.SEARCH) budget.enterBranch();
             PlanningState branch = state.copy();
             resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, branch,
                     overrides, mode, depth, maxDepth, budget, variant);
@@ -353,8 +353,9 @@ public final class RecipePlanningService
                 .thenComparing(value -> !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
                 .thenComparing(value -> RecipeResourceResolver.sortKey(value.key()));
         List<KeyAmount> choices = ingredient.candidates();
-        for (int i = 0; i < choices.size(); i++)
-            if ((i & 255) == 0) budget.checkTime();
+        if (mode == ResolutionMode.SEARCH)
+            for (int i = 0; i < choices.size(); i++)
+                if ((i & 255) == 0) budget.checkTime();
         LinkedHashMap<IStackKey<?>, KeyAmount> unique = new LinkedHashMap<>();
         choices.stream().sorted(comparator).forEach(choice -> unique.putIfAbsent(choice.key(), choice));
         return List.copyOf(unique.values());

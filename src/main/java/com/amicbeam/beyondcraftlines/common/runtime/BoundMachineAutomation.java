@@ -23,7 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
-/** Generic sided item-capability adapter used by directly bound third-party machines. */
+/** Generic sided item-capability adapter used by directly bound recipe machines. */
 public final class BoundMachineAutomation
 {
     private BoundMachineAutomation() {}
@@ -267,8 +267,8 @@ public final class BoundMachineAutomation
     {
         if (!level.isLoaded(position)) return List.of();
         List<ResourceHandler> result = new ArrayList<>();
-        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         CapabilityHelper.BlockCapabilityMap.forEach((type, capability) -> {
+            Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
             var factory = StackHandlerWrapperHelper.stackWrappers.get(type);
             if (factory == null) return;
             for (Direction side : allSides())

@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import net.minecraft.resources.Identifier;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 
@@ -28,5 +29,5 @@ final class ValidatedClientPlanCache
     }
 
     record Entry(long nonce, int networkId, IStackKey<?> target, long count,
-                 long recipeEpoch, long expiresAt, RecipeResolutionOverrides overrides) {}
+                 long recipeEpoch, long expiresAt, RecipeResolutionOverrides overrides, RecipePlan plan) {}
 }

@@ -112,7 +112,7 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         }
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
-                menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides));
+                menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides, plan));
         RecipePlan theoretical;
         try
         {

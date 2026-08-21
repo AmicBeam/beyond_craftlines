@@ -8,22 +8,33 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.UUID;
+
 public final class CraftlineStatusMenu extends AbstractContainerMenu
 {
     private final Player player;
     private final int networkId;
+    private final InitialOrder initialOrder;
 
     public CraftlineStatusMenu(int id, Inventory inventory, FriendlyByteBuf data)
-    { this(id, inventory, data.readVarInt()); }
+    {
+        this(id, inventory, data.readVarInt(), data.readBoolean() ? new InitialOrder(
+                data.readUUID(), data.readUtf(256), data.readVarLong(), data.readBoolean()) : null);
+    }
 
     public CraftlineStatusMenu(int id, Inventory inventory, int networkId)
+    { this(id, inventory, networkId, null); }
+
+    public CraftlineStatusMenu(int id, Inventory inventory, int networkId, InitialOrder initialOrder)
     {
         super(CraftlinesMenus.STATUS.get(), id);
         this.player = inventory.player;
         this.networkId = networkId;
+        this.initialOrder = initialOrder;
     }
 
     public int networkId() { return networkId; }
+    public InitialOrder initialOrder() { return initialOrder; }
 
     public boolean canAccessNetwork(Player player)
     {
@@ -36,4 +47,6 @@ public final class CraftlineStatusMenu extends AbstractContainerMenu
 
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
     @Override public boolean stillValid(Player player) { return canAccessNetwork(player); }
+
+    public record InitialOrder(UUID id, String target, long requested, boolean blockingMode) {}
 }

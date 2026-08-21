@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.client;
 
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineStatusMenu;
+import com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage;
 import com.amicbeam.beyondcraftlines.common.network.CancelOrderPayload;
 import com.amicbeam.beyondcraftlines.common.network.OrderStatusPayload;
 import com.amicbeam.beyondcraftlines.common.network.RequestOrderStatusPayload;
@@ -43,7 +44,16 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     private Button cancelButton;
 
     public CraftlineStatusScreen(CraftlineStatusMenu menu, Inventory inventory, Component title)
-    { super(menu, inventory, title, 460, 320); }
+    {
+        super(menu, inventory, title, 460, 320);
+        CraftlineStatusMenu.InitialOrder initial = menu.initialOrder();
+        if (initial != null)
+        {
+            orders = List.of(new OrderView(initial.id(), initial.target(), initial.requested(), 0, 0,
+                    initial.blockingMode(), "QUEUED", "", List.of()));
+            selectedOrder = initial.id();
+        }
+    }
 
     @Override
     protected void init()
@@ -187,8 +197,9 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                     : status.getString() + " " + order.next() + "/" + order.total();
             graphics.text(font, font.plainSubstrByWidth(progress + mode, 118),
                     leftPos + imageWidth - 138, y + 6, statusColor(order.status()), false);
-            if (!order.message().isBlank()) graphics.text(font,
-                    font.plainSubstrByWidth(order.message(), imageWidth - 74), textX, y + 19, 0x6B7580, false);
+            Component message = orderMessage(order.message());
+            if (!message.getString().isBlank()) graphics.text(font,
+                    font.plainSubstrByWidth(message.getString(), imageWidth - 74), textX, y + 19, 0x6B7580, false);
 
             y += ORDER_HEIGHT;
             if (expanded)
@@ -230,6 +241,13 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             case "PAUSED" -> 0xB26A00;
             default -> 0x253545;
         };
+    }
+
+    private static Component orderMessage(String stored)
+    {
+        OrderStatusMessage.Decoded decoded = OrderStatusMessage.decode(stored);
+        return decoded.isEmpty() ? Component.empty() : Component.translatable(
+                decoded.translationKey(), decoded.arguments().toArray());
     }
 
     @Override

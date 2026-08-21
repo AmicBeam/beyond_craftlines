@@ -53,8 +53,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             {
                 IStackKey<?> target = findOutput(recipeLayoutDrawable);
                 ResourceLocation recipe = findRecipeId(recipeLayoutDrawable);
+                ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
+                        .getRecipeType().getUid();
                 return target == null || recipe == null ? null
-                        : new OrderButtonController(target, recipe, scaledIcon);
+                        : new OrderButtonController(target, recipe, recipeType, scaledIcon);
             }
         });
     }
@@ -115,7 +117,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return player != null && player.containerMenu instanceof DimensionsNetMenu;
     }
 
-    private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe, IDrawable icon)
+    private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe,
+                                         ResourceLocation recipeType, IDrawable icon)
             implements IIconButtonController
     {
         @Override
@@ -138,7 +141,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         {
             if (!hasDimensionsNetContext()) return false;
             if (!input.isSimulate())
-                PacketDistributor.sendToServer(new OpenOrderMenuPayload(target, recipe.toString()));
+                PacketDistributor.sendToServer(new OpenOrderMenuPayload(
+                        target, recipe.toString(), recipeType.toString()));
             return true;
         }
 

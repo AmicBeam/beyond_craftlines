@@ -118,7 +118,7 @@ public final class CraftlinesClientEvents
                                 .getResultItem(level.registryAccess()).getItem()).equals(target));
                 if (!hasRecipe) return;
                 PacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                        new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)), ""));
+                        new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)), "", ""));
                 event.setCanceled(true);
                 return;
             }

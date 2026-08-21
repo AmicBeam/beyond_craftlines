@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.data;
 
 import com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeTypeCycle;
 import com.amicbeam.beyondcraftlines.common.runtime.BoundMachineAutomation;
 import com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry;
 import com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity;
@@ -73,11 +74,21 @@ public final class DeviceBindingRegistry
             return BindAttempt.failure(BindFailure.UNSUPPORTED_CAPABILITY);
         if (selection == null)
         {
-            BindingRecord record = new BindingRecord(UUID.randomUUID(), player.getUUID(), network.getId(),
-                    level.dimension(), position, deviceType, resolved.jeiTypes(), resolved.families(), blockId,
-                    null, null, "", false, level.getGameTime());
+            Set<String> currentTypes = existing == null ? Set.of() : existing.jeiRecipeTypes().stream()
+                    .map(Object::toString).collect(java.util.stream.Collectors.toSet());
+            String selectedName = RecipeTypeCycle.next(resolved.jeiTypes().stream()
+                    .map(Object::toString).toList(), currentTypes);
+            ResourceLocation selectedType = resolved.jeiTypes().stream()
+                    .filter(type -> type.toString().equals(selectedName)).findFirst().orElseThrow();
+            var selected = JeiRecipeFamilyRegistry.resolve(Set.of(selectedType), loadedFamilies);
+            BindingRecord record = new BindingRecord(existing == null ? UUID.randomUUID() : existing.id(),
+                    existing == null ? player.getUUID() : existing.owner(), network.getId(),
+                    level.dimension(), position, deviceType, selected.jeiTypes(), selected.families(), blockId,
+                    null, null, existing == null ? "" : existing.nickname(),
+                    existing != null && existing.favorite(),
+                    existing == null ? level.getGameTime() : existing.boundGameTime());
             data.add(record);
-            return BindAttempt.success(new BindResult(deviceType, resolved.families(), false));
+            return BindAttempt.success(new BindResult(deviceType, selected.families(), false));
         }
         ServerLevel provisionerLevel = player.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
@@ -185,6 +196,21 @@ public final class DeviceBindingRegistry
                     || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                     && validProvisionerTarget(server, record).isPresent())) result.addAll(record.recipeFamilies());
         return Set.copyOf(result);
+    }
+
+    public static boolean supportsJeiType(MinecraftServer server, int networkId,
+                                          ResourceLocation jeiType, String family)
+    {
+        for (BindingRecord record : BindingSavedData.get(server).forNetwork(networkId))
+            if (record.jeiRecipeTypes().contains(jeiType) && record.recipeFamilies().contains(family)
+                    && ((record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                    && validMachine(server, record).isPresent())
+                    || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
+                    && validProvisionerTarget(server, record).isPresent()))) return true;
+        Set<String> nativeFamilies = NativeFurnaceRegistry.availableFamilies(server, networkId);
+        if ("crafting".equals(family)) nativeFamilies = Set.of("crafting");
+        return JeiRecipeFamilyRegistry.resolve(Set.of(jeiType), nativeFamilies)
+                .families().contains(family);
     }
 
     public static Optional<ProvisionerTarget> provisionerFor(MinecraftServer server, int networkId, String family)

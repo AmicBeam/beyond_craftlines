@@ -17,7 +17,7 @@
   "message.beyond_craftlines.device_unbound": "设备已解绑。",
   "message.beyond_craftlines.provisioner_recipes_cleared": "已清除所选合成链供给器记录的全部配方类型。",
   "error.beyond_craftlines.no_selected_provisioner_recipes": "没有已选择且包含配方绑定的合成链供给器。",
-  "message.beyond_craftlines.machine_bound": "第三方机器已直接并入 Beyond Dimensions 网络，可执行配方族：%s。",
+  "message.beyond_craftlines.machine_bound": "已并入网络，可执行配方族：%s",
   "message.beyond_craftlines.provisioner_selected": "已选择此合成链供给器；用网络联结器右击人工配方目标以绑定配方类型。",
   "message.beyond_craftlines.provisioner_target_bound": "已将识别到的配方类型加入供给器候选项；请打开供给器 GUI 勾选，修改会自动保存。",
   "message.beyond_craftlines.provisioner_target_bound_single": "已绑定唯一候选配方类型，供给器已自动选中并启用。",

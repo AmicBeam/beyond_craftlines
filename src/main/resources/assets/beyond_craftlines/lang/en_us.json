@@ -17,7 +17,7 @@
   "message.beyond_craftlines.device_unbound": "Device unbound.",
   "message.beyond_craftlines.provisioner_recipes_cleared": "Cleared every recipe type recorded by the selected Craftline Provisioner.",
   "error.beyond_craftlines.no_selected_provisioner_recipes": "No selected Craftline Provisioner has recipe bindings to clear.",
-  "message.beyond_craftlines.machine_bound": "Third-party machine connected directly to the Beyond Dimensions network. Recipe families: %s.",
+  "message.beyond_craftlines.machine_bound": "Connected to network. Recipe families: %s",
   "message.beyond_craftlines.provisioner_selected": "Craftline Provisioner selected; use the Network Linker on a manual recipe target to bind its recipe type.",
   "message.beyond_craftlines.provisioner_target_bound": "The detected recipe types were added as provisioner options. Open its GUI to select them; changes save automatically.",
   "message.beyond_craftlines.provisioner_target_bound_single": "The only candidate recipe type was bound, selected, and enabled automatically.",

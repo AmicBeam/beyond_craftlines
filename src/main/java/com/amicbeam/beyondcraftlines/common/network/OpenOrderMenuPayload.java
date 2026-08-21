@@ -20,13 +20,15 @@ import net.minecraft.world.SimpleMenuProvider;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
-public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId) implements CustomPacketPayload
+public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType)
+        implements CustomPacketPayload
 {
     public static final Type<OpenOrderMenuPayload> TYPE = new Type<>(
             net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "open_order_menu"));
     public static final StreamCodec<RegistryFriendlyByteBuf, OpenOrderMenuPayload> STREAM_CODEC = StreamCodec.composite(
             IStackKey.STREAM_CODEC, OpenOrderMenuPayload::target,
             ByteBufCodecs.stringUtf8(256), OpenOrderMenuPayload::recipeId,
+            ByteBufCodecs.stringUtf8(256), OpenOrderMenuPayload::jeiRecipeType,
             OpenOrderMenuPayload::new);
 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
@@ -37,7 +39,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId) impleme
             IStackKey<?> target = payload.target();
             ResourceLocation requestedRecipe = payload.recipeId().isBlank()
                     ? null : ResourceLocation.tryParse(payload.recipeId());
-            if (target == null || target.isEmpty() || (!payload.recipeId().isBlank() && requestedRecipe == null))
+            ResourceLocation requestedType = payload.jeiRecipeType().isBlank()
+                    ? null : ResourceLocation.tryParse(payload.jeiRecipeType());
+            if (target == null || target.isEmpty()
+                    || (!payload.jeiRecipeType().isBlank() && requestedType == null)
+                    || (!payload.recipeId().isBlank() && requestedRecipe == null))
             {
                 player.displayClientMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"), false);
                 return;
@@ -62,7 +68,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId) impleme
                                     "crafting".equals(RecipePlanningService.family(holder)) ? 0 : 1)
                             .thenComparing(holder -> holder.id().toString()))
                     .findFirst().orElse(null);
-            if (recipe == null)
+            if (recipe == null || requestedType != null
+                    && !DeviceBindingRegistry.supportsJeiType(player.getServer(), networkId,
+                    requestedType, RecipePlanningService.family(recipe)))
             {
                 player.displayClientMessage(Component.translatable(
                         "error.beyond_craftlines.invalid_order_recipe"), false);

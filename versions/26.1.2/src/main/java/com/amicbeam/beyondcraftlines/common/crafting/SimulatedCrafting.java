@@ -240,8 +240,8 @@ public final class SimulatedCrafting
         return input == null ? null : new Prepared(input, List.copyOf(slotKeys));
     }
 
-    static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
-                                             List<RecipePlan.IngredientSelection> selections)
+    public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
+                                                    List<RecipePlan.IngredientSelection> selections)
     {
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         boolean[] reusable = new boolean[ingredients.size()];

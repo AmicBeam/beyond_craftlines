@@ -70,7 +70,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         player.level(), menu.availableFamilies());
                 if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
                     throw new IllegalStateException("recipes changed; refresh the preview");
-                var currentPlan = RecipePlanningService.plan(player.serverLevel(), menu.initialTarget(), count, snapshot,
+                var currentPlan = RecipePlanningService.validateFixed(player.serverLevel(), menu.initialTarget(), count, snapshot,
                         menu.availableFamilies(), validated.overrides());
                 if (!validated.overrides().completelyResolves(currentPlan))
                     throw new IllegalStateException("client plan is incomplete; refresh the preview");

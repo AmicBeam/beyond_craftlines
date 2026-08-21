@@ -16,13 +16,19 @@ public final class CraftlinesConfig {
             .define("showProvisionerTargetMaterial", true);
     public static final ForgeConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
             .pop().push("planning").defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
+    public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
+            .define("collapseDuplicateTreeResources", true);
+    public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
+            .pop().push("jei").define("showOrderButtonEverywhere", true);
     public static final ForgeConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting").defineInRange("virtualCraftingNodeIntervalTicks", 20, 1, 72_000);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
             .defineInRange("maxPlanningDepth", 48, 1, 256);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_NODES = SERVER_BUILDER
+            .comment("Maximum candidate branches explored during automatic recipe planning. Fixed client proposals are validated directly and do not consume this budget.")
             .defineInRange("maxPlanningNodes", 4_096, 64, 1_000_000);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_TIME_MILLIS = SERVER_BUILDER
+            .comment("Cooperative main-thread time budget in milliseconds for automatic candidate search. Fixed client proposals are validated directly and do not consume this budget.")
             .defineInRange("maxPlanningTimeMillis", 50, 1, 10_000);
     public static final ForgeConfigSpec.IntValue ORDER_SUBMIT_COOLDOWN_TICKS = SERVER_BUILDER
             .defineInRange("orderSubmitCooldownTicks", 10, 0, 1_200);

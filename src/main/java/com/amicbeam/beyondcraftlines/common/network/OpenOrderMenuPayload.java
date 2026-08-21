@@ -34,8 +34,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
     {
         context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)
-                    || !(player.containerMenu instanceof DimensionsNetMenu dimensionsMenu)) return;
+            if (!(context.player() instanceof ServerPlayer player)) return;
             IStackKey<?> target = payload.target();
             ResourceLocation requestedRecipe = payload.recipeId().isBlank()
                     ? null : ResourceLocation.tryParse(payload.recipeId());
@@ -48,8 +47,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.displayClientMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"), false);
                 return;
             }
-            DimensionsNet network = dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
-                    ? storage.getNet() : null;
+            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+                    && dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
+                    ? storage.getNet() : DimensionsNet.getPrimaryNetFromPlayer(player);
             if (network == null)
             {
                 player.displayClientMessage(Component.translatable("error.beyond_craftlines.network_required"), false);

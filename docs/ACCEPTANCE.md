@@ -6,19 +6,20 @@
 - `create:mixing`：搅拌；
 - `create:compacting`：压块。
 
-界面显示文本会随 Create/JEI 语言包变化，验收时以 JEI 当前登记结果为准；在本文指定的
-Create 6.0.9 环境中，预期至少出现“搅拌”和“压块”两项。
+界面显示文本会随机器模组/JEI 语言包变化，验收时以 JEI 当前登记结果为准。三个支持版本
+都必须执行本验收；若对应版本提供 Create 工作盆，则预期至少出现“搅拌”和“压块”两项，
+否则应选择一个在 JEI 中登记到至少两个配方类型的机器作为等价案例。
 
 ## 1. 验收环境
 
-| 项目 | 要求 |
-| --- | --- |
-| Minecraft | 1.21.1 |
-| NeoForge | 21.1.194 或更高版本 |
-| Beyond Dimensions | 0.7.27 |
-| Beyond: Craftlines | 当前待验收构建 |
-| JEI | 19.44.0.401 |
-| Create | 6.0.9 |
+| Minecraft | 加载器 | Java | Beyond Dimensions / JEI |
+| --- | --- | ---: | --- |
+| 1.20.1 | Forge 47 | 17 | 使用 `versions/1.20.1/gradle.properties` 声明的版本 |
+| 1.21.1 | NeoForge 21.1 | 21 | 使用根目录 `gradle.properties` 声明的版本 |
+| 26.1.2 | NeoForge 26.1.2 | 25 | 使用 `versions/26.1.2/gradle.properties` 声明的版本 |
+
+每行都使用当前待验收的 Beyond: Craftlines 构建。机器模组应选择该 Minecraft 版本可用且
+能让同一催化剂对应至少两个 JEI 配方类型的版本。
 
 建议新建测试世界并开启作弊。验收玩家需要先连接一个 Beyond Dimensions 网络，并拥有该网络的管理员权限。
 

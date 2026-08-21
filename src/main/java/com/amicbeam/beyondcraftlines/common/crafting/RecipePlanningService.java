@@ -64,7 +64,7 @@ public final class RecipePlanningService
         for (PlanningSnapshotService.ComponentEntry entry : suppliedStock.componentEntries())
             exact.merge(entry.key(), entry.amount(), SaturatingLongMath::add);
         return plan(level, key(target), amount, new MatchingStock<>(IStackKey::getTypeId, exact),
-                availableFamilies, overrides);
+                availableFamilies, overrides, ResolutionMode.SEARCH);
     }
 
     public static RecipePlan plan(ServerLevel level, IStackKey<?> target, long amount,
@@ -75,7 +75,19 @@ public final class RecipePlanningService
         for (PlanningSnapshotService.ComponentEntry entry : suppliedStock.componentEntries())
             exact.merge(entry.key(), entry.amount(), SaturatingLongMath::add);
         return plan(level, target, amount, new MatchingStock<>(IStackKey::getTypeId, exact),
-                availableFamilies, overrides);
+                availableFamilies, overrides, ResolutionMode.SEARCH);
+    }
+
+    /** Recomputes one fully selected client proposal without exploring alternative recipes or ingredients. */
+    public static RecipePlan validateFixed(ServerLevel level, IStackKey<?> target, long amount,
+                                           PlanningSnapshotService.Snapshot suppliedStock,
+                                           Set<String> availableFamilies, RecipeResolutionOverrides overrides)
+    {
+        LinkedHashMap<IStackKey<?>, Long> exact = new LinkedHashMap<>();
+        for (PlanningSnapshotService.ComponentEntry entry : suppliedStock.componentEntries())
+            exact.merge(entry.key(), entry.amount(), SaturatingLongMath::add);
+        return plan(level, target, amount, new MatchingStock<>(IStackKey::getTypeId, exact),
+                availableFamilies, overrides, ResolutionMode.FIXED);
     }
 
     public static RecipePlan plan(ServerLevel level, ResourceLocation target, long amount,
@@ -86,7 +98,7 @@ public final class RecipePlanningService
         suppliedStock.forEach((item, count) -> exact.put(
                 new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(item))), count));
         return plan(level, key(target), amount, new MatchingStock<>(IStackKey::getTypeId, exact),
-                availableFamilies, overrides);
+                availableFamilies, overrides, ResolutionMode.SEARCH);
     }
 
     public static RecipePlan plan(ServerLevel level, IStackKey<?> target, long amount,
@@ -96,12 +108,13 @@ public final class RecipePlanningService
         LinkedHashMap<IStackKey<?>, Long> exact = new LinkedHashMap<>();
         suppliedStock.forEach((item, count) -> exact.put(key(item), count));
         return plan(level, target, amount, new MatchingStock<>(IStackKey::getTypeId, exact),
-                availableFamilies, overrides);
+                availableFamilies, overrides, ResolutionMode.SEARCH);
     }
 
     private static RecipePlan plan(ServerLevel level, IStackKey<?> target, long amount,
                                    MatchingStock<IStackKey<?>, ResourceLocation> stock,
-                                   Set<String> availableFamilies, RecipeResolutionOverrides overrides)
+                                   Set<String> availableFamilies, RecipeResolutionOverrides overrides,
+                                   ResolutionMode mode)
     {
 
         // The requested amount is a manufacturing quantity, not a desired final stock level.
@@ -119,7 +132,7 @@ public final class RecipePlanningService
         PlanningState state = new PlanningState(stock, new ArrayList<>(), new LinkedHashMap<>(),
                 new LinkedHashMap<>());
         int maxDepth = CraftlinesConfig.MAX_PLANNING_DEPTH.get();
-        resolve(level, target, amount, null, byOutput, new HashSet<>(), state, overrides, 0, maxDepth,
+        resolve(level, target, amount, null, byOutput, new HashSet<>(), state, overrides, mode, 0, maxDepth,
                 new PlanningBudget(CraftlinesConfig.MAX_PLANNING_NODES.get(),
                         CraftlinesConfig.MAX_PLANNING_TIME_MILLIS.get() * 1_000_000L));
         // A manufacturing order always creates its requested target. Even if a custom key implementation
@@ -136,10 +149,10 @@ public final class RecipePlanningService
                                 Ingredient requiredIngredient,
                                 Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                 Set<String> visiting, PlanningState state,
-                                RecipeResolutionOverrides overrides, int depth, int maxDepth,
+                                RecipeResolutionOverrides overrides, ResolutionMode mode, int depth, int maxDepth,
                                 PlanningBudget budget)
     {
-        budget.enterNode();
+        if (mode == ResolutionMode.SEARCH) budget.checkTime();
         long used = state.stock.consume(resource.getTypeId(), key -> resource.isSame(key)
                         && (requiredIngredient == null || key instanceof ItemStackKey itemKey
                         && requiredIngredient.test(itemKey.getReadOnlyStack())), needed,
@@ -170,6 +183,8 @@ public final class RecipePlanningService
                 if (candidates.isEmpty())
                     throw new IllegalArgumentException("selected recipe is unavailable for " + resourceId + ": " + selectedRecipe);
             }
+            else if (mode == ResolutionMode.FIXED && !candidates.isEmpty())
+                throw new IllegalArgumentException("client proposal is incomplete");
             if (candidates.isEmpty())
             {
                 state.missing.merge(resource, remainder, SaturatingLongMath::add);
@@ -179,16 +194,17 @@ public final class RecipePlanningService
             if (!PlanningBranches.recipesRequireBranches(candidates.size()))
             {
                 resolveRecipe(level, resource, remainder, candidates.getFirst(), byOutput,
-                        new HashSet<>(visiting), state, overrides, depth, maxDepth, budget);
+                        new HashSet<>(visiting), state, overrides, mode, depth, maxDepth, budget);
                 return;
             }
             PlanningState best = null;
             ResourceLocation bestRecipe = null;
             for (RecipeHolder<?> holder : candidates)
             {
+                budget.enterBranch();
                 PlanningState branch = state.copy();
                 resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), branch,
-                        overrides, depth, maxDepth, budget);
+                        overrides, mode, depth, maxDepth, budget);
                 if (best == null || compare(branch, holder.id(), best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -204,7 +220,7 @@ public final class RecipePlanningService
                                       RecipeHolder<?> holder,
                                       Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                       Set<String> visiting, PlanningState state,
-                                      RecipeResolutionOverrides overrides, int depth, int maxDepth,
+                                      RecipeResolutionOverrides overrides, ResolutionMode mode, int depth, int maxDepth,
                                       PlanningBudget budget)
     {
         List<Integer> slots = new ArrayList<>();
@@ -215,7 +231,7 @@ public final class RecipePlanningService
         {
             int currentIndex = ingredient.slot();
             List<KeyAmount> choices = ingredientChoices(holder.id(), currentIndex, ingredient, state.stock,
-                    byOutput, overrides, budget);
+                    byOutput, overrides, mode, budget);
             if (choices.isEmpty())
                 throw new IllegalArgumentException("ingredient cannot be enumerated for " + holder.id()
                         + " slot " + currentIndex);
@@ -226,7 +242,7 @@ public final class RecipePlanningService
         if (!PlanningBranches.ingredientsRequireBranches(options))
         {
             resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, state,
-                    overrides, depth, maxDepth, budget, options.stream().map(List::getFirst).toList());
+                    overrides, mode, depth, maxDepth, budget, options.stream().map(List::getFirst).toList());
             return;
         }
 
@@ -235,10 +251,10 @@ public final class RecipePlanningService
         for (List<KeyAmount> variant : SingleSubstitutionVariants.from(
                 options, (left, right) -> left.key().isSameTypeSameComponents(right.key())))
         {
-            budget.enterNode();
+            budget.enterBranch();
             PlanningState branch = state.copy();
             resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, branch,
-                    overrides, depth, maxDepth, budget, variant);
+                    overrides, mode, depth, maxDepth, budget, variant);
             String selectionKey = variant.stream().map(value -> RecipeResourceResolver.sortKey(value.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             int comparison = best == null ? -1 : compare(branch, holder.id(), best, holder.id());
@@ -256,7 +272,8 @@ public final class RecipePlanningService
                                              RecipeHolder<?> holder,
                                              Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                              Set<String> visiting, PlanningState state,
-                                             RecipeResolutionOverrides overrides, int depth, int maxDepth,
+                                             RecipeResolutionOverrides overrides, ResolutionMode mode,
+                                             int depth, int maxDepth,
                                              PlanningBudget budget,
                                              List<KeyAmount> variant)
     {
@@ -282,7 +299,7 @@ public final class RecipePlanningService
                     : SaturatingLongMath.multiply(crafts, choice.amount());
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot()));
             resolve(level, choice.key(), inputAmount, ingredient.itemIngredient(), byOutput,
-                    visiting, state, overrides, depth + 1, maxDepth, budget);
+                    visiting, state, overrides, mode, depth + 1, maxDepth, budget);
         }
         state.steps.add(new RecipePlan.Step(holder.id(), family(holder), outputKey,
                 perCraft, crafts, inputs, selections));
@@ -303,6 +320,7 @@ public final class RecipePlanningService
                                                      MatchingStock<IStackKey<?>, ResourceLocation> stock,
                                                      Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                                      RecipeResolutionOverrides overrides,
+                                                     ResolutionMode mode,
                                                      PlanningBudget budget)
     {
         ResourceLocation selected = overrides.ingredientFor(recipe, slot);
@@ -314,6 +332,11 @@ public final class RecipePlanningService
             throw new IllegalArgumentException("selected ingredient is invalid for " + recipe
                     + " slot " + slot + ": " + selected);
         }
+        if (mode == ResolutionMode.FIXED && ingredient.candidates().stream()
+                .anyMatch(choice -> choice.key() instanceof ItemStackKey))
+            throw new IllegalArgumentException("client proposal is incomplete");
+        if (mode == ResolutionMode.FIXED && ingredient.candidates().size() > 1)
+            throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
                         value.key().getTypeId(), value.key()::isSame)).reversed()
                 .thenComparing(value -> value.key() instanceof ItemStackKey item
@@ -326,6 +349,8 @@ public final class RecipePlanningService
         choices.stream().sorted(comparator).forEach(choice -> unique.putIfAbsent(choice.key(), choice));
         return List.copyOf(unique.values());
     }
+
+    private enum ResolutionMode { SEARCH, FIXED }
 
     private static List<RecipeHolder<?>> recipesFor(Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                                      IStackKey<?> resource)

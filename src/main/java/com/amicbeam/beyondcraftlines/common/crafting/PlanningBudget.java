@@ -1,6 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
-/** Hard guard against hostile or accidentally exponential recipe graphs on the server thread. */
+/** Hard guard for candidate-branch optimization; fixed proposals do not consume this budget. */
 final class PlanningBudget
 {
     private final int maxNodes;
@@ -16,7 +16,7 @@ final class PlanningBudget
         this.maxNanos = maxNanos;
     }
 
-    void enterNode()
+    void enterBranch()
     {
         if (++nodes > maxNodes) exceeded();
         checkTime();

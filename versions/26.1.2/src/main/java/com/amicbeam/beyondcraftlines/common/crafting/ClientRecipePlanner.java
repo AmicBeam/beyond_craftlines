@@ -51,12 +51,20 @@ public final class ClientRecipePlanner
 
     public static void clearCache() { CATALOG_CACHE.clear(); }
 
-    private static Recipe captureRecipe(Level level, RecipeHolder<?> holder)
+    private static List<Recipe> captureRecipes(Level level, RecipeHolder<?> holder)
     {
-        KeyAmount result = RecipeOutputResolver.primary(holder.value(), level);
-        if (result == null) throw new IllegalArgumentException("recipe has no supported output: " + holder.id());
+        List<KeyAmount> outputs = RecipeOutputResolver.outputs(holder.value(), level);
+        if (outputs.isEmpty()) throw new IllegalArgumentException("recipe has no supported output: " + holder.id());
+        List<Recipe> captured = new ArrayList<>(outputs.size());
+        for (KeyAmount output : outputs)
+            captured.add(captureRecipeDirection(level, holder, output));
+        return List.copyOf(captured);
+    }
+
+    private static Recipe captureRecipeDirection(Level level, RecipeHolder<?> holder, KeyAmount output)
+    {
         List<Slot> slots = new ArrayList<>();
-        for (var ingredient : RecipeResourceResolver.ingredients(holder.value()))
+        for (var ingredient : RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key()))
         {
             LinkedHashMap<IStackKey<?>, Candidate> candidates = new LinkedHashMap<>();
             for (KeyAmount value : ingredient.candidates())
@@ -72,7 +80,7 @@ public final class ClientRecipePlanner
         slots = slots.stream().map(slotEntry -> new Slot(slotEntry.index(), slotEntry.candidates(),
                 slotEntry.index() < reusable.length && reusable[slotEntry.index()])).toList();
         return new Recipe(holder.id().identifier(), RecipePlanningService.family(holder),
-                result.key(), Math.max(1, result.amount()), slots);
+                output.key(), Math.max(1, output.amount()), slots);
     }
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
@@ -116,7 +124,8 @@ public final class ClientRecipePlanner
                                 Map<IngredientKey, Identifier> manualIngredients,
                                 int depth, int maxDepth, ClientPlanningBudget budget)
     {
-        budget.enter();
+        budget.checkCancellation();
+        budget.visit(budgetIdentity(resource));
         long used = consume(state.stock, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
@@ -158,6 +167,9 @@ public final class ClientRecipePlanner
             Recipe bestRecipe = null;
             for (Recipe recipe : candidates)
             {
+                // The budget limits optimization, not feasibility. Always finish the first deterministic
+                // candidate, then stop trying alternatives when the soft budget is exhausted.
+                if (best != null && !budget.canOptimize()) break;
                 State branch = state.copy();
                 Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
@@ -168,6 +180,7 @@ public final class ClientRecipePlanner
                     best = branch;
                     bestRecipe = recipe;
                 }
+                if (missingAmount(branch.missing) == 0) break;
             }
             if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
             else state.replaceWith(best);
@@ -217,7 +230,7 @@ public final class ClientRecipePlanner
         String bestKey = null;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            budget.enter();
+            if (best != null && !budget.canOptimize()) break;
             State branch = state.copy();
             if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
                     manualIngredients, depth, maxDepth, budget, variant)) continue;
@@ -319,7 +332,7 @@ public final class ClientRecipePlanner
             long started = System.nanoTime();
             while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
             {
-                recipes.add(captureRecipe(level, holders.get(next++)));
+                recipes.addAll(captureRecipes(level, holders.get(next++)));
                 processed++;
             }
             if (next == holders.size())
@@ -396,6 +409,12 @@ public final class ClientRecipePlanner
 
     private static Identifier itemId(IStackKey<?> key)
     { return BuiltInRegistries.ITEM.getKey(((ItemStackKey) key).getSource()); }
+
+    private static String budgetIdentity(IStackKey<?> key)
+    {
+        return key instanceof ItemStackKey ? "item:" + itemId(key)
+                : RecipeResourceResolver.sortKey(key);
+    }
 
     private static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
     {

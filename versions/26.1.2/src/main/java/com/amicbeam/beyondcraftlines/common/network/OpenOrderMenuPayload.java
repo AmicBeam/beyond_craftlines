@@ -34,8 +34,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
     {
         context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)
-                    || !(player.containerMenu instanceof DimensionsNetMenu dimensionsMenu)) return;
+            if (!(context.player() instanceof ServerPlayer player)) return;
             IStackKey<?> target = payload.target();
             Identifier requestedRecipe = payload.recipeId().isBlank()
                     ? null : Identifier.tryParse(payload.recipeId());
@@ -48,8 +47,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
-            DimensionsNet network = DimensionsNet.getAllNetFromPlayer(player).stream()
-                    .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null);
+            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+                    ? DimensionsNet.getAllNetFromPlayer(player).stream()
+                            .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
+                    : DimensionsNet.getPrimaryNetFromPlayer(player);
             if (network == null)
             {
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.network_required"));

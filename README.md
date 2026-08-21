@@ -23,6 +23,8 @@
 - Minecraft 1.21.1 / NeoForge 21.1 / Java 21
 - Minecraft 26.1.2 / NeoForge 26.1.2 / Java 25
 
+除非明确限定版本，功能说明和开发改动均适用于以上三个版本。
+
 - `mod_id`: `beyond_craftlines`
 - 必需依赖：Beyond Dimensions、JEI
 
@@ -32,15 +34,28 @@
 
 ## 构建
 
+未明确限定版本时，改动、验证与打包均同时覆盖三个支持版本。分别使用 Java 17、21、25 执行：
+
 ```bash
-./gradlew build
+# Minecraft 1.20.1 / Forge
+cd versions/1.20.1 && ../../gradlew --no-daemon build
+
+# Minecraft 1.21.1 / NeoForge（从项目根目录执行）
+cd ../.. && ./gradlew --no-daemon build
+
+# Minecraft 26.1.2 / NeoForge
+cd versions/26.1.2 && ../../gradlew --no-daemon build
 ```
 
-默认 1.21.1 产物：`build/libs/beyond_craftlines-0.1.0+1.21.1.jar`
+三个产物分别位于：
+
+- `versions/1.20.1/build/libs/beyond_craftlines-0.1.0+1.20.1.jar`
+- `build/libs/beyond_craftlines-0.1.0+1.21.1.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.1.0+26.1.2.jar`
 
 ## 使用概要
 
-1. 在 JEI 配方查询页点击 Craftlines 入口，确认递归配方树与数量后下单；根节点固定使用入口所在的那一条 JEI 配方，自动规划和手动切换只影响后续层级。树采用 EMI 风格的自上而下布局，目标产物在上、原料逐层向下展开，同一配方层内的相同物品会合并并累计数量；悬浮可查看所选配方的原料 → 产物图形预览、配方族和 ID。右侧原料汇总采用 EMI 风格的图标网格与数量叠字，可切换理论总计、实际网络提取和余料；规划缺料时立即改为红色缺料网格。点击 tag/OR ingredient 节点会打开完整候选物品网格供直接选择，右击下级节点可切换生产配方，按住 Ctrl 右击可恢复自动选择。
+1. 在 JEI 配方查询页点击 Craftlines 入口，确认递归配方树与数量后下单；根节点固定使用入口所在的那一条 JEI 配方，自动规划和手动切换只影响后续层级。树采用 EMI 风格的自上而下布局，目标产物在上、原料逐层向下展开，同一配方层内的相同物品会合并并累计数量；默认只完整显示同一组件资源键最靠近树根的一次，后续更深层位置显示可点击跳转引用，此显示折叠可由客户端配置关闭。悬浮可查看所选配方的原料 → 产物图形预览、配方族和 ID。右侧原料汇总采用 EMI 风格的图标网格与数量叠字，可切换理论总计、实际网络提取和余料；规划缺料时立即改为红色缺料网格。点击 tag/OR ingredient 节点会打开完整候选物品网格供直接选择，右击下级节点可切换生产配方，按住 Ctrl 右击可恢复自动选择。玩家已保存的配方与原料偏好优先于自动建议；客户端优化预算按唯一物品 ID 计数，预算耗尽只停止继续寻找更优候选，不会使已经完整可制造的方案失效。
 2. 网络联结器右击第三方机器进行绑定，潜行右击解绑；配方类型来自 JEI 正式催化剂 category UID 与服务端同 ID `RecipeType` 的确定性映射。对于把原版 `Recipe#getIngredients()` 留空的机器配方，Craftlines 会从其公开的 input representations 读取物品、流体及已注册化学品等 BD 资源，并在服务端重新校验、预留和投送。
 3. 外部机器按真实能力投料和收取产物，不内置 Mekanism 或其他具体模组分支。
 4. BD 网络熔炉、网络高炉和网络烟熏炉无需绑定；订单直接向同网络的空闲对应炉型投料，并等待真实产物回网。

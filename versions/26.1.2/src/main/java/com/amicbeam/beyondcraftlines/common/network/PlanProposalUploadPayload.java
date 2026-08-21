@@ -100,7 +100,7 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         }
         RecipeResolutionOverrides overrides = SubmitOrderPayload.overrides(
                 assembly.recipes(), assembly.ingredients());
-        RecipePlan plan = RecipePlanningService.plan(player.level(), target, header.count(),
+        RecipePlan plan = RecipePlanningService.validateFixed(player.level(), target, header.count(),
                 snapshot, menu.availableFamilies(), overrides);
         if (!overrides.completelyResolves(plan))
             throw new IllegalArgumentException("client proposal is incomplete");

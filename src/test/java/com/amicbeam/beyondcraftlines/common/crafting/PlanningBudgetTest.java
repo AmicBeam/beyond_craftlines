@@ -8,13 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 final class PlanningBudgetTest
 {
     @Test
-    void rejectsARecipeGraphBeyondTheNodeLimit()
+    void rejectsOptimizationBeyondTheBranchLimit()
     {
         PlanningBudget budget = new PlanningBudget(3, Long.MAX_VALUE);
-        budget.enterNode();
-        budget.enterNode();
-        budget.enterNode();
+        budget.enterBranch();
+        budget.enterBranch();
+        budget.enterBranch();
         assertEquals(3, budget.nodes());
-        assertThrows(IllegalStateException.class, budget::enterNode);
+        assertThrows(IllegalStateException.class, budget::enterBranch);
     }
 }

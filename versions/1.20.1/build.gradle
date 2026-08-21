@@ -71,6 +71,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME', 'RecipeOrderSavedData::load, RecipeOrderSavedData::new, NAME')
             .replace('new Factory<>(BindingSavedData::new, BindingSavedData::load), NAME', 'BindingSavedData::load, BindingSavedData::new, NAME')
             .replace('storage.getNet()', 'com.amicbeam.beyondcraftlines.compat.BeyondDimensionsCompat.networkFor(player, storage)')
+            .replace('DimensionsNet.getPrimaryNetFromPlayer(player)', 'DimensionsNet.getNetFromPlayer(player)')
             .replace('net.minecraftforge.fml.common.EventBusSubscriber', 'net.minecraftforge.fml.common.Mod.EventBusSubscriber')
             .replace('net.minecraftforge.client.event.RegisterMenuScreensEvent', 'net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent')
             .replace('RegisterMenuScreensEvent event', 'FMLClientSetupEvent event')

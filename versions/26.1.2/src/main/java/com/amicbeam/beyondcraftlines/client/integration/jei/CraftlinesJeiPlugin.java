@@ -1,8 +1,11 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
+import com.amicbeam.beyondcraftlines.common.network.JeiNetworkAvailabilityPayload;
+import com.amicbeam.beyondcraftlines.common.network.RequestJeiNetworkAvailabilityPayload;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
@@ -32,6 +35,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static final Identifier UID = Identifier.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "jei_plugin");
     private static volatile IJeiRuntime runtime;
+    private static volatile boolean hasPrimaryNetwork;
+    private static volatile long nextNetworkCheckNanos;
 
     @Override
     public Identifier getPluginUid()
@@ -65,6 +70,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)
     {
         runtime = jeiRuntime;
+        JeiNetworkAvailabilityPayload.clientReceiver = available -> hasPrimaryNetwork = available;
+        nextNetworkCheckNanos = 0L;
         JeiCatalystIndex.rebuild(jeiRuntime);
     }
 
@@ -72,6 +79,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public void onRuntimeUnavailable()
     {
         runtime = null;
+        hasPrimaryNetwork = false;
         JeiCatalystIndex.clear();
     }
 
@@ -117,6 +125,20 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return player != null && player.containerMenu instanceof DimensionsNetMenu;
     }
 
+    private static boolean isOrderButtonAvailable()
+    {
+        if (hasDimensionsNetContext()) return true;
+        if (!CraftlinesConfig.SHOW_JEI_ORDER_BUTTON_EVERYWHERE.get()
+                || Minecraft.getInstance().player == null) return false;
+        long now = System.nanoTime();
+        if (now >= nextNetworkCheckNanos)
+        {
+            nextNetworkCheckNanos = now + 2_000_000_000L;
+            ClientPacketDistributor.sendToServer(new RequestJeiNetworkAvailabilityPayload());
+        }
+        return hasPrimaryNetwork;
+    }
+
     private record OrderButtonController(IStackKey<?> target, Identifier recipe,
                                          Identifier recipeType, IDrawable icon)
             implements IIconButtonController
@@ -131,7 +153,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         @Override
         public void updateState(IButtonState state)
         {
-            boolean visible = hasDimensionsNetContext();
+            boolean visible = isOrderButtonAvailable();
             state.setVisible(visible);
             state.setActive(visible);
         }
@@ -139,7 +161,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         @Override
         public boolean onPress(IJeiUserInput input)
         {
-            if (!hasDimensionsNetContext()) return false;
+            if (!isOrderButtonAvailable()) return false;
             if (!input.isSimulate())
                 ClientPacketDistributor.sendToServer(new OpenOrderMenuPayload(
                         target, recipe.toString(), recipeType.toString()));

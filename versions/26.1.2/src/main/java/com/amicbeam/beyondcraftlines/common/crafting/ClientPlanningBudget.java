@@ -1,15 +1,19 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import java.util.function.LongSupplier;
+import java.util.HashSet;
+import java.util.Set;
 
-/** Cooperative node/deadline/interruption budget for off-thread client proposal search. */
+/** Soft optimization budget plus hard cancellation for off-thread client proposal search. */
 final class ClientPlanningBudget
 {
     private static final long DEFAULT_NANOS = 2_000_000_000L;
     private final int max;
     private final long deadline;
     private final LongSupplier nanoTime;
+    private final Set<String> visited = new HashSet<>();
     private int used;
+    private boolean exhausted;
 
     ClientPlanningBudget(int max)
     { this(max, DEFAULT_NANOS, System::nanoTime); }
@@ -23,16 +27,33 @@ final class ClientPlanningBudget
         this.deadline = saturatingAdd(nanoTime.getAsLong(), maxNanos);
     }
 
-    void enter()
+    void visit(String identity)
     {
-        if (Thread.currentThread().isInterrupted())
-            throw new IllegalStateException("client planning cancelled");
-        if (nanoTime.getAsLong() - deadline >= 0)
-            throw new IllegalStateException("client planning time budget exhausted");
-        if (++used > max) throw new IllegalStateException("client planning node budget exhausted");
+        checkCancellation();
+        if (visited.contains(identity)) return;
+        if (nanoTime.getAsLong() - deadline >= 0 || used >= max)
+        {
+            exhausted = true;
+            return;
+        }
+        visited.add(identity);
+        used++;
+    }
+
+    boolean canOptimize()
+    {
+        checkCancellation();
+        if (nanoTime.getAsLong() - deadline >= 0) exhausted = true;
+        return !exhausted;
     }
 
     int used() { return used; }
+
+    void checkCancellation()
+    {
+        if (Thread.currentThread().isInterrupted())
+            throw new IllegalStateException("client planning cancelled");
+    }
 
     private static long saturatingAdd(long left, long right)
     {

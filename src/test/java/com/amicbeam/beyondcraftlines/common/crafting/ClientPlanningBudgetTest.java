@@ -5,18 +5,30 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ClientPlanningBudgetTest
 {
     @Test
-    void permitsConfiguredNodesAndRejectsTheNext()
+    void permitsConfiguredOptimizationNodesAndStopsTheNext()
     {
         ClientPlanningBudget budget = new ClientPlanningBudget(2);
-        budget.enter();
-        budget.enter();
+        budget.visit("minecraft:coal");
+        budget.visit("minecraft:iron_ingot");
         assertEquals(2, budget.used());
-        assertThrows(IllegalStateException.class, budget::enter);
+        budget.visit("minecraft:redstone");
+        assertFalse(budget.canOptimize());
+    }
+
+    @Test
+    void repeatedItemIdentityConsumesBudgetOnce()
+    {
+        ClientPlanningBudget budget = new ClientPlanningBudget(1);
+        budget.visit("minecraft:coal");
+        budget.visit("minecraft:coal");
+        assertEquals(1, budget.used());
+        org.junit.jupiter.api.Assertions.assertTrue(budget.canOptimize());
     }
 
     @Test
@@ -31,7 +43,8 @@ class ClientPlanningBudgetTest
         AtomicLong now = new AtomicLong();
         ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, now::get);
         now.set(5);
-        assertThrows(IllegalStateException.class, budget::enter);
+        budget.visit("minecraft:coal");
+        assertFalse(budget.canOptimize());
     }
 
     @Test
@@ -39,7 +52,7 @@ class ClientPlanningBudgetTest
     {
         ClientPlanningBudget budget = new ClientPlanningBudget(10);
         Thread.currentThread().interrupt();
-        try { assertThrows(IllegalStateException.class, budget::enter); }
+        try { assertThrows(IllegalStateException.class, budget::canOptimize); }
         finally { Thread.interrupted(); }
     }
 }

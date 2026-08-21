@@ -18,7 +18,7 @@ import net.minecraftforge.network.handling.IPayloadContext;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "9";
+    private static final String PROTOCOL = "10";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -43,12 +43,16 @@ public final class CraftlinesNetwork {
         server(BindMachinePayload.class, BindMachinePayload.STREAM_CODEC, BindMachinePayload::handle);
         server(ConfigureProvisionerPayload.class, ConfigureProvisionerPayload.STREAM_CODEC, ConfigureProvisionerPayload::handle);
         server(RequestBindingVisualsPayload.class, RequestBindingVisualsPayload.STREAM_CODEC, RequestBindingVisualsPayload::handle);
+        server(RequestJeiNetworkAvailabilityPayload.class, RequestJeiNetworkAvailabilityPayload.STREAM_CODEC,
+                RequestJeiNetworkAvailabilityPayload::handle);
         client(OrderStatusPayload.class, OrderStatusPayload.STREAM_CODEC, OrderStatusPayload::handle);
         client(NetworkAmountPayload.class, NetworkAmountPayload.STREAM_CODEC, NetworkAmountPayload::handle);
         client(PlanPreviewPayload.class, PlanPreviewPayload.STREAM_CODEC, PlanPreviewPayload::handle);
         client(PlanningSnapshotPayload.class, PlanningSnapshotPayload.STREAM_CODEC, PlanningSnapshotPayload::handle);
         client(PlannerPreferencesPayload.class, PlannerPreferencesPayload.STREAM_CODEC, PlannerPreferencesPayload::handle);
         client(BindingVisualsPayload.class, BindingVisualsPayload.STREAM_CODEC, BindingVisualsPayload::handle);
+        client(JeiNetworkAvailabilityPayload.class, JeiNetworkAvailabilityPayload.STREAM_CODEC,
+                JeiNetworkAvailabilityPayload::handle);
     }
 
     public static void sendToServer(Object payload) { CHANNEL.sendToServer(payload); }

@@ -32,6 +32,18 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.recipe_index_max_per_tick")
             .defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
 
+    public static final ModConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
+            .comment("Show only the occurrence closest to the root for an identical component-aware resource in the recipe tree; later occurrences become clickable jump references.")
+            .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")
+            .define("collapseDuplicateTreeResources", true);
+
+    public static final ModConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
+            .pop()
+            .push("jei")
+            .comment("Show the Craftlines order button in JEI from every screen. When disabled, it is only available while a Beyond Dimensions network menu is open.")
+            .translation("config.beyond_craftlines.show_jei_order_button_everywhere")
+            .define("showOrderButtonEverywhere", true);
+
     public static final ModConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting")
             .comment("Ticks between simulated crafting batches. Stack-stable inputs are processed as one BD long-count batch; state-changing tools remain sequential.")
@@ -44,12 +56,12 @@ public final class CraftlinesConfig
             .defineInRange("maxPlanningDepth", 48, 1, 256);
 
     public static final ModConfigSpec.IntValue MAX_PLANNING_NODES = SERVER_BUILDER
-            .comment("Maximum recipe demand nodes expanded by one order plan.")
+            .comment("Maximum candidate branches explored during automatic recipe planning. Fixed client proposals are validated directly and do not consume this budget.")
             .translation("config.beyond_craftlines.max_planning_nodes")
             .defineInRange("maxPlanningNodes", 4_096, 64, 1_000_000);
 
     public static final ModConfigSpec.IntValue MAX_PLANNING_TIME_MILLIS = SERVER_BUILDER
-            .comment("Cooperative main-thread time budget in milliseconds for one recipe plan.")
+            .comment("Cooperative main-thread time budget in milliseconds for automatic candidate search. Fixed client proposals are validated directly and do not consume this budget.")
             .translation("config.beyond_craftlines.max_planning_time_millis")
             .defineInRange("maxPlanningTimeMillis", 50, 1, 10_000);
 

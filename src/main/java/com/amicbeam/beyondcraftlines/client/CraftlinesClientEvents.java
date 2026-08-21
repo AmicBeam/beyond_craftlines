@@ -38,7 +38,12 @@ public final class CraftlinesClientEvents
     @EventBusSubscriber(modid = BeyondCraftlines.MOD_ID, value = Dist.CLIENT)
     public static final class ModBus
     {
-        static { ClientBindingVisuals.initialize(); }
+        static
+        {
+            ClientBindingVisuals.initialize();
+            com.amicbeam.beyondcraftlines.common.network.BindMachineFeedbackPayload.clientReceiver =
+                    CraftlinesClientEvents::showBindFeedback;
+        }
 
         @SubscribeEvent public static void registerScreens(RegisterMenuScreensEvent event)
         {
@@ -123,5 +128,17 @@ public final class CraftlinesClientEvents
                 return;
             }
         }
+    }
+
+    private static void showBindFeedback(String rawType)
+    {
+        var player = Minecraft.getInstance().player;
+        if (player == null) return;
+        ResourceLocation type = ResourceLocation.tryParse(rawType);
+        Component title = type == null ? Component.literal(rawType)
+                : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                .recipeTypeTitle(type).orElse(Component.literal(rawType));
+        player.displayClientMessage(Component.translatable(
+                "message.beyond_craftlines.machine_bound", rawType, title), false);
     }
 }

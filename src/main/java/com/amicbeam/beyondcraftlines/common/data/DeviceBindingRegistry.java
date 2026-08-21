@@ -88,7 +88,8 @@ public final class DeviceBindingRegistry
                     existing != null && existing.favorite(),
                     existing == null ? level.getGameTime() : existing.boundGameTime());
             data.add(record);
-            return BindAttempt.success(new BindResult(deviceType, selected.families(), false));
+            return BindAttempt.success(new BindResult(
+                    deviceType, selected.jeiTypes(), selected.families(), false));
         }
         ServerLevel provisionerLevel = player.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
@@ -104,7 +105,8 @@ public final class DeviceBindingRegistry
                 && data.recipeTypesForProvisioner(selection.dimension(), selection.position()).isEmpty()
                 && configureProvisioner(player, provisionerLevel, selection.position(), provisioner, candidates);
         PROVISIONER_SELECTIONS.remove(player.getUUID());
-        return BindAttempt.success(new BindResult(deviceType, resolved.families(), autoSelected));
+        return BindAttempt.success(new BindResult(
+                deviceType, resolved.jeiTypes(), resolved.families(), autoSelected));
     }
 
     public static boolean configureProvisioner(Player player, BlockPos position,
@@ -258,7 +260,8 @@ public final class DeviceBindingRegistry
 
     public record BoundMachine(BindingRecord binding, ServerLevel level) {}
     public record ProvisionerTarget(BindingRecord binding, CraftlineProvisionerBlockEntity provisioner) {}
-    public record BindResult(DeviceType deviceType, Set<String> recipeFamilies, boolean autoSelected) {}
+    public record BindResult(DeviceType deviceType, Set<ResourceLocation> jeiRecipeTypes,
+                             Set<String> recipeFamilies, boolean autoSelected) {}
     public record BindAttempt(BindResult result, BindFailure failure)
     {
         public static BindAttempt success(BindResult result) { return new BindAttempt(result, null); }

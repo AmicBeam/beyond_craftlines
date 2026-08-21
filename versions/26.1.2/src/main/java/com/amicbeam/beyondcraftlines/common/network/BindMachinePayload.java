@@ -13,6 +13,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -58,6 +59,15 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
             }
             var binding = DeviceBindingRegistry.bindMachine(player, target, types);
             var result = binding.result();
+            if (binding.isSuccess() && result.deviceType()
+                    == com.amicbeam.beyondcraftlines.common.data.DeviceType.EXTERNAL_RECIPE_MACHINE)
+            {
+                String selectedType = result.jeiRecipeTypes().stream().map(Object::toString)
+                        .sorted().findFirst().orElse("");
+                PacketDistributor.sendToPlayer(player, new BindMachineFeedbackPayload(selectedType));
+                BindingVisualsPayload.broadcast(player.level());
+                return;
+            }
             String message = binding.isSuccess()
                     ? result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING

@@ -47,5 +47,7 @@ public final class CraftlinesNetwork
                 PlannerPreferencesPayload::handle);
         registrar.playToClient(BindingVisualsPayload.TYPE, BindingVisualsPayload.STREAM_CODEC,
                 BindingVisualsPayload::handle);
+        registrar.playToClient(BindMachineFeedbackPayload.TYPE, BindMachineFeedbackPayload.STREAM_CODEC,
+                BindMachineFeedbackPayload::handle);
     }
 }

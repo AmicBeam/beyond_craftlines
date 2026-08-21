@@ -42,6 +42,8 @@ public final class CraftlinesClientEvents
         static
         {
             ClientBindingVisuals.initialize();
+            com.amicbeam.beyondcraftlines.common.network.BindMachineFeedbackPayload.clientReceiver =
+                    CraftlinesClientEvents::showBindFeedback;
             NetworkLinkerItem.CLIENT_BIND_REQUEST = (context, remove) -> {
                 var player = context.getPlayer();
                 if (player == null) return net.minecraft.world.InteractionResult.PASS;
@@ -143,5 +145,17 @@ public final class CraftlinesClientEvents
                 return;
             }
         }
+    }
+
+    private static void showBindFeedback(String rawType)
+    {
+        var player = Minecraft.getInstance().player;
+        if (player == null) return;
+        net.minecraft.resources.Identifier type = net.minecraft.resources.Identifier.tryParse(rawType);
+        Component title = type == null ? Component.literal(rawType)
+                : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                .recipeTypeTitle(type).orElse(Component.literal(rawType));
+        player.sendSystemMessage(Component.translatable(
+                "message.beyond_craftlines.machine_bound", rawType, title));
     }
 }

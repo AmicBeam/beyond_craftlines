@@ -136,7 +136,9 @@ public final class RecipeResourceResolver
                 if (input == null || seen.contains(input)) continue;
                 CountedInputReflection.Value reflected = CountedInputReflection.read(input);
                 Object ingredientSource = reflected == null ? input : reflected.ingredient();
-                long multiplier = reflected == null ? 1 : reflected.count();
+                long multiplier = SaturatingLongMath.multiply(
+                        reflected == null ? 1 : reflected.count(),
+                        CountedInputReflection.recipeInputMultiplier(recipe, methodName));
 
                 if (ingredientSource instanceof Ingredient ingredient)
                 {

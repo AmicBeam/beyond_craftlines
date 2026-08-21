@@ -12,6 +12,11 @@ import java.util.Set;
 /** Structural reflection for third-party counted item inputs, kept free of mod-specific classes. */
 final class CountedInputReflection
 {
+    private static final long MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER = 200;
+    private static final Set<String> CHEMICAL_INPUT_METHODS = Set.of(
+            "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
+            "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals");
+
     static final List<String> INPUT_METHODS = List.of(
             "input", "getInput", "inputs", "getInputs",
             "inputA", "getInputA", "inputB", "getInputB", "inputC", "getInputC",
@@ -90,6 +95,27 @@ final class CountedInputReflection
             current = ingredient;
         }
         return wrapped && current != null ? new Value(current, count) : null;
+    }
+
+    /** Mirrors Mekanism's recipe-viewer total for chemicals consumed once per processing tick. */
+    static long recipeInputMultiplier(Object recipe, String inputMethod)
+    {
+        if (recipe == null || !CHEMICAL_INPUT_METHODS.contains(inputMethod)
+                || !recipe.getClass().getName().startsWith("mekanism.")) return 1;
+        Object perTickUsage = invokeNoArgs(recipe, "perTickUsage");
+        if (perTickUsage instanceof Boolean enabled)
+            return enabled ? MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER : 1;
+        // Mekanism 1.20.x predates the perTickUsage flag. Its JEI category applies
+        // the same 200-tick total to every ItemStackGasToItemStackRecipe.
+        return hasTypeNamed(recipe.getClass(), "mekanism.api.recipes.ItemStackGasToItemStackRecipe")
+                ? MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER : 1;
+    }
+
+    private static boolean hasTypeNamed(Class<?> type, String expectedName)
+    {
+        for (Class<?> current = type; current != null; current = current.getSuperclass())
+            if (current.getName().equals(expectedName)) return true;
+        return false;
     }
 
     private static long saturatedMultiply(long left, long right)

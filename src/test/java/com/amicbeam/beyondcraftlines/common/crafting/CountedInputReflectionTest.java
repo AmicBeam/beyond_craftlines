@@ -1,5 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
+import mekanism.test.PerTickChemicalRecipe;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -95,6 +96,20 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void scalesOnlyMekanismPerTickChemicalInputs()
+    {
+        var perTick = new PerTickChemicalRecipe(true);
+        assertEquals(200, CountedInputReflection.recipeInputMultiplier(perTick, "getChemicalInput"));
+        assertEquals(1, CountedInputReflection.recipeInputMultiplier(perTick, "getItemInput"));
+        assertEquals(1, CountedInputReflection.recipeInputMultiplier(
+                new PerTickChemicalRecipe(false), "getChemicalInput"));
+        assertEquals(1, CountedInputReflection.recipeInputMultiplier(
+                new UnrelatedPerTickRecipe(), "getChemicalInput"));
+        assertEquals(200, CountedInputReflection.recipeInputMultiplier(
+                new mekanism.api.recipes.ItemStackGasToItemStackRecipe(), "getChemicalInput"));
+    }
+
+    @Test
     void rejectsObjectsWithoutAnIngredientAccessor()
     {
         assertNull(CountedInputReflection.read(new Object()));
@@ -105,6 +120,10 @@ final class CountedInputReflectionTest
     private record RepresentationProvider(Object ingredient, long count)
     {
         public List<Object> getRepresentations() { return List.of(ingredient); }
+    }
+    private static final class UnrelatedPerTickRecipe
+    {
+        public boolean perTickUsage() { return true; }
     }
 
     private static final class BeanStyleInput

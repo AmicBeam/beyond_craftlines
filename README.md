@@ -36,7 +36,7 @@
 ./gradlew build
 ```
 
-产物：`build/libs/beyond_craftlines-1.21.1-neoforge-0.1.0.jar`
+默认 1.21.1 产物：`build/libs/beyond_craftlines-0.1.0+1.21.1.jar`
 
 ## 使用概要
 

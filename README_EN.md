@@ -36,7 +36,7 @@ Structure capture, sandbox trial production, reports, steady-state production li
 ./gradlew build
 ```
 
-Default 1.21.1 artifact: `build/libs/beyond_craftlines-1.21.1-neoforge-0.1.0.jar`
+Default 1.21.1 artifact: `build/libs/beyond_craftlines-0.1.0+1.21.1.jar`
 
 The Forge 1.20.1 and NeoForge 26.1.2 ports are independently buildable from `versions/1.20.1` and `versions/26.1.2`.
 

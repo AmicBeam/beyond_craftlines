@@ -367,7 +367,7 @@ NeoForge 自动生成 client 和 server 配置。服务端配置通常按世界�
 产物位于：
 
 ```text
-build/libs/beyond_craftlines-1.21.1-neoforge-0.1.0.jar
+build/libs/beyond_craftlines-0.1.0+1.21.1.jar
 ```
 
 当前纯单元测试覆盖：

@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 
 public record PlanProposalUploadPayload(long nonce, String itemId, Header header,
                                         List<SubmitOrderPayload.RecipeChoice> recipeChoices,
@@ -61,19 +62,20 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
 
     private static void accept(ServerPlayer player, CraftlineOrderMenu menu, PlanProposalUploadPayload payload)
     {
-        ResourceLocation target = ResourceLocation.parse(payload.itemId());
+        IStackKey<?> target = menu.initialTarget();
         Header header = payload.header();
         if (header.count() < 1 || header.pageCount() < 1 || header.pageCount() > MAX_PAGES
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
             throw new IllegalArgumentException("invalid proposal page");
-        if (menu.recipeForOutput(target) == null) throw new IllegalArgumentException("target is unavailable");
+        if (!menu.targetToken().equals(payload.itemId()) || menu.recipeForResourceOutput(target) == null)
+            throw new IllegalArgumentException("target is unavailable");
         UUID playerId = player.getUUID();
         long now = player.serverLevel().getGameTime();
         ASSEMBLIES.values().removeIf(existing -> existing.expiresAt() < now);
         Assembly assembly = ASSEMBLIES.get(playerId);
         if (header.pageIndex() == 0)
         {
-            assembly = new Assembly(payload.nonce(), target, header, new ArrayList<>(), new ArrayList<>(),
+            assembly = new Assembly(payload.nonce(), payload.itemId(), header, new ArrayList<>(), new ArrayList<>(),
                     new ProposalPageSequence(header.pageCount(), MAX_PAGES), now + 20 * 10);
             ASSEMBLIES.put(playerId, assembly);
         }
@@ -106,7 +108,23 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
                 menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides));
-        for (PlanPreviewPayload page : PlanPreviewPayload.from(payload.nonce(), plan))
+        RecipePlan theoretical;
+        try
+        {
+            theoretical = RecipePlanningService.plan(player.serverLevel(), target, header.count(),
+                    Map.of(), menu.availableFamilies(), overrides);
+        }
+        catch (IllegalStateException exception)
+        {
+            // The empty-stock plan is used only for explanatory material totals.
+            // It deliberately expands dependencies that the real, stock-aware plan can stop at,
+            // so a large tag/recipe graph must not invalidate an otherwise valid order.
+            if (!"recipe tree is too complex; planning budget exceeded".equals(exception.getMessage()))
+                throw exception;
+            theoretical = plan;
+        }
+        for (PlanPreviewPayload page : PlanPreviewPayload.from(payload.nonce(), plan, theoretical,
+                player.serverLevel()))
             PacketDistributor.sendToPlayer(player, page);
     }
 
@@ -123,7 +141,7 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
                 Header::new);
     }
 
-    private record Assembly(long nonce, ResourceLocation target, Header header,
+    private record Assembly(long nonce, String target, Header header,
                             ArrayList<SubmitOrderPayload.RecipeChoice> recipes,
                             ArrayList<SubmitOrderPayload.IngredientChoice> ingredients,
                             ProposalPageSequence sequence, long expiresAt)
@@ -131,7 +149,7 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         boolean matches(PlanProposalUploadPayload payload)
         {
             Header other = payload.header();
-            return nonce == payload.nonce() && target.toString().equals(payload.itemId())
+            return nonce == payload.nonce() && target.equals(payload.itemId())
                     && header.count() == other.count() && header.stockRevision() == other.stockRevision()
                     && header.recipeEpoch() == other.recipeEpoch() && header.pageCount() == other.pageCount();
         }

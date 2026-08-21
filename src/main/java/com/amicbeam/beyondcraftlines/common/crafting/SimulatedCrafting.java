@@ -25,6 +25,50 @@ public final class SimulatedCrafting
 {
     private SimulatedCrafting() {}
 
+    /** Deterministic container/remaining items for one crafting operation; reusable tools are excluded. */
+    public static List<ItemStack> previewRemainders(RecipeHolder<?> holder, Level level,
+                                                    List<RecipePlan.IngredientSelection> selections)
+    {
+        if (!(holder.value() instanceof CraftingRecipe recipe)) return List.of();
+        List<ItemStack> samples = selectedSamples(holder, selections);
+        try
+        {
+            CraftingInput input = matchingInput(recipe, samples, level);
+            if (input == null) return List.of();
+            NonNullList<ItemStack> values = recipe.getRemainingItems(input);
+            List<ItemStack> result = new ArrayList<>();
+            for (int i = 0; i < values.size(); i++)
+            {
+                ItemStack remainder = values.get(i);
+                ItemStack source = input.getItem(i);
+                if (remainder.isEmpty() || ItemStack.isSameItem(source, remainder)) continue;
+                result.add(remainder.copy());
+            }
+            return List.copyOf(result);
+        }
+        catch (RuntimeException ignored) { return List.of(); }
+    }
+
+    private static List<ItemStack> selectedSamples(RecipeHolder<?> holder,
+                                                   List<RecipePlan.IngredientSelection> selections)
+    {
+        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        for (RecipePlan.IngredientSelection selection : selections)
+            selectedItems.put(selection.slot(), selection.item());
+        List<ItemStack> samples = new ArrayList<>();
+        List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
+        for (int i = 0; i < ingredients.size(); i++)
+        {
+            ItemStack sample = ItemStack.EMPTY;
+            ResourceLocation selected = selectedItems.get(i);
+            for (ItemStack candidate : ingredients.get(i).getItems())
+                if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+                { sample = candidate.copyWithCount(Math.max(1, candidate.getCount())); break; }
+            samples.add(sample);
+        }
+        return samples;
+    }
+
     public static Attempt craftOne(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
                                    ResourceLocation expectedOutput)
     {
@@ -158,7 +202,8 @@ public final class SimulatedCrafting
                     combined.merge(key, available.amount(), SaturatingLongMath::add);
         }
         else for (PlanningSnapshotService.ComponentEntry available : networkSnapshot.componentEntries())
-            combined.merge(available.key(), available.amount(), SaturatingLongMath::add);
+            if (available.key() instanceof ItemStackKey itemKey)
+                combined.merge(itemKey, available.amount(), SaturatingLongMath::add);
         List<KeyAmount> availableStacks = combined.entrySet().stream()
                 .map(entry -> new KeyAmount(entry.getKey(), entry.getValue())).toList();
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
@@ -197,7 +242,7 @@ public final class SimulatedCrafting
     static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
                                              List<RecipePlan.IngredientSelection> selections)
     {
-        List<Ingredient> ingredients = holder.value().getIngredients();
+        List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         boolean[] reusable = new boolean[ingredients.size()];
         if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
@@ -269,7 +314,8 @@ public final class SimulatedCrafting
         Map<ItemStackKey, Long> snapshotAmounts = new LinkedHashMap<>();
         if (networkSnapshot != null)
             for (PlanningSnapshotService.ComponentEntry value : networkSnapshot.componentEntries())
-                snapshotAmounts.put(value.key(), value.amount());
+                if (value.key() instanceof ItemStackKey itemKey)
+                    snapshotAmounts.put(itemKey, value.amount());
         for (var entry : perBatch.entrySet())
         {
             long networkAmount = networkSnapshot == null ? storage.getStackByKey(entry.getKey()).amount()
@@ -313,7 +359,8 @@ public final class SimulatedCrafting
     {
         LinkedHashMap<ItemStackKey, Long> result = new LinkedHashMap<>();
         for (RecipePlan.ReservedMaterial material : reserved)
-            result.merge(material.key(), material.amount(), SaturatingLongMath::add);
+            if (material.key() instanceof ItemStackKey itemKey)
+                result.merge(itemKey, material.amount(), SaturatingLongMath::add);
         return result;
     }
 

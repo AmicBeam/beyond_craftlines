@@ -36,6 +36,19 @@ final class PreviewPagePartitionerTest
     }
 
     @Test
+    void splitsMaterialSummaryAsAThirdIndependentStream()
+    {
+        List<Integer> first = List.of(1);
+        List<String> second = List.of("a", "b");
+        List<Long> materials = List.of(10L, 20L, 30L, 40L, 50L);
+        var pages = PreviewPagePartitioner.partition(first, second, materials, 2);
+
+        assertEquals(3, pages.size());
+        assertEquals(materials, pages.stream().flatMap(page -> page.third().stream()).toList());
+        assertTrue(pages.stream().allMatch(page -> page.third().size() <= 2));
+    }
+
+    @Test
     void emptyInputsStillProduceOneEmptyPage()
     {
         var pages = PreviewPagePartitioner.partition(List.of(), List.of(), 256);

@@ -2,13 +2,19 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiPredicate;
 
-/** Baseline plus every one-slot alternative; deliberately avoids a Cartesian product. */
+/** Baseline, one-slot alternatives, and uniform alternatives for repeated equivalent slots. */
 public final class SingleSubstitutionVariants
 {
     private SingleSubstitutionVariants() {}
 
     public static <T> List<List<T>> from(List<List<T>> options)
+    {
+        return from(options, java.util.Objects::equals);
+    }
+
+    public static <T> List<List<T>> from(List<List<T>> options, BiPredicate<T, T> equivalent)
     {
         List<T> baseline = new ArrayList<>(options.size());
         for (List<T> slot : options)
@@ -16,7 +22,7 @@ public final class SingleSubstitutionVariants
             if (slot.isEmpty()) throw new IllegalArgumentException("ingredient option list is empty");
             baseline.add(slot.getFirst());
         }
-        List<List<T>> variants = new ArrayList<>();
+        java.util.LinkedHashSet<List<T>> variants = new java.util.LinkedHashSet<>();
         variants.add(List.copyOf(baseline));
         for (int slot = 0; slot < options.size(); slot++)
         {
@@ -27,6 +33,32 @@ public final class SingleSubstitutionVariants
                 variants.add(List.copyOf(variant));
             }
         }
+        // Fences and sticks repeat the same tag ingredient in several slots. Changing only one
+        // slot can never discover an all-birch branch, while a full Cartesian product is too large.
+        boolean[] grouped = new boolean[options.size()];
+        for (int first = 0; first < options.size(); first++)
+        {
+            if (grouped[first]) continue;
+            List<Integer> equivalentSlots = new ArrayList<>();
+            for (int slot = first; slot < options.size(); slot++)
+                if (sameOptions(options.get(first), options.get(slot), equivalent)) equivalentSlots.add(slot);
+            if (equivalentSlots.size() < 2) continue;
+            equivalentSlots.forEach(slot -> grouped[slot] = true);
+            for (int candidate = 1; candidate < options.get(first).size(); candidate++)
+            {
+                List<T> variant = new ArrayList<>(baseline);
+                for (int slot : equivalentSlots) variant.set(slot, options.get(slot).get(candidate));
+                variants.add(List.copyOf(variant));
+            }
+        }
         return List.copyOf(variants);
+    }
+
+    private static <T> boolean sameOptions(List<T> left, List<T> right, BiPredicate<T, T> equivalent)
+    {
+        if (left.size() != right.size()) return false;
+        for (int i = 0; i < left.size(); i++)
+            if (!equivalent.test(left.get(i), right.get(i))) return false;
+        return true;
     }
 }

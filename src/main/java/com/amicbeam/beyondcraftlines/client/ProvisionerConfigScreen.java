@@ -3,7 +3,6 @@ package com.amicbeam.beyondcraftlines.client;
 import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import com.amicbeam.beyondcraftlines.common.network.ConfigureProvisionerPayload;
-import com.amicbeam.beyondcraftlines.common.network.ExtractProvisionerPayload;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -52,13 +51,6 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         next = addRenderableWidget(Button.builder(Component.literal(">"), ignored -> {
             if ((page + 1) * ROWS < candidates.size()) { page++; refresh(); }
         }).bounds(leftPos + 44, topPos + 207, 28, 18).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.provisioner.extract"), ignored ->
-                PacketDistributor.sendToServer(new ExtractProvisionerPayload(menu.position().asLong())))
-                .bounds(leftPos + 78, topPos + 207, 86, 18).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.provisioner.save"), ignored -> {
-            PacketDistributor.sendToServer(ConfigureProvisionerPayload.of(menu.position(), selected));
-            onClose();
-        }).bounds(leftPos + imageWidth - 92, topPos + 207, 80, 18).build());
         refresh();
     }
 
@@ -68,6 +60,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         if (index >= candidates.size()) return;
         ResourceLocation type = candidates.get(index);
         if (!selected.remove(type)) selected.add(type);
+        PacketDistributor.sendToServer(ConfigureProvisionerPayload.of(menu.position(), selected));
         refresh();
     }
 
@@ -89,17 +82,21 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     @Override protected void renderBg(GuiGraphics graphics, float partialTick, int mouseX, int mouseY)
     {
-        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xF0202730);
-        graphics.renderOutline(leftPos, topPos, imageWidth, imageHeight, 0xFF5BC8FF);
+        // Vanilla container-style light gray panel with the classic raised bevel.
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFFC6C6C6);
+        graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + 2, 0xFFFFFFFF);
+        graphics.fill(leftPos, topPos, leftPos + 2, topPos + imageHeight, 0xFFFFFFFF);
+        graphics.fill(leftPos, topPos + imageHeight - 2, leftPos + imageWidth, topPos + imageHeight, 0xFF555555);
+        graphics.fill(leftPos + imageWidth - 2, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF555555);
     }
 
     @Override protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY)
     {
-        graphics.drawString(font, title, 12, 10, 0xFFFFFF, false);
+        graphics.drawString(font, title, 12, 10, 0x404040, false);
         Component help = candidates.isEmpty()
                 ? Component.translatable("gui.beyond_craftlines.provisioner.no_candidates")
                 : Component.translatable("gui.beyond_craftlines.provisioner.choose");
-        graphics.drawString(font, help, 12, 27, candidates.isEmpty() ? 0xAAAAAA : 0xD8F3FF, false);
+        graphics.drawString(font, help, 12, 27, candidates.isEmpty() ? 0x777777 : 0x404040, false);
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick)

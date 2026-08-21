@@ -59,7 +59,9 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
             var binding = DeviceBindingRegistry.bindMachine(player, target, types);
             String message = binding.map(value -> value.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING
-                    ? "message.beyond_craftlines.provisioner_target_bound"
+                    ? value.autoSelected()
+                    ? "message.beyond_craftlines.provisioner_target_bound_single"
+                    : "message.beyond_craftlines.provisioner_target_bound"
                     : "message.beyond_craftlines.machine_bound")
                     .orElse("error.beyond_craftlines.machine_binding_failed");
             Component feedback = binding.isPresent() && binding.get().deviceType()

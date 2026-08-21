@@ -20,6 +20,18 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.bound_machine_frame_render_distance")
             .defineInRange("boundMachineFrameRenderDistance", 96, 16, 512);
 
+    public static final ModConfigSpec.BooleanValue SHOW_PROVISIONER_TARGET_MATERIAL = CLIENT_BUILDER
+            .comment("Show the bound target item's 8x8 dynamic material on Craftline Provisioner side faces.")
+            .translation("config.beyond_craftlines.show_provisioner_target_material")
+            .define("showProvisionerTargetMaterial", true);
+
+    public static final ModConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
+            .pop()
+            .push("planning")
+            .comment("Maximum recipes captured per client tick while building the recipe-tree index. A separate time budget still protects frame time.")
+            .translation("config.beyond_craftlines.recipe_index_max_per_tick")
+            .defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
+
     public static final ModConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting")
             .comment("Ticks between simulated crafting batches. Stack-stable inputs are processed as one BD long-count batch; state-changing tools remain sequential.")
@@ -77,4 +89,7 @@ public final class CraftlinesConfig
         container.registerConfig(ModConfig.Type.CLIENT, CLIENT_SPEC);
         container.registerConfig(ModConfig.Type.SERVER, SERVER_SPEC);
     }
+
+    public static boolean isClientConfig(ModConfig config)
+    { return config.getSpec() == CLIENT_SPEC; }
 }

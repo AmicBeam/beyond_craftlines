@@ -1,7 +1,13 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
+import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
+import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
+import com.wintercogs.beyonddimensions.api.capability.helper.wrapper.IStackHandlerWrapper;
+import com.wintercogs.beyonddimensions.api.capability.helper.wrapper.StackHandlerWrapperHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -24,7 +30,7 @@ public final class BoundMachineAutomation
 
     public static boolean isAutomatable(ServerLevel level, BlockPos position)
     {
-        return !handlers(level, position).isEmpty();
+        return !resourceHandlers(level, position).isEmpty();
     }
 
     public static boolean containsAny(ServerLevel level, BlockPos position, Set<ResourceLocation> itemIds)
@@ -40,6 +46,24 @@ public final class BoundMachineAutomation
         return false;
     }
 
+    /** Checks every native BD resource capability, including fluids and optional chemicals. */
+    public static boolean containsAnyResources(ServerLevel level, BlockPos position,
+                                               List<RecipePlan.Material> materials)
+    {
+        if (materials.isEmpty()) return false;
+        for (ResourceHandler handler : resourceHandlers(level, position))
+        {
+            for (int slot = 0; slot < handler.wrapper().getSlots(); slot++)
+            {
+                KeyAmount present = RecipeResourceResolver.fromStack(handler.wrapper().getStackInSlot(slot));
+                if (present == null || present.isEmpty()) continue;
+                for (RecipePlan.Material material : materials)
+                    if (material.key().isSame(present.key())) return true;
+            }
+        }
+        return false;
+    }
+
     public static long insertCapacity(ServerLevel level, BlockPos position, ResourceLocation itemId, long limit)
     {
         return insertCapacity(handlers(level, position), new ItemStack(BuiltInRegistries.ITEM.get(itemId)), limit);
@@ -47,6 +71,16 @@ public final class BoundMachineAutomation
 
     public static long insertCapacity(ServerLevel level, BlockPos position, ItemStackKey key, long limit)
     { return insertCapacity(handlers(level, position), key.getReadOnlyStack(), limit); }
+
+    public static long insertCapacity(ServerLevel level, BlockPos position, IStackKey<?> key, long limit)
+    {
+        if (key instanceof ItemStackKey item) return insertCapacity(level, position, item, limit);
+        long best = 0;
+        for (ResourceHandler handler : resourceHandlers(level, position))
+            if (handler.type().equals(key.getTypeId()))
+                best = Math.max(best, handler.insert(key, limit, true));
+        return best;
+    }
 
     static long insertCapacity(List<IItemHandler> handlers, ResourceLocation itemId, long limit)
     { return insertCapacity(handlers, new ItemStack(BuiltInRegistries.ITEM.get(itemId)), limit); }
@@ -78,6 +112,16 @@ public final class BoundMachineAutomation
     public static long insert(ServerLevel level, BlockPos position, ItemStackKey key, long amount)
     { return insert(handlers(level, position), key.getReadOnlyStack(), amount); }
 
+    public static long insert(ServerLevel level, BlockPos position, IStackKey<?> key, long amount)
+    {
+        if (key instanceof ItemStackKey item) return insert(level, position, item, amount);
+        ResourceHandler selected = resourceHandlers(level, position).stream()
+                .filter(handler -> handler.type().equals(key.getTypeId()))
+                .max(java.util.Comparator.comparingLong(handler -> handler.insert(key, amount, true)))
+                .orElse(null);
+        return selected == null ? 0 : selected.insert(key, amount, false);
+    }
+
     static long insert(List<IItemHandler> handlers, ResourceLocation itemId, long amount)
     { return insert(handlers, new ItemStack(BuiltInRegistries.ITEM.get(itemId)), amount); }
 
@@ -101,6 +145,23 @@ public final class BoundMachineAutomation
     public static long countExtractable(ServerLevel level, BlockPos position, ResourceLocation itemId)
     {
         return countExtractable(handlers(level, position), itemId);
+    }
+
+    public static long countExtractable(ServerLevel level, BlockPos position, IStackKey<?> key)
+    {
+        long best = 0;
+        for (ResourceHandler handler : resourceHandlers(level, position))
+            if (handler.type().equals(key.getTypeId())) best = Math.max(best, handler.count(key));
+        return best;
+    }
+
+    public static List<KeyAmount> extractStacks(ServerLevel level, BlockPos position,
+                                                IStackKey<?> key, long amount)
+    {
+        ResourceHandler selected = resourceHandlers(level, position).stream()
+                .filter(handler -> handler.type().equals(key.getTypeId()))
+                .max(java.util.Comparator.comparingLong(handler -> handler.count(key))).orElse(null);
+        return selected == null ? List.of() : selected.extract(key, amount);
     }
 
     static long countExtractable(List<IItemHandler> handlers, ResourceLocation itemId)
@@ -199,5 +260,90 @@ public final class BoundMachineAutomation
     private static void add(IItemHandler handler, Set<IItemHandler> seen, List<IItemHandler> result)
     {
         if (handler != null && handler.getSlots() > 0 && seen.add(handler)) result.add(handler);
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static List<ResourceHandler> resourceHandlers(ServerLevel level, BlockPos position)
+    {
+        if (!level.isLoaded(position)) return List.of();
+        List<ResourceHandler> result = new ArrayList<>();
+        Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        CapabilityHelper.BlockCapabilityMap.forEach((type, capability) -> {
+            var factory = StackHandlerWrapperHelper.stackWrappers.get(type);
+            if (factory == null) return;
+            for (Direction side : allSides())
+            {
+                try
+                {
+                    Object raw = level.getCapability((net.neoforged.neoforge.capabilities.BlockCapability) capability,
+                            position, side);
+                    if (raw == null || !seen.add(raw)) continue;
+                    IStackHandlerWrapper wrapper = (IStackHandlerWrapper) ((java.util.function.Function) factory)
+                            .apply(raw);
+                    if (wrapper != null && wrapper.getSlots() > 0)
+                        result.add(new ResourceHandler(type, wrapper));
+                }
+                catch (RuntimeException | LinkageError ignored) {}
+            }
+        });
+        return List.copyOf(result);
+    }
+
+    private static List<Direction> allSides()
+    {
+        List<Direction> result = new ArrayList<>();
+        result.add(null);
+        result.addAll(List.of(Direction.values()));
+        return result;
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private record ResourceHandler(ResourceLocation type, IStackHandlerWrapper wrapper)
+    {
+        long insert(IStackKey<?> key, long amount, boolean simulate)
+        {
+            if (amount <= 0) return 0;
+            try
+            {
+                Object stack = key.copyStackWithCount(amount);
+                long remaining = wrapper.insert(stack, simulate);
+                return Math.max(0, amount - Math.max(0, remaining));
+            }
+            catch (RuntimeException | LinkageError ignored) { return 0; }
+        }
+
+        long count(IStackKey<?> key)
+        {
+            long result = 0;
+            for (int slot = 0; slot < wrapper.getSlots(); slot++)
+            {
+                KeyAmount present = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
+                if (present != null && key.isSame(present.key()))
+                {
+                    long extracted = wrapper.extract(slot, present.amount(), true);
+                    result = result > Long.MAX_VALUE - extracted ? Long.MAX_VALUE : result + extracted;
+                }
+            }
+            return result;
+        }
+
+        List<KeyAmount> extract(IStackKey<?> key, long amount)
+        {
+            if (amount <= 0) return List.of();
+            List<KeyAmount> result = new ArrayList<>();
+            long remaining = amount;
+            for (int slot = 0; slot < wrapper.getSlots() && remaining > 0; slot++)
+            {
+                KeyAmount present = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
+                if (present == null || !key.isSame(present.key())) continue;
+                long extracted = wrapper.extract(slot, Math.min(remaining, present.amount()), false);
+                if (extracted > 0)
+                {
+                    result.add(new KeyAmount(present.key(), extracted));
+                    remaining -= extracted;
+                }
+            }
+            return List.copyOf(result);
+        }
     }
 }

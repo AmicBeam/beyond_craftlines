@@ -3,6 +3,8 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.StackKeyRegistry;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -35,13 +37,14 @@ public final class RecipeOrderSavedData extends SavedData
                 CompoundTag value = jobs.getCompound(i);
                 List<RecipePlan.Step> steps = new ArrayList<>();
                 ListTag encodedSteps = value.getList("steps", Tag.TAG_COMPOUND);
-                for (int j = 0; j < encodedSteps.size(); j++) steps.add(readStep(encodedSteps.getCompound(j)));
+                for (int j = 0; j < encodedSteps.size(); j++)
+                    steps.add(readStep(encodedSteps.getCompound(j), registries));
                 RecipeOrderJob job = new RecipeOrderJob(value.getUUID("id"), value.getUUID("owner"),
                         value.getInt("network"), ResourceLocation.parse(value.getString("target")),
                         value.getLong("requested"), steps, value.getInt("next"),
                         value.getBoolean("blocking_mode"),
                         RecipeOrderJob.Status.valueOf(value.getString("status")), value.getString("message"),
-                        value.getLong("created"), value.getLong("next_crafting_tick"),
+                        value.getLong("created"), value.getLong("finished"), value.getLong("next_crafting_tick"),
                         readExternalWait(value, registries),
                         readReserved(value, registries));
                 data.jobs.put(job.id(), job);
@@ -59,6 +62,12 @@ public final class RecipeOrderSavedData extends SavedData
     }
     public List<RecipeOrderJob> forOwner(UUID owner) { return jobs.values().stream().filter(j -> j.owner().equals(owner)).toList(); }
     public RecipeOrderJob get(UUID id) { return jobs.get(id); }
+    public void removeExpiredCompleted(long gameTime)
+    {
+        boolean removed = jobs.values().removeIf(job -> OrderRetention.expiredCompleted(
+                job.status() == RecipeOrderJob.Status.COMPLETE, job.finishedAt(), gameTime));
+        if (removed) setDirty();
+    }
     public void put(RecipeOrderJob job)
     {
         RecipeOrderJob previous = jobs.put(job.id(), job);
@@ -94,12 +103,13 @@ public final class RecipeOrderSavedData extends SavedData
             value.putBoolean("blocking_mode", job.blockingMode());
             value.putString("status", job.status().name()); value.putString("message", job.message());
             value.putLong("created", job.createdAt());
+            value.putLong("finished", job.finishedAt());
             value.putLong("next_crafting_tick", job.nextCraftingTick());
             ListTag reserved = new ListTag();
             for (RecipePlan.ReservedMaterial material : job.reserved())
             {
                 CompoundTag encoded = new CompoundTag();
-                encoded.put("key", material.key().serializeNBT(registries));
+                writeKey(encoded, material.key(), registries);
                 encoded.putLong("amount", material.amount());
                 reserved.add(encoded);
             }
@@ -110,7 +120,11 @@ public final class RecipeOrderSavedData extends SavedData
                 wait.putString("dimension", job.externalWait().machineDimension().location().toString());
                 wait.putLong("position", job.externalWait().machinePosition().asLong());
                 wait.putString("output", job.externalWait().output().toString());
+                CompoundTag waitOutputKey = new CompoundTag();
+                writeKey(waitOutputKey, job.externalWait().outputKey(), registries);
+                wait.put("output_key", waitOutputKey);
                 wait.putBoolean("native_furnace", job.externalWait().nativeFurnace());
+                wait.putBoolean("provisioner", job.externalWait().provisioner());
                 wait.putLong("baseline", job.externalWait().baseline());
                 wait.putLong("network_baseline", job.externalWait().networkBaseline());
                 wait.putLong("network_observed", job.externalWait().networkObserved());
@@ -120,7 +134,7 @@ public final class RecipeOrderSavedData extends SavedData
                 for (RecipePlan.ReservedMaterial material : job.externalWait().networkBaselineStacks())
                 {
                     CompoundTag encoded = new CompoundTag();
-                    encoded.put("key", material.key().serializeNBT(registries));
+                    writeKey(encoded, material.key(), registries);
                     encoded.putLong("amount", material.amount());
                     networkBaselineStacks.add(encoded);
                 }
@@ -129,7 +143,7 @@ public final class RecipeOrderSavedData extends SavedData
                 for (RecipePlan.Material input : job.externalWait().remainingInputs())
                 {
                     CompoundTag encoded = new CompoundTag();
-                    encoded.putString("item", input.item().toString());
+                    writeKey(encoded, input.key(), registries);
                     encoded.putLong("amount", input.amount());
                     encoded.putInt("ingredient_slot", input.ingredientSlot());
                     remaining.add(encoded);
@@ -138,23 +152,28 @@ public final class RecipeOrderSavedData extends SavedData
                 value.put("external_wait", wait);
             }
             ListTag steps = new ListTag();
-            job.steps().forEach(step -> steps.add(writeStep(step)));
+            job.steps().forEach(step -> steps.add(writeStep(step, registries)));
             value.put("steps", steps); list.add(value);
         }
         tag.put("jobs", list);
         return tag;
     }
 
-    private static CompoundTag writeStep(RecipePlan.Step step)
+    private static CompoundTag writeStep(RecipePlan.Step step, HolderLookup.Provider registries)
     {
         CompoundTag tag = new CompoundTag();
         tag.putString("recipe", step.recipe().toString()); tag.putString("family", step.family());
-        tag.putString("output", step.output().toString()); tag.putLong("per", step.outputPerCraft());
+        tag.putString("output", step.output().toString());
+        CompoundTag outputKey = new CompoundTag();
+        writeKey(outputKey, step.outputKey(), registries);
+        tag.put("output_key", outputKey);
+        tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
         ListTag inputs = new ListTag();
         for (RecipePlan.Material input : step.inputs())
         {
-            CompoundTag value = new CompoundTag(); value.putString("item", input.item().toString());
+            CompoundTag value = new CompoundTag();
+            writeKey(value, input.key(), registries);
             value.putLong("amount", input.amount());
             value.putInt("ingredient_slot", input.ingredientSlot());
             inputs.add(value);
@@ -172,14 +191,14 @@ public final class RecipeOrderSavedData extends SavedData
         return tag;
     }
 
-    private static RecipePlan.Step readStep(CompoundTag tag)
+    private static RecipePlan.Step readStep(CompoundTag tag, HolderLookup.Provider registries)
     {
         List<RecipePlan.Material> inputs = new ArrayList<>();
         ListTag encoded = tag.getList("inputs", Tag.TAG_COMPOUND);
         for (int i = 0; i < encoded.size(); i++)
         {
             CompoundTag value = encoded.getCompound(i);
-            inputs.add(new RecipePlan.Material(ResourceLocation.parse(value.getString("item")),
+            inputs.add(new RecipePlan.Material(readKey(value, registries),
                     value.getLong("amount"), value.contains("ingredient_slot", Tag.TAG_INT)
                     ? value.getInt("ingredient_slot") : -1));
         }
@@ -191,9 +210,13 @@ public final class RecipeOrderSavedData extends SavedData
             selections.add(new RecipePlan.IngredientSelection(value.getInt("slot"),
                     ResourceLocation.parse(value.getString("item"))));
         }
+        IStackKey<?> output = tag.contains("output_key", Tag.TAG_COMPOUND)
+                ? readKey(tag.getCompound("output_key"), registries)
+                : new ItemStackKey(new net.minecraft.world.item.ItemStack(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                        ResourceLocation.parse(tag.getString("output")))));
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
-                ResourceLocation.parse(tag.getString("output")), tag.getLong("per"), tag.getLong("crafts"),
-                inputs, selections);
+                output, tag.getLong("per"), tag.getLong("crafts"), inputs, selections);
     }
 
     private static RecipeOrderJob.ExternalWait readExternalWait(CompoundTag job,
@@ -206,7 +229,7 @@ public final class RecipeOrderSavedData extends SavedData
         for (int i = 0; i < encoded.size(); i++)
         {
             CompoundTag input = encoded.getCompound(i);
-            remaining.add(new RecipePlan.Material(ResourceLocation.parse(input.getString("item")),
+            remaining.add(new RecipePlan.Material(readKey(input, registries),
                     input.getLong("amount"), input.contains("ingredient_slot", Tag.TAG_INT)
                     ? input.getInt("ingredient_slot") : -1));
         }
@@ -214,8 +237,12 @@ public final class RecipeOrderSavedData extends SavedData
                 net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                         ResourceLocation.parse(wait.getString("dimension"))),
                 net.minecraft.core.BlockPos.of(wait.getLong("position")),
-                ResourceLocation.parse(wait.getString("output")),
-                wait.getBoolean("native_furnace"), wait.getLong("baseline"),
+                wait.contains("output_key", Tag.TAG_COMPOUND)
+                        ? readKey(wait.getCompound("output_key"), registries)
+                        : new ItemStackKey(new net.minecraft.world.item.ItemStack(
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                                ResourceLocation.parse(wait.getString("output"))))),
+                wait.getBoolean("native_furnace"), wait.getBoolean("provisioner"), wait.getLong("baseline"),
                 wait.getLong("network_baseline"), wait.getLong("network_observed"), wait.getLong("amount"),
                 wait.getLong("collected"), remaining, readReservedList(
                 wait, "network_baseline_stacks", registries));
@@ -233,11 +260,34 @@ public final class RecipeOrderSavedData extends SavedData
         for (int i = 0; i < encoded.size(); i++)
         {
             CompoundTag value = encoded.getCompound(i);
-            ItemStackKey key = ItemStackKey.EMPTY.deserializeNBT(value.getCompound("key"), registries);
+            IStackKey<?> key = readKey(value, registries);
             long amount = value.getLong("amount");
-            if (key != ItemStackKey.EMPTY && amount > 0)
+            if (key != null && !key.isEmpty() && amount > 0)
                 result.add(new RecipePlan.ReservedMaterial(key, amount));
         }
         return List.copyOf(result);
+    }
+
+    private static void writeKey(CompoundTag owner, IStackKey<?> key, HolderLookup.Provider registries)
+    {
+        owner.putString("key_type", key.getTypeId().toString());
+        owner.put("key", key.serializeNBT(registries));
+        if (key instanceof ItemStackKey item)
+            owner.putString("item", net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(item.getSource()).toString());
+    }
+
+    private static IStackKey<?> readKey(CompoundTag owner, HolderLookup.Provider registries)
+    {
+        ResourceLocation type = ResourceLocation.tryParse(owner.getString("key_type"));
+        if (type != null)
+        {
+            try { return StackKeyRegistry.getType(type).deserializeNBT(owner.getCompound("key"), registries); }
+            catch (RuntimeException | LinkageError ignored) {}
+        }
+        ResourceLocation item = ResourceLocation.tryParse(owner.getString("item"));
+        if (item != null) return new ItemStackKey(new net.minecraft.world.item.ItemStack(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.get(item)));
+        return ItemStackKey.EMPTY.deserializeNBT(owner.getCompound("key"), registries);
     }
 }

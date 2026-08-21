@@ -1,6 +1,10 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import net.minecraft.resources.ResourceLocation;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.Map;
@@ -10,14 +14,14 @@ public final class RecipeResolutionOverrides
 {
     public static final RecipeResolutionOverrides EMPTY = new RecipeResolutionOverrides(List.of(), List.of());
 
-    private final Map<ResourceLocation, ResourceLocation> recipes;
+    private final Map<String, ResourceLocation> recipes;
     private final Map<IngredientSlot, ResourceLocation> ingredients;
 
     public RecipeResolutionOverrides(List<RecipeChoice> recipeChoices, List<IngredientChoice> ingredientChoices)
     {
         if (recipeChoices.size() > 16_384 || ingredientChoices.size() > 16_384)
             throw new IllegalArgumentException("too many recipe resolutions");
-        SharedResolutionMap<ResourceLocation, ResourceLocation> recipes = new SharedResolutionMap<>();
+        SharedResolutionMap<String, ResourceLocation> recipes = new SharedResolutionMap<>();
         for (RecipeChoice choice : recipeChoices)
             recipes.put(choice.output(), choice.recipe(), "duplicate recipe resolution for " + choice.output());
         SharedResolutionMap<IngredientSlot, ResourceLocation> ingredients = new SharedResolutionMap<>();
@@ -28,7 +32,10 @@ public final class RecipeResolutionOverrides
         this.ingredients = ingredients.copy();
     }
 
-    public ResourceLocation recipeFor(ResourceLocation output) { return recipes.get(output); }
+    public ResourceLocation recipeFor(IStackKey<?> output)
+    { return recipes.get(RecipeResourceResolver.sortKey(output)); }
+    public ResourceLocation recipeFor(ResourceLocation output)
+    { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(output)))); }
     public ResourceLocation ingredientFor(ResourceLocation recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
 
@@ -36,14 +43,14 @@ public final class RecipeResolutionOverrides
     {
         for (RecipePlan.Step step : plan.steps())
         {
-            if (!step.recipe().equals(recipeFor(step.output()))) return false;
+            if (!step.recipe().equals(recipeFor(step.outputKey()))) return false;
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
                 if (!selection.item().equals(ingredientFor(step.recipe(), selection.slot()))) return false;
         }
         return true;
     }
 
-    public record RecipeChoice(ResourceLocation output, ResourceLocation recipe)
+    public record RecipeChoice(String output, ResourceLocation recipe)
     {
         public RecipeChoice
         {

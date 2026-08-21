@@ -6,6 +6,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
+import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -51,73 +54,84 @@ public final class ClientRecipePlanner
 
     private static Recipe captureRecipe(Level level, RecipeHolder<?> holder)
     {
-        ItemStack result = holder.value().getResultItem(level.registryAccess());
+        KeyAmount result = RecipeOutputResolver.primary(holder.value(), level.registryAccess());
+        if (result == null) throw new IllegalArgumentException("recipe has no supported output: " + holder.id());
         List<Slot> slots = new ArrayList<>();
-        int slot = 0;
-        for (var ingredient : holder.value().getIngredients())
+        for (var ingredient : RecipeResourceResolver.ingredients(holder.value()))
         {
-            int current = slot++;
-            if (ingredient.isEmpty()) continue;
-            LinkedHashMap<ResourceLocation, Candidate> candidates = new LinkedHashMap<>();
-            for (ItemStack stack : ingredient.getItems())
-            {
-                ResourceLocation item = BuiltInRegistries.ITEM.getKey(stack.getItem());
-                candidates.putIfAbsent(item, new Candidate(item, Math.max(1, stack.getCount())));
-            }
-            if (!candidates.isEmpty()) slots.add(new Slot(current, List.copyOf(candidates.values()), false));
+            LinkedHashMap<IStackKey<?>, Candidate> candidates = new LinkedHashMap<>();
+            for (KeyAmount value : ingredient.candidates())
+                candidates.putIfAbsent(value.key(), new Candidate(value.key(), value.amount()));
+            if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
+                    List.copyOf(candidates.values()), false));
         }
         List<RecipePlan.IngredientSelection> baseline = slots.stream()
+                .filter(slotEntry -> slotEntry.candidates().getFirst().key() instanceof ItemStackKey)
                 .map(slotEntry -> new RecipePlan.IngredientSelection(
-                        slotEntry.index(), slotEntry.candidates().getFirst().item())).toList();
+                        slotEntry.index(), itemId(slotEntry.candidates().getFirst().key()))).toList();
         boolean[] reusable = SimulatedCrafting.reusableIngredientSlots(holder, level, baseline);
         slots = slots.stream().map(slotEntry -> new Slot(slotEntry.index(), slotEntry.candidates(),
                 slotEntry.index() < reusable.length && reusable[slotEntry.index()])).toList();
         return new Recipe(holder.id(), RecipePlanningService.family(holder),
-                BuiltInRegistries.ITEM.getKey(result.getItem()), Math.max(1, result.getCount()), slots);
+                result.key(), Math.max(1, result.amount()), slots);
     }
 
-    public static Proposal plan(Catalog catalog, Map<ResourceLocation, Long> suppliedStock,
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
                                 ResourceLocation target, long requested,
                                 Map<ResourceLocation, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, ResourceLocation> manualIngredients,
                                 int maxDepth, int maxNodes)
     {
+        Map<String, ResourceLocation> converted = new LinkedHashMap<>();
+        manualRecipes.forEach((output, recipe) -> converted.put(RecipeResourceResolver.sortKey(
+                new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(output)))), recipe));
+        return plan(catalog, suppliedStock,
+                new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(target))), requested,
+                converted, manualIngredients, maxDepth, maxNodes);
+    }
+
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
+                                IStackKey<?> target, long requested,
+                                Map<String, ResourceLocation> manualRecipes,
+                                Map<IngredientKey, ResourceLocation> manualIngredients,
+                                int maxDepth, int maxNodes)
+    {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1) throw new IllegalArgumentException("invalid client plan");
-        Map<ResourceLocation, List<Recipe>> byOutput = new HashMap<>();
+        Map<IStackKey<?>, List<Recipe>> byOutput = new LinkedHashMap<>();
         for (Recipe recipe : catalog.recipes())
             byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
         byOutput.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
-        State state = new State(new HashMap<>(suppliedStock), new LinkedHashMap<>(), 0,
+        State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
-        state.stock.put(target, 0L);
+        state.stock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes);
-        resolve(target, requested, byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
+        resolve(target, requested,
+                byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
                 0, maxDepth, budget);
         return new Proposal(state.recipes, state.ingredients, state.missing);
     }
 
-    private static void resolve(ResourceLocation item, long needed, Map<ResourceLocation, List<Recipe>> byOutput,
-                                Set<ResourceLocation> visiting, State state,
-                                Map<ResourceLocation, ResourceLocation> manualRecipes,
+    private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
+                                Set<String> visiting, State state,
+                                Map<String, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, ResourceLocation> manualIngredients,
                                 int depth, int maxDepth, ClientPlanningBudget budget)
     {
         budget.enter();
-        long available = state.stock.getOrDefault(item, 0L);
-        long used = Math.min(available, needed);
-        if (used > 0) state.stock.put(item, available - used);
+        long used = consume(state.stock, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
-        if (depth >= maxDepth || !visiting.add(item))
+        if (depth >= maxDepth || !visiting.add(RecipeResourceResolver.sortKey(resource)))
         {
-            state.missing.merge(item, remainder, SaturatingLongMath::add);
+            state.missing.merge(resource, remainder, SaturatingLongMath::add);
             return;
         }
+        String resourceId = RecipeResourceResolver.sortKey(resource);
         try
         {
-            List<Recipe> candidates = byOutput.getOrDefault(item, List.of());
-            ResourceLocation selected = manualRecipes.get(item);
-            if (selected == null) selected = state.recipes.get(item);
+            List<Recipe> candidates = recipesFor(byOutput, resource);
+            ResourceLocation selected = manualRecipes.get(resourceId);
+            if (selected == null) selected = state.recipes.get(resourceId);
             if (selected != null)
             {
                 ResourceLocation choice = selected;
@@ -125,19 +139,19 @@ public final class ClientRecipePlanner
             }
             if (candidates.isEmpty())
             {
-                state.missing.merge(item, remainder, SaturatingLongMath::add);
+                state.missing.merge(resource, remainder, SaturatingLongMath::add);
                 return;
             }
             if (!PlanningBranches.recipesRequireBranches(candidates.size()))
             {
                 Recipe recipe = candidates.getFirst();
-                ResourceLocation previous = state.recipes.putIfAbsent(item, recipe.id());
+                ResourceLocation previous = state.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id()))
                 {
-                    state.missing.merge(item, remainder, SaturatingLongMath::add);
+                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
                     return;
                 }
-                resolveRecipe(item, remainder, recipe, byOutput, new HashSet<>(visiting), state,
+                resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), state,
                         manualRecipes, manualIngredients, depth, maxDepth, budget);
                 return;
             }
@@ -146,9 +160,9 @@ public final class ClientRecipePlanner
             for (Recipe recipe : candidates)
             {
                 State branch = state.copy();
-                ResourceLocation previous = branch.recipes.putIfAbsent(item, recipe.id());
+                ResourceLocation previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
-                resolveRecipe(item, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
+                resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
                         manualRecipes, manualIngredients, depth, maxDepth, budget);
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
@@ -156,15 +170,15 @@ public final class ClientRecipePlanner
                     bestRecipe = recipe;
                 }
             }
-            if (best == null) state.missing.merge(item, remainder, SaturatingLongMath::add);
+            if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
             else state.replaceWith(best);
         }
-        finally { visiting.remove(item); }
+        finally { visiting.remove(RecipeResourceResolver.sortKey(resource)); }
     }
 
-    private static void resolveRecipe(ResourceLocation item, long remainder, Recipe recipe,
-                                      Map<ResourceLocation, List<Recipe>> byOutput, Set<ResourceLocation> visiting,
-                                      State state, Map<ResourceLocation, ResourceLocation> manualRecipes,
+    private static void resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe,
+                                      Map<IStackKey<?>, List<Recipe>> byOutput, Set<String> visiting,
+                                      State state, Map<String, ResourceLocation> manualRecipes,
                                       Map<IngredientKey, ResourceLocation> manualIngredients,
                                       int depth, int maxDepth, ClientPlanningBudget budget)
     {
@@ -178,22 +192,23 @@ public final class ClientRecipePlanner
             if (fixed != null)
             {
                 ResourceLocation choice = fixed;
-                candidates = slot.candidates().stream().filter(candidate -> candidate.item().equals(choice)).toList();
+                candidates = slot.candidates().stream().filter(candidate -> candidate.key() instanceof ItemStackKey
+                        && itemId(candidate.key()).equals(choice)).toList();
                 if (candidates.isEmpty()) throw new IllegalArgumentException("invalid ingredient proposal for " + key);
             }
             else
             {
                 candidates = slot.candidates().stream().sorted(Comparator
-                        .<Candidate>comparingLong(candidate -> state.stock.getOrDefault(candidate.item(), 0L)).reversed()
-                        .thenComparing(candidate -> byOutput.containsKey(candidate.item()) ? 0 : 1)
-                        .thenComparing(candidate -> candidate.item().toString())).toList();
+                        .<Candidate>comparingLong(candidate -> available(state.stock, candidate.key())).reversed()
+                        .thenComparing(candidate -> !recipesFor(byOutput, candidate.key()).isEmpty() ? 0 : 1)
+                        .thenComparing(candidate -> RecipeResourceResolver.sortKey(candidate.key()))).toList();
             }
             options.add(candidates);
         }
 
         if (!PlanningBranches.ingredientsRequireBranches(options))
         {
-            applyVariant(item, remainder, recipe, byOutput, visiting, state, manualRecipes,
+            applyVariant(output, remainder, recipe, byOutput, visiting, state, manualRecipes,
                     manualIngredients, depth, maxDepth, budget,
                     options.stream().map(List::getFirst).toList());
             return;
@@ -205,9 +220,9 @@ public final class ClientRecipePlanner
         {
             budget.enter();
             State branch = state.copy();
-            if (!applyVariant(item, remainder, recipe, byOutput, visiting, branch, manualRecipes,
+            if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
                     manualIngredients, depth, maxDepth, budget, variant)) continue;
-            String key = variant.stream().map(candidate -> candidate.item().toString())
+            String key = variant.stream().map(candidate -> RecipeResourceResolver.sortKey(candidate.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             if (best == null || compare(branch, recipe, best, recipe) < 0
                     || compare(branch, recipe, best, recipe) == 0 && key.compareTo(bestKey) < 0)
@@ -221,33 +236,37 @@ public final class ClientRecipePlanner
         state.replaceWith(best);
     }
 
-    private static boolean applyVariant(ResourceLocation item, long remainder, Recipe recipe,
-                                        Map<ResourceLocation, List<Recipe>> byOutput,
-                                        Set<ResourceLocation> visiting, State state,
-                                        Map<ResourceLocation, ResourceLocation> manualRecipes,
+    private static boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe,
+                                        Map<IStackKey<?>, List<Recipe>> byOutput,
+                                        Set<String> visiting, State state,
+                                        Map<String, ResourceLocation> manualRecipes,
                                         Map<IngredientKey, ResourceLocation> manualIngredients,
                                         int depth, int maxDepth, ClientPlanningBudget budget,
                                         List<Candidate> variant)
     {
-        LinkedHashMap<ResourceLocation, Long> inputs = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
         long crafts = SaturatingLongMath.ceilDiv(remainder, recipe.outputCount());
         for (int i = 0; i < variant.size(); i++)
         {
             Slot slot = recipe.slots().get(i);
             Candidate candidate = variant.get(i);
             IngredientKey key = new IngredientKey(recipe.id(), slot.index());
-            ResourceLocation previous = state.ingredients.putIfAbsent(key, candidate.item());
-            if (previous != null && !previous.equals(candidate.item())) return false;
+            if (candidate.key() instanceof ItemStackKey)
+            {
+                ResourceLocation candidateItem = itemId(candidate.key());
+                ResourceLocation previous = state.ingredients.putIfAbsent(key, candidateItem);
+                if (previous != null && !previous.equals(candidateItem)) return false;
+            }
             long inputAmount = slot.reusable() ? candidate.count()
                     : SaturatingLongMath.multiply(crafts, candidate.count());
-            inputs.merge(candidate.item(), inputAmount, SaturatingLongMath::add);
+            inputs.merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
             resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
                     manualIngredients, depth + 1, maxDepth, budget);
         state.steps++;
         long produced = SaturatingLongMath.multiply(recipe.outputCount(), crafts);
-        if (produced > remainder) state.stock.merge(item, produced - remainder, SaturatingLongMath::add);
+        if (produced > remainder) state.stock.merge(output, produced - remainder, SaturatingLongMath::add);
         return true;
     }
 
@@ -260,7 +279,7 @@ public final class ClientRecipePlanner
         return leftRecipe.id().toString().compareTo(rightRecipe.id().toString());
     }
 
-    private static long missingAmount(Map<ResourceLocation, Long> missing)
+    private static long missingAmount(Map<?, Long> missing)
     {
         long total = 0;
         for (long value : missing.values()) total = SaturatingLongMath.add(total, value);
@@ -290,10 +309,20 @@ public final class ClientRecipePlanner
         }
 
         public void advance(int recipeBudget)
+        { advance(recipeBudget, Long.MAX_VALUE); }
+
+        public void advance(int recipeBudget, long timeBudgetNanos)
         {
-            if (recipeBudget < 1 || complete()) return;
+            if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
             int end = (int) Math.min(holders.size(), (long) next + recipeBudget);
-            while (next < end) recipes.add(captureRecipe(level, holders.get(next++)));
+            int minimum = Math.min(16, recipeBudget);
+            int processed = 0;
+            long started = System.nanoTime();
+            while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
+            {
+                recipes.add(captureRecipe(level, holders.get(next++)));
+                processed++;
+            }
             if (next == holders.size())
             {
                 catalog = new Catalog(recipes);
@@ -314,7 +343,7 @@ public final class ClientRecipePlanner
             return catalog;
         }
     }
-    public record Recipe(ResourceLocation id, String family, ResourceLocation output, long outputCount,
+    public record Recipe(ResourceLocation id, String family, IStackKey<?> output, long outputCount,
                          List<Slot> slots)
     {
         public Recipe
@@ -332,14 +361,14 @@ public final class ClientRecipePlanner
             candidates = List.copyOf(candidates);
         }
     }
-    public record Candidate(ResourceLocation item, long count)
+    public record Candidate(IStackKey<?> key, long count)
     {
-        public Candidate { if (item == null || count < 1) throw new IllegalArgumentException("invalid candidate"); }
+        public Candidate { if (key == null || key.isEmpty() || count < 1) throw new IllegalArgumentException("invalid candidate"); }
     }
     public record IngredientKey(ResourceLocation recipe, int slot) {}
-    public record Proposal(Map<ResourceLocation, ResourceLocation> recipes,
+    public record Proposal(Map<String, ResourceLocation> recipes,
                            Map<IngredientKey, ResourceLocation> ingredients,
-                           Map<ResourceLocation, Long> missing)
+                           Map<IStackKey<?>, Long> missing)
     {
         public Proposal
         {
@@ -350,19 +379,50 @@ public final class ClientRecipePlanner
 
     private static final class State
     {
-        private Map<ResourceLocation, Long> stock;
-        private Map<ResourceLocation, Long> missing;
+        private Map<IStackKey<?>, Long> stock;
+        private Map<IStackKey<?>, Long> missing;
         private int steps;
-        private Map<ResourceLocation, ResourceLocation> recipes;
+        private Map<String, ResourceLocation> recipes;
         private Map<IngredientKey, ResourceLocation> ingredients;
-        private State(Map<ResourceLocation, Long> stock, Map<ResourceLocation, Long> missing, int steps,
-                      Map<ResourceLocation, ResourceLocation> recipes,
+        private State(Map<IStackKey<?>, Long> stock, Map<IStackKey<?>, Long> missing, int steps,
+                      Map<String, ResourceLocation> recipes,
                       Map<IngredientKey, ResourceLocation> ingredients)
         { this.stock = stock; this.missing = missing; this.steps = steps; this.recipes = recipes; this.ingredients = ingredients; }
         private State copy()
-        { return new State(new HashMap<>(stock), new LinkedHashMap<>(missing), steps,
+        { return new State(new LinkedHashMap<>(stock), new LinkedHashMap<>(missing), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients)); }
         private void replaceWith(State state)
         { stock = state.stock; missing = state.missing; steps = state.steps; recipes = state.recipes; ingredients = state.ingredients; }
+    }
+
+    private static ResourceLocation itemId(IStackKey<?> key)
+    { return BuiltInRegistries.ITEM.getKey(((ItemStackKey) key).getSource()); }
+
+    private static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
+    {
+        for (var entry : byOutput.entrySet()) if (resource.isSame(entry.getKey())) return entry.getValue();
+        return List.of();
+    }
+
+    private static long available(Map<IStackKey<?>, Long> stock, IStackKey<?> requested)
+    {
+        long result = 0;
+        for (var entry : stock.entrySet())
+            if (requested.isSame(entry.getKey())) result = SaturatingLongMath.add(result, entry.getValue());
+        return result;
+    }
+
+    private static long consume(Map<IStackKey<?>, Long> stock, IStackKey<?> requested, long amount)
+    {
+        long remaining = amount;
+        for (var entry : stock.entrySet())
+        {
+            if (remaining <= 0) break;
+            if (entry.getValue() <= 0 || !requested.isSame(entry.getKey())) continue;
+            long used = Math.min(remaining, entry.getValue());
+            entry.setValue(entry.getValue() - used);
+            remaining -= used;
+        }
+        return amount - remaining;
     }
 }

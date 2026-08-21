@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 import com.wintercogs.beyonddimensions.api.storage.handler.impl.StackHandler;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.common.block.entity.BaseNetFurnaceBlockEntity;
 import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -35,6 +36,9 @@ public final class NativeFurnaceAutomation
         return accepted;
     }
 
+    public static long insertCapacity(BaseNetFurnaceBlockEntity<?> furnace, IStackKey<?> key, long limit)
+    { return key instanceof ItemStackKey item ? insertCapacity(furnace, item, limit) : 0; }
+
     public static boolean containsAnyInput(BaseNetFurnaceBlockEntity<?> furnace,
                                            Set<ResourceLocation> itemIds)
     {
@@ -63,6 +67,9 @@ public final class NativeFurnaceAutomation
         }
         return inserted;
     }
+
+    public static long insert(BaseNetFurnaceBlockEntity<?> furnace, IStackKey<?> key, long amount)
+    { return key instanceof ItemStackKey item ? insert(furnace, item, amount) : 0; }
 
     public static long countOutput(BaseNetFurnaceBlockEntity<?> furnace, ResourceLocation itemId)
     {

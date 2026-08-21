@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- The original controller texture supplies the frame; the target-icon plate is a flat 8x8 field. -->
+  <image width="16" height="16" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAB0UlEQVR42o2TMWsbQRCFP5krDDbYHLsgTnW4QhsLhDpDlE4q9AeCqkBKN7Z+g0tHTcqASSFSqrXSRAq4sDkMstfFolqH4JbD6twpxWk3SmKFTDO3y95782belNRxZ7VI55SjCi4DCBlis/zFrKcP/n0AYJsnWIBOo8gyAqCrBABjbSFLwSQQN+AwwQIi/USwSOfwCtRsCLOhZ4pVzPTSIGSI2qiA2RAA3TmnPKsUFRA3YDbkabnkabkE4Ob6FsCfXQY4PDjw30E5qmDXJQM0P/+gVYWzozovxe7ePkKGICOEDNlxWoUMARi9q3N2VKfd67MtbJb7/uwIGTLQttC3EVcXp1tBYhX7fwKH9qxibq5vaX29o1WFb18mAHy8v2P0CKVkwqrRZPLhDUYbuu8FcxkSuNKNNl7CaM3U7vUZPf5iblVhsvaIkxLYLGesLW9l+Fun270+Vxenf8gqmmiznMoaKBAypKsE08uiB07Ctik4lw60RWV54YPB93tfwaaEf02BLC18YLMcZOSnsLu3z3+FSQqARTr3aM5hm3Y22vy1UC78MmESdOe8uJURXSUYa0tNCWrAwC2TjDwZJqEcVSip487Koana660r7Jg3Vx/gJ9wf78PYXyAIAAAAAElFTkSuQmCC"/>
+  <rect x="4" y="4" width="8" height="8" fill="#142131"/>
+</svg>

@@ -1,1 +1,12 @@
-{"parent":"minecraft:block/cube_all","textures":{"all":"beyond_craftlines:block/craftline_provisioner"}}
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "beyond_craftlines:block/craftline_provisioner",
+    "down": "beyond_craftlines:block/craftline_provisioner",
+    "up": "beyond_craftlines:block/craftline_provisioner",
+    "north": "beyond_craftlines:block/craftline_provisioner_side",
+    "south": "beyond_craftlines:block/craftline_provisioner_side",
+    "west": "beyond_craftlines:block/craftline_provisioner_side",
+    "east": "beyond_craftlines:block/craftline_provisioner_side"
+  }
+}

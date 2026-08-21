@@ -47,7 +47,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             boolean configured = DeviceBindingRegistry.configureProvisioner(player, position, selected);
             player.displayClientMessage(Component.translatable(configured
                     ? "message.beyond_craftlines.provisioner_configured"
-                    : "error.beyond_craftlines.provisioner_config_failed"), false);
+                    : "error.beyond_craftlines.provisioner_config_failed"), configured);
             if (configured) BindingVisualsPayload.broadcast(player.serverLevel());
         });
     }

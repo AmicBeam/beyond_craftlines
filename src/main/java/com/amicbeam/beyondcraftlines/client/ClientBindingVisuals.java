@@ -4,8 +4,10 @@ import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload;
 import com.amicbeam.beyondcraftlines.common.network.RequestBindingVisualsPayload;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -28,6 +30,9 @@ import java.util.ArrayList;
 
 public final class ClientBindingVisuals
 {
+    private static final ResourceLocation FRAME_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+            "beyond_craftlines", "textures/block/bound_machine_frame.png");
+    private static final double SURFACE_OFFSET = 0.003D;
     private static final Map<Long, List<PositionedVisual>> BY_CHUNK = new HashMap<>();
     private static ResourceLocation dimension;
 
@@ -71,7 +76,8 @@ public final class ClientBindingVisuals
         int renderDistance = CraftlinesConfig.BOUND_MACHINE_FRAME_RENDER_DISTANCE.get();
         double renderDistanceSquared = (double) renderDistance * renderDistance;
         int renderChunkRadius = (renderDistance + 15) / 16 + 1;
-        VertexConsumer lines = minecraft.renderBuffers().bufferSource().getBuffer(RenderType.lines());
+        RenderType frameType = RenderType.entityCutoutNoCull(FRAME_TEXTURE);
+        VertexConsumer frame = minecraft.renderBuffers().bufferSource().getBuffer(frameType);
         int cameraChunkX = net.minecraft.util.Mth.floor(camera.x) >> 4;
         int cameraChunkZ = net.minecraft.util.Mth.floor(camera.z) >> 4;
         for (int chunkX = cameraChunkX - renderChunkRadius;
@@ -87,19 +93,73 @@ public final class ClientBindingVisuals
                     .equals(entry.visual().blockId())) continue;
             VoxelShape voxelShape = minecraft.level.getBlockState(pos).getShape(minecraft.level, pos);
             AABB shape = (voxelShape.isEmpty() ? new AABB(pos) : voxelShape.bounds().move(pos));
-            draw(event, lines, shape.inflate(0.022D), camera, 0.015F, 0.025F, 0.045F, 1.0F);
-            draw(event, lines, shape.inflate(0.014D), camera, 0.035F, 0.20F, 0.48F, 1.0F);
-            draw(event, lines, shape.inflate(0.006D), camera, 0.10F, 0.70F, 0.95F, 1.0F);
+            drawFrame(event.getPoseStack().last(), frame, shape, camera);
         }
-        minecraft.renderBuffers().bufferSource().endBatch(RenderType.lines());
+        minecraft.renderBuffers().bufferSource().endBatch(frameType);
     }
 
-    private static void draw(RenderLevelStageEvent event, VertexConsumer lines, AABB bounds, Vec3 camera,
-                             float red, float green, float blue, float alpha)
+    private static void drawFrame(PoseStack.Pose pose, VertexConsumer consumer, AABB bounds, Vec3 camera)
     {
-        LevelRenderer.renderLineBox(event.getPoseStack(), lines, bounds.move(-camera.x, -camera.y, -camera.z),
-                red, green, blue, alpha);
+        double minX = bounds.minX - camera.x;
+        double minY = bounds.minY - camera.y;
+        double minZ = bounds.minZ - camera.z;
+        double maxX = bounds.maxX - camera.x;
+        double maxY = bounds.maxY - camera.y;
+        double maxZ = bounds.maxZ - camera.z;
+
+        quad(consumer, pose, minX, minY, minZ - SURFACE_OFFSET, maxX, maxY, minZ - SURFACE_OFFSET,
+                0, 0, -1, FacePlane.XY);
+        quad(consumer, pose, maxX, minY, maxZ + SURFACE_OFFSET, minX, maxY, maxZ + SURFACE_OFFSET,
+                0, 0, 1, FacePlane.XY);
+        quad(consumer, pose, minX - SURFACE_OFFSET, minY, maxZ, minX - SURFACE_OFFSET, maxY, minZ,
+                -1, 0, 0, FacePlane.ZY);
+        quad(consumer, pose, maxX + SURFACE_OFFSET, minY, minZ, maxX + SURFACE_OFFSET, maxY, maxZ,
+                1, 0, 0, FacePlane.ZY);
+        quad(consumer, pose, minX, minY - SURFACE_OFFSET, maxZ, maxX, minY - SURFACE_OFFSET, minZ,
+                0, -1, 0, FacePlane.XZ);
+        quad(consumer, pose, minX, maxY + SURFACE_OFFSET, minZ, maxX, maxY + SURFACE_OFFSET, maxZ,
+                0, 1, 0, FacePlane.XZ);
     }
+
+    private static void quad(VertexConsumer consumer, PoseStack.Pose pose,
+                             double minA, double minB, double minC,
+                             double maxA, double maxB, double maxC,
+                             float normalX, float normalY, float normalZ, FacePlane plane)
+    {
+        switch (plane)
+        {
+            case XY -> {
+                vertex(consumer, pose, minA, minB, minC, 0, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, minB, minC, 1, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, maxB, maxC, 1, 0, normalX, normalY, normalZ);
+                vertex(consumer, pose, minA, maxB, maxC, 0, 0, normalX, normalY, normalZ);
+            }
+            case ZY -> {
+                vertex(consumer, pose, minA, minB, minC, 0, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, minA, minB, maxC, 1, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, maxB, maxC, 1, 0, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, maxB, minC, 0, 0, normalX, normalY, normalZ);
+            }
+            case XZ -> {
+                vertex(consumer, pose, minA, minB, minC, 0, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, minB, minC, 1, 1, normalX, normalY, normalZ);
+                vertex(consumer, pose, maxA, maxB, maxC, 1, 0, normalX, normalY, normalZ);
+                vertex(consumer, pose, minA, maxB, maxC, 0, 0, normalX, normalY, normalZ);
+            }
+        }
+    }
+
+    private static void vertex(VertexConsumer consumer, PoseStack.Pose pose,
+                               double x, double y, double z, float u, float v,
+                               float normalX, float normalY, float normalZ)
+    {
+        consumer.addVertex(pose, (float) x, (float) y, (float) z)
+                .setColor(255, 255, 255, 255).setUv(u, v)
+                .setOverlay(OverlayTexture.NO_OVERLAY).setLight(LightTexture.FULL_BRIGHT)
+                .setNormal(pose, normalX, normalY, normalZ);
+    }
+
+    private enum FacePlane { XY, ZY, XZ }
 
     private static void accept(CompoundTag data)
     {

@@ -2,24 +2,25 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
-import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
-import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.api.util.CapCtx;
 import com.wintercogs.beyonddimensions.api.util.USHandler;
 import com.wintercogs.beyonddimensions.common.block.entity.NetedBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.capabilities.BlockCapability;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.client.model.data.ModelProperty;
 
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -27,8 +28,11 @@ import java.util.Set;
 
 public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
 {
+    public static final ModelProperty<ItemStack> TARGET_ITEM_ICON = new ModelProperty<>(stack -> !stack.isEmpty());
     private final ProvisionerStorage storage = new ProvisionerStorage(this::setChanged);
     private final LinkedHashSet<ResourceLocation> recipeCandidates = new LinkedHashSet<>();
+    private ResourceLocation targetBlockIcon;
+    private ItemStack targetItemIcon = ItemStack.EMPTY;
 
     public CraftlineProvisionerBlockEntity(BlockPos pos, BlockState state)
     {
@@ -38,8 +42,13 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public ProvisionerStorage storage() { return storage; }
     public boolean isEmpty() { return storage.isEmpty(); }
     public Set<ResourceLocation> recipeCandidates() { return Set.copyOf(recipeCandidates); }
+    public ItemStack targetItemIcon() { return targetItemIcon; }
 
     public void addRecipeCandidates(Set<ResourceLocation> candidates)
+    { addRecipeCandidates(candidates, null, ItemStack.EMPTY); }
+
+    public void addRecipeCandidates(Set<ResourceLocation> candidates, ResourceLocation targetBlock,
+                                    ItemStack targetItem)
     {
         boolean changed = false;
         for (ResourceLocation candidate : candidates.stream()
@@ -48,29 +57,40 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             if (recipeCandidates.size() >= 32) break;
             changed |= recipeCandidates.add(candidate);
         }
-        if (changed) setChanged();
+        if (targetBlock != null && !targetBlock.equals(targetBlockIcon))
+        {
+            targetBlockIcon = targetBlock;
+            changed = true;
+        }
+        if (!targetItem.isEmpty() && !ItemStack.isSameItemSameComponents(targetItemIcon, targetItem))
+        {
+            targetItemIcon = targetItem.copyWithCount(1);
+            changed = true;
+        }
+        if (changed) syncChanged();
     }
 
     public void clearRecipeCandidates()
     {
-        if (recipeCandidates.isEmpty()) return;
+        if (recipeCandidates.isEmpty() && targetBlockIcon == null && targetItemIcon.isEmpty()) return;
         recipeCandidates.clear();
-        setChanged();
+        targetBlockIcon = null;
+        targetItemIcon = ItemStack.EMPTY;
+        syncChanged();
     }
 
-    public boolean giveOneItemStack(Player player)
+    private void syncChanged()
     {
-        for (KeyAmount stored : storage.getStorage())
-        {
-            if (!(stored.key() instanceof ItemStackKey itemKey) || stored.amount() <= 0) continue;
-            int amount = (int) Math.min(stored.amount(), itemKey.getVanillaMaxStackSize());
-            KeyAmount extracted = storage.extract(itemKey, amount, false, false);
-            if (extracted.amount() <= 0) return false;
-            ItemStack stack = itemKey.copyStackWithCount(extracted.amount());
-            if (!player.getInventory().add(stack)) player.drop(stack, false);
-            return true;
-        }
-        return false;
+        setChanged();
+        if (level != null && !level.isClientSide())
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), Block.UPDATE_CLIENTS);
+    }
+
+    @Override
+    public ModelData getModelData()
+    {
+        return targetItemIcon.isEmpty() ? ModelData.EMPTY
+                : ModelData.builder().with(TARGET_ITEM_ICON, targetItemIcon.copy()).build();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -95,6 +115,8 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
         recipeCandidates.stream().sorted(Comparator.comparing(ResourceLocation::toString))
                 .forEach(type -> candidates.add(StringTag.valueOf(type.toString())));
         tag.put("recipe_candidates", candidates);
+        if (targetBlockIcon != null) tag.putString("target_block_icon", targetBlockIcon.toString());
+        if (!targetItemIcon.isEmpty()) tag.put("target_item_icon", targetItemIcon.saveOptional(registries));
     }
 
     @Override
@@ -109,6 +131,23 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
         {
             ResourceLocation type = ResourceLocation.tryParse(candidates.getString(i));
             if (type != null) recipeCandidates.add(type);
+        }
+        targetBlockIcon = ResourceLocation.tryParse(tag.getString("target_block_icon"));
+        targetItemIcon = ItemStack.parseOptional(registries, tag.getCompound("target_item_icon"));
+        if (targetItemIcon.isEmpty() && targetBlockIcon != null)
+        {
+            var block = BuiltInRegistries.BLOCK.get(targetBlockIcon);
+            if (block != null) targetItemIcon = new ItemStack(block);
+        }
+        requestModelDataUpdate();
+        // A block-entity data packet updates ModelData, but does not itself guarantee that the
+        // already baked chunk mesh is rebuilt. Force the client chunk renderer to consume the
+        // new target icon immediately instead of waiting for an unrelated block update.
+        if (level != null && level.isClientSide())
+        {
+            BlockState state = getBlockState();
+            level.sendBlockUpdated(worldPosition, state, state,
+                    Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
         }
     }
 }

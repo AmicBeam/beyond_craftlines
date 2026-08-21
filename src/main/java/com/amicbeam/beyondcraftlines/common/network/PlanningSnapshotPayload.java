@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.network;
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService;
 import io.netty.buffer.ByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -13,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 
 public record PlanningSnapshotPayload(long nonce, String itemId, Header header, List<Entry> entries)
         implements CustomPacketPayload
@@ -20,11 +22,11 @@ public record PlanningSnapshotPayload(long nonce, String itemId, Header header, 
     private static final int PAGE_SIZE = 256;
     public static final Type<PlanningSnapshotPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "planning_snapshot"));
-    private static final StreamCodec<ByteBuf, Entry> ENTRY_CODEC = StreamCodec.composite(
-            ByteBufCodecs.stringUtf8(256), Entry::item,
+    private static final StreamCodec<RegistryFriendlyByteBuf, Entry> ENTRY_CODEC = StreamCodec.composite(
+            IStackKey.STREAM_CODEC, Entry::key,
             ByteBufCodecs.VAR_LONG, Entry::amount,
             Entry::new);
-    public static final StreamCodec<ByteBuf, PlanningSnapshotPayload> STREAM_CODEC = StreamCodec.composite(
+    public static final StreamCodec<RegistryFriendlyByteBuf, PlanningSnapshotPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_LONG, PlanningSnapshotPayload::nonce,
             ByteBufCodecs.stringUtf8(256), PlanningSnapshotPayload::itemId,
             Header.STREAM_CODEC, PlanningSnapshotPayload::header,
@@ -32,12 +34,12 @@ public record PlanningSnapshotPayload(long nonce, String itemId, Header header, 
             PlanningSnapshotPayload::new);
     public static volatile Consumer<PlanningSnapshotPayload> clientReceiver = ignored -> {};
 
-    public static List<PlanningSnapshotPayload> from(long nonce, ResourceLocation target,
+    public static List<PlanningSnapshotPayload> from(long nonce, String target,
                                                      PlanningSnapshotService.Snapshot snapshot,
                                                      long recipeEpoch, int maxDepth, int maxNodes)
     {
-        List<Entry> all = snapshot.entries().stream()
-                .map(entry -> new Entry(entry.item().toString(), entry.amount())).toList();
+        List<Entry> all = snapshot.componentEntries().stream()
+                .map(entry -> new Entry(entry.key(), entry.amount())).toList();
         int pageCount = Math.max(1, (all.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         if (pageCount > 64) throw new IllegalStateException("planning stock snapshot exceeds the transfer limit");
         List<PlanningSnapshotPayload> result = new ArrayList<>(pageCount);
@@ -45,7 +47,7 @@ public record PlanningSnapshotPayload(long nonce, String itemId, Header header, 
         {
             int from = page * PAGE_SIZE;
             int to = Math.min(all.size(), from + PAGE_SIZE);
-            result.add(new PlanningSnapshotPayload(nonce, target.toString(), new Header(
+            result.add(new PlanningSnapshotPayload(nonce, target, new Header(
                     new Status(true, ""), snapshot.revision(), recipeEpoch, page, pageCount,
                     new Limits(maxDepth, maxNodes)), List.copyOf(all.subList(from, to))));
         }
@@ -65,7 +67,7 @@ public record PlanningSnapshotPayload(long nonce, String itemId, Header header, 
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
 
-    public record Entry(String item, long amount) {}
+    public record Entry(IStackKey<?> key, long amount) {}
     public record Limits(int maxDepth, int maxNodes)
     {
         private static final StreamCodec<ByteBuf, Limits> STREAM_CODEC = StreamCodec.composite(

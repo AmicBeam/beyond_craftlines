@@ -13,7 +13,11 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.core.Direction;
 
 import java.util.HashSet;
 import java.util.Optional;
@@ -68,14 +72,22 @@ public final class DeviceBindingRegistry
                     level.dimension(), position, deviceType, resolved.jeiTypes(), resolved.families(), blockId,
                     null, null, "", false, level.getGameTime());
             data.add(record);
-            return Optional.of(new BindResult(deviceType, resolved.families()));
+            return Optional.of(new BindResult(deviceType, resolved.families(), false));
         }
         ServerLevel provisionerLevel = player.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
                 instanceof CraftlineProvisionerBlockEntity provisioner)) return Optional.empty();
-        provisioner.addRecipeCandidates(resolved.jeiTypes());
+        ItemStack targetIcon = state.getBlock().getCloneItemStack(state,
+                new BlockHitResult(Vec3.atCenterOf(position), Direction.UP, position, false),
+                level, position, player);
+        if (targetIcon.isEmpty()) targetIcon = new ItemStack(state.getBlock());
+        provisioner.addRecipeCandidates(resolved.jeiTypes(), blockId, targetIcon);
+        Set<ResourceLocation> candidates = provisioner.recipeCandidates();
+        boolean autoSelected = candidates.size() == 1
+                && data.recipeTypesForProvisioner(selection.dimension(), selection.position()).isEmpty()
+                && configureProvisioner(player, provisionerLevel, selection.position(), provisioner, candidates);
         PROVISIONER_SELECTIONS.remove(player.getUUID());
-        return Optional.of(new BindResult(deviceType, resolved.families()));
+        return Optional.of(new BindResult(deviceType, resolved.families(), autoSelected));
     }
 
     public static boolean configureProvisioner(Player player, BlockPos position,
@@ -84,6 +96,13 @@ public final class DeviceBindingRegistry
         if (player.getServer() == null || !(player.level() instanceof ServerLevel level)
                 || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
             return false;
+        return configureProvisioner(player, level, position, provisioner, selectedTypes);
+    }
+
+    private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
+                                                CraftlineProvisionerBlockEntity provisioner,
+                                                Set<ResourceLocation> selectedTypes)
+    {
         DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
         if (network == null || !network.isManager(player)) return false;
         if (!provisioner.recipeCandidates().containsAll(selectedTypes)) return false;
@@ -207,7 +226,7 @@ public final class DeviceBindingRegistry
 
     public record BoundMachine(BindingRecord binding, ServerLevel level) {}
     public record ProvisionerTarget(BindingRecord binding, CraftlineProvisionerBlockEntity provisioner) {}
-    public record BindResult(DeviceType deviceType, Set<String> recipeFamilies) {}
+    public record BindResult(DeviceType deviceType, Set<String> recipeFamilies, boolean autoSelected) {}
     private record ProvisionerSelection(ResourceKey<Level> dimension, BlockPos position, int networkId) {}
 
     public static void removeAt(MinecraftServer server, ResourceKey<Level> dimension, BlockPos position)

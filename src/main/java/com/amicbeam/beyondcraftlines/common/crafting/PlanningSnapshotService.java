@@ -63,19 +63,19 @@ public final class PlanningSnapshotService
             {
                 String family = RecipePlanningService.family(holder);
                 var recipe = holder.value();
-                var output = recipe.getResultItem(level.registryAccess());
+                var output = RecipeOutputResolver.primary(recipe, level.registryAccess());
+                if (output == null) continue;
                 StringBuilder identity = new StringBuilder(holder.id().toString()).append('|').append(family)
                         .append('|').append(BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.getSerializer()))
-                        .append('|').append(BuiltInRegistries.ITEM.getKey(output.getItem())).append(':')
-                        .append(output.getCount()).append(':').append(output.getComponentsPatch());
+                        .append('|').append(RecipeResourceResolver.sortKey(output.key())).append(':')
+                        .append(output.amount());
                 int slot = 0;
-                for (var ingredient : recipe.getIngredients())
+                for (var ingredient : RecipeResourceResolver.ingredients(recipe))
                 {
                     identity.append('|').append(slot++).append('=');
                     List<String> candidates = new ArrayList<>();
-                    for (var stack : ingredient.getItems()) candidates.add(
-                            BuiltInRegistries.ITEM.getKey(stack.getItem()) + ":" + stack.getCount()
-                                    + ":" + stack.getComponentsPatch());
+                    for (var value : ingredient.candidates()) candidates.add(
+                            RecipeResourceResolver.sortKey(value.key()) + ":" + value.amount());
                     candidates.stream().distinct().sorted().forEach(candidate -> identity.append(candidate).append(','));
                 }
                 result.add(new RecipeIdentity(family, identity.toString()));
@@ -108,14 +108,15 @@ public final class PlanningSnapshotService
         }
     }
 
-    public record ComponentEntry(ItemStackKey key, long amount)
+    public record ComponentEntry(IStackKey<?> key, long amount)
     {
         public ComponentEntry
         {
-            if (key == null || key == ItemStackKey.EMPTY || amount < 1)
+            if (key == null || key.isEmpty() || amount < 1)
                 throw new IllegalArgumentException("invalid component stock entry");
         }
-        public ResourceLocation item() { return BuiltInRegistries.ITEM.getKey(key.getSource()); }
+        public ResourceLocation item()
+        { return key instanceof ItemStackKey item ? BuiltInRegistries.ITEM.getKey(item.getSource()) : null; }
     }
 
     public record Snapshot(List<ComponentEntry> componentEntries, long revision)
@@ -125,7 +126,7 @@ public final class PlanningSnapshotService
         {
             LinkedHashMap<ResourceLocation, Long> aggregated = new LinkedHashMap<>();
             for (ComponentEntry entry : componentEntries)
-                aggregated.merge(entry.item(), entry.amount(), SaturatingLongMath::add);
+                if (entry.item() != null) aggregated.merge(entry.item(), entry.amount(), SaturatingLongMath::add);
             return aggregated.entrySet().stream()
                     .map(entry -> new Entry(entry.getKey(), entry.getValue())).toList();
         }
@@ -142,7 +143,7 @@ public final class PlanningSnapshotService
     /** Main-thread cache maintained from Beyond Dimensions' exact-key storage deltas. */
     private static final class InventoryCache
     {
-        private final IncrementalStock<ItemStackKey> stock = new IncrementalStock<>();
+        private final IncrementalStock<IStackKey<?>> stock = new IncrementalStock<>();
         private boolean rebuildRequired;
         private Snapshot materialized;
 
@@ -155,8 +156,8 @@ public final class PlanningSnapshotService
 
         private void onDelta(IStackKey<?> changed, long amount, boolean inserted)
         {
-            if (!(changed instanceof ItemStackKey key) || amount <= 0) return;
-            stock.apply(key, amount, inserted);
+            if (changed == null || changed.isEmpty() || amount <= 0) return;
+            stock.apply(changed, amount, inserted);
             materialized = null;
         }
 
@@ -174,10 +175,10 @@ public final class PlanningSnapshotService
 
         private void rebuild(UnifiedStorage storage)
         {
-            LinkedHashMap<ItemStackKey, Long> exact = new LinkedHashMap<>();
+            LinkedHashMap<IStackKey<?>, Long> exact = new LinkedHashMap<>();
             for (var stored : storage.getStorage())
-                if (stored.key() instanceof ItemStackKey key && stored.amount() > 0)
-                    exact.merge(key, stored.amount(), SaturatingLongMath::add);
+                if (stored.key() != null && !stored.key().isEmpty() && stored.amount() > 0)
+                    exact.merge(stored.key(), stored.amount(), SaturatingLongMath::add);
             stock.replace(exact);
             rebuildRequired = false;
             materialized = null;

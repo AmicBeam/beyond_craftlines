@@ -32,6 +32,22 @@ final class SingleSubstitutionVariantsTest
     }
 
     @Test
+    void substitutesRepeatedEquivalentSlotsAsAGroup()
+    {
+        var woods = List.of("oak", "birch", "spruce");
+        var variants = SingleSubstitutionVariants.from(List.of(woods, List.of("stick"), woods));
+
+        assertEquals(List.of(
+                List.of("oak", "stick", "oak"),
+                List.of("birch", "stick", "oak"),
+                List.of("spruce", "stick", "oak"),
+                List.of("oak", "stick", "birch"),
+                List.of("oak", "stick", "spruce"),
+                List.of("birch", "stick", "birch"),
+                List.of("spruce", "stick", "spruce")), variants);
+    }
+
+    @Test
     void rejectsAnIngredientWithoutCandidates()
     {
         assertThrows(IllegalArgumentException.class,

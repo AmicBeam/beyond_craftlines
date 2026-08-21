@@ -8,13 +8,13 @@
   ],
   "key": {
     "I": {
-      "item": "minecraft:iron_ingot"
+      "tag": "c:ingots/iron"
     },
     "R": {
-      "item": "minecraft:redstone"
+      "tag": "c:dusts/redstone"
     },
     "C": {
-      "item": "beyonddimensions:shattered_space_time_crystallization"
+      "item": "beyonddimensions:space_time_stable_frame"
     }
   },
   "result": {

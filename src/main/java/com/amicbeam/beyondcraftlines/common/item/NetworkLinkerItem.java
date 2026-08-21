@@ -5,6 +5,7 @@ import com.amicbeam.beyondcraftlines.common.data.DeviceType;
 import com.amicbeam.beyondcraftlines.common.network.BindMachinePayload;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
@@ -27,7 +28,10 @@ public final class NetworkLinkerItem extends Item
 
     @Override public void appendHoverText(ItemStack stack, TooltipContext context,
                                           List<Component> tooltip, TooltipFlag flag)
-    { tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker_direct_binding")); }
+    {
+        tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker.description")
+                .withStyle(ChatFormatting.GRAY));
+    }
 
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand usedHand)
@@ -100,5 +104,13 @@ public final class NetworkLinkerItem extends Item
             PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types, false));
         }
         return InteractionResult.SUCCESS;
+    }
+
+    @Override
+    public InteractionResult onItemUseFirst(ItemStack stack, UseOnContext context)
+    {
+        // Machines commonly consume the normal block interaction to open their menu before Item#useOn runs.
+        // A linker is a tool interaction, so handle it in NeoForge's pre-block hook and consume the click.
+        return useOn(context);
     }
 }

@@ -57,11 +57,12 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                     throw new IllegalStateException("orders are being submitted too quickly");
                 player.getPersistentData().putLong(LAST_SUBMIT_TICK, now);
                 long count = Math.max(1, payload.count());
-                ResourceLocation target = ResourceLocation.parse(payload.itemId());
-                if (menu.recipeForOutput(target) == null) throw new IllegalArgumentException("target is not available in this order menu");
+                if (!menu.targetToken().equals(payload.itemId())
+                        || menu.recipeForResourceOutput(menu.initialTarget()) == null)
+                    throw new IllegalArgumentException("target is not available in this order menu");
                 var validated = ValidatedClientPlanCache.consume(player.getUUID(), payload.proposalNonce(), now);
                 if (validated == null || validated.networkId() != menu.networkId()
-                        || !validated.target().equals(target) || validated.count() != count
+                        || !validated.target().isSame(menu.initialTarget()) || validated.count() != count
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
                 var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.capture(menu.networkId());
@@ -69,7 +70,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         player.level(), menu.availableFamilies());
                 if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
                     throw new IllegalStateException("recipes changed; refresh the preview");
-                var currentPlan = RecipePlanningService.plan(player.serverLevel(), target, count, snapshot,
+                var currentPlan = RecipePlanningService.plan(player.serverLevel(), menu.initialTarget(), count, snapshot,
                         menu.availableFamilies(), validated.overrides());
                 if (!validated.overrides().completelyResolves(currentPlan))
                     throw new IllegalStateException("client plan is incomplete; refresh the preview");
@@ -78,9 +79,10 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         == PlanningFreshness.Result.REQUIRED_MATERIALS_CHANGED)
                     throw new IllegalStateException("required ingredients changed: " + currentPlan.missing());
                 var job = RecipeOrderService.enqueueValidated(player.serverLevel(), player.getUUID(), menu.networkId(),
-                        target, count, payload.blockingMode(), currentPlan);
+                        currentPlan.target(), count, payload.blockingMode(), currentPlan);
                 player.displayClientMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()), false);
+                OpenOrderStatusMenuPayload.open(player, menu.networkId());
             }
             catch (RuntimeException exception)
             {
@@ -96,7 +98,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
     {
         List<RecipeResolutionOverrides.RecipeChoice> recipes = recipeChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.RecipeChoice(
-                        ResourceLocation.parse(choice.output()), ResourceLocation.parse(choice.recipe())))
+                        choice.output(), ResourceLocation.parse(choice.recipe())))
                 .toList();
         List<RecipeResolutionOverrides.IngredientChoice> ingredients = ingredientChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.IngredientChoice(

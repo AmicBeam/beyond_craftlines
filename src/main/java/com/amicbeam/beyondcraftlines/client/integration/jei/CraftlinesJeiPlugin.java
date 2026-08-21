@@ -3,6 +3,8 @@ package com.amicbeam.beyondcraftlines.client.integration.jei;
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
@@ -17,7 +19,6 @@ import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import mezz.jei.api.registration.IAdvancedRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -30,6 +31,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 {
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "jei_plugin");
+    private static volatile IJeiRuntime runtime;
 
     @Override
     public ResourceLocation getPluginUid()
@@ -42,14 +44,17 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         IDrawable icon = registration.getJeiHelpers().getGuiHelper()
                 .createDrawableItemLike(CraftlinesItems.NETWORK_LINKER.get());
+        IDrawable scaledIcon = new ScaledDrawable(icon, 12, 12);
         registration.addRecipeButtonFactory(new IRecipeButtonControllerFactory()
         {
             @Override
             public <T> @Nullable IIconButtonController createButtonController(
                     IRecipeLayoutDrawable<T> recipeLayoutDrawable)
             {
-                ResourceLocation target = findItemOutput(recipeLayoutDrawable);
-                return target == null ? null : new OrderButtonController(target, icon);
+                IStackKey<?> target = findOutput(recipeLayoutDrawable);
+                ResourceLocation recipe = findRecipeId(recipeLayoutDrawable);
+                return target == null || recipe == null ? null
+                        : new OrderButtonController(target, recipe, scaledIcon);
             }
         });
     }
@@ -57,22 +62,51 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     @Override
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)
     {
+        runtime = jeiRuntime;
         JeiCatalystIndex.rebuild(jeiRuntime);
     }
 
     @Override
     public void onRuntimeUnavailable()
     {
+        runtime = null;
         JeiCatalystIndex.clear();
     }
 
-    private static @Nullable ResourceLocation findItemOutput(IRecipeLayoutDrawable<?> layout)
+    public static boolean showRecipesFor(ItemStack stack)
     {
-        ItemStack output = layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.OUTPUT).stream()
-                .flatMap(slot -> slot.getItemStacks())
-                .filter(stack -> !stack.isEmpty())
-                .findFirst().orElse(ItemStack.EMPTY);
-        return output.isEmpty() ? null : BuiltInRegistries.ITEM.getKey(output.getItem());
+        IJeiRuntime current = runtime;
+        if (current == null || stack.isEmpty()) return false;
+        current.getRecipesGui().show(current.getJeiHelpers().getFocusFactory().createFocus(
+                RecipeIngredientRole.OUTPUT, mezz.jei.api.constants.VanillaTypes.ITEM_STACK, stack));
+        return true;
+    }
+
+    public static boolean showRecipesFor(IStackKey<?> key)
+    {
+        IJeiRuntime current = runtime;
+        if (current == null || key == null || key.isEmpty()) return false;
+        Object stack = key.getReadOnlyStack();
+        var typed = current.getIngredientManager().createTypedIngredient(stack, false);
+        if (typed.isEmpty()) return false;
+        current.getRecipesGui().show(current.getJeiHelpers().getFocusFactory().createFocus(
+                RecipeIngredientRole.OUTPUT, typed.get()));
+        return true;
+    }
+
+    private static @Nullable IStackKey<?> findOutput(IRecipeLayoutDrawable<?> layout)
+    {
+        return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.OUTPUT).stream()
+                .flatMap(slot -> slot.getAllIngredients())
+                .map(typed -> RecipeResourceResolver.fromStack(typed.getIngredient()))
+                .filter(java.util.Objects::nonNull)
+                .map(com.wintercogs.beyonddimensions.api.storage.key.KeyAmount::key)
+                .findFirst().orElse(null);
+    }
+
+    private static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)
+    {
+        return layout.getRecipeCategory().getRegistryName(layout.getRecipe());
     }
 
     private static boolean hasDimensionsNetContext()
@@ -81,7 +115,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return player != null && player.containerMenu instanceof DimensionsNetMenu;
     }
 
-    private record OrderButtonController(ResourceLocation target, IDrawable icon)
+    private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe, IDrawable icon)
             implements IIconButtonController
     {
         @Override
@@ -104,7 +138,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         {
             if (!hasDimensionsNetContext()) return false;
             if (!input.isSimulate())
-                PacketDistributor.sendToServer(new OpenOrderMenuPayload(target.toString()));
+                PacketDistributor.sendToServer(new OpenOrderMenuPayload(target, recipe.toString()));
             return true;
         }
 
@@ -112,6 +146,33 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         public void getTooltips(ITooltipBuilder tooltip)
         {
             tooltip.add(Component.translatable("gui.beyond_craftlines.order_from_jei"));
+        }
+    }
+
+    private record ScaledDrawable(IDrawable delegate, int width, int height) implements IDrawable
+    {
+        @Override
+        public int getWidth()
+        {
+            return width;
+        }
+
+        @Override
+        public int getHeight()
+        {
+            return height;
+        }
+
+        @Override
+        public void draw(net.minecraft.client.gui.GuiGraphics graphics, int xOffset, int yOffset)
+        {
+            float scale = Math.min((float) width / delegate.getWidth(),
+                    (float) height / delegate.getHeight());
+            graphics.pose().pushPose();
+            graphics.pose().translate(xOffset, yOffset, 0);
+            graphics.pose().scale(scale, scale, 1);
+            delegate.draw(graphics, 0, 0);
+            graphics.pose().popPose();
         }
     }
 }

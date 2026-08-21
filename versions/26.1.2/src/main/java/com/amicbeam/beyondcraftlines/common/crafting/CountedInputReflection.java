@@ -75,6 +75,10 @@ final class CountedInputReflection
         boolean wrapped = false;
         for (int depth = 0; depth < 8 && current != null && seen.add(current); depth++)
         {
+            // InputIngredient implementations (notably chemical/fluid ingredients) may
+            // themselves look like counted wrappers while their public representations
+            // carry the actual resource type and amount. Keep those objects intact.
+            if (hasNoArgMethod(current, "getRepresentations")) break;
             Object ingredient = invokeNoArgs(current, "ingredient");
             if (ingredient == null) ingredient = invokeNoArgs(current, "getIngredient");
             if (ingredient == null) break;
@@ -93,6 +97,12 @@ final class CountedInputReflection
         if (left == 0 || right == 0) return 0;
         if (left > Long.MAX_VALUE / right) return Long.MAX_VALUE;
         return left * right;
+    }
+
+    private static boolean hasNoArgMethod(Object target, String name)
+    {
+        try { return target.getClass().getMethod(name).getParameterCount() == 0; }
+        catch (ReflectiveOperationException | RuntimeException ignored) { return false; }
     }
 
     private static Object invokeNoArgs(Object target, String name)

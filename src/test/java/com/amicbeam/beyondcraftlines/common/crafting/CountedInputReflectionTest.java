@@ -73,6 +73,21 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void preservesRepresentationProvidersThatAlsoLookLikeCountedWrappers()
+    {
+        Object inner = new Object();
+        var provider = new RepresentationProvider(inner, 40);
+
+        // The provider's own count belongs to each represented stack. Unwrapping it would
+        // discard getRepresentations(), which is how chemical and fluid inputs disappeared.
+        assertNull(CountedInputReflection.read(provider));
+
+        var outer = CountedInputReflection.read(new RecordStyleInput(provider, 3));
+        assertEquals(provider, outer.ingredient());
+        assertEquals(3, outer.count());
+    }
+
+    @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
         assertFalse(CountedInputReflection.INPUT_METHODS.stream()
@@ -87,6 +102,10 @@ final class CountedInputReflectionTest
 
     private record RecordStyleInput(Object ingredient, int count) {}
     private record LongCountInput(Object ingredient, long count) {}
+    private record RepresentationProvider(Object ingredient, long count)
+    {
+        public List<Object> getRepresentations() { return List.of(ingredient); }
+    }
 
     private static final class BeanStyleInput
     {

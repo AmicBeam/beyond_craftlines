@@ -672,9 +672,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         // must not consume stock or inherit the authoritative all-occurrences metric for this key.
         NodeMetric metric = cyclic ? null : nodeMetric(resourceKey);
         long needed = metric == null ? Math.max(1, fallbackNeeded) : metric.needed();
-        long stockUsed = cyclic || depth <= 0 ? 0 : metric == null
-                ? stock.consume(resourceKey, needed)
-                : Math.min(needed, resourceExtraction(resourceKey));
+        // Whether this node is covered by inventory must come from the same snapshot allocator
+        // used for the whole visible tree. The server's extraction total can be lower than the
+        // demand when another branch produces an equivalent intermediate; treating that as the
+        // node's available stock incorrectly expands a fully stocked node as partially crafted.
+        long stockUsed = cyclic || depth <= 0 ? 0 : stock.consume(resourceKey, needed);
         long unresolved = needed - stockUsed;
         boolean stockSatisfied = depth > 0 && unresolved == 0;
         GraphNode node = new GraphNode(resourceKey, stack.copyWithCount(1), itemId,
@@ -808,16 +810,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 long amount = Math.max(0, entry.getValue());
                 result = result > Long.MAX_VALUE - amount ? Long.MAX_VALUE : result + amount;
             }
-        return result;
-    }
-
-    private long resourceExtraction(IStackKey<?> requested)
-    {
-        long result = 0;
-        for (var entry : extractionMaterials.entrySet())
-            if (requested.isSame(entry.getKey()))
-                result = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
-                        result, Math.max(0, entry.getValue()));
         return result;
     }
 

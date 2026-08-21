@@ -88,6 +88,7 @@
   "gui.beyond_craftlines.choose_tag_item": "选择 tag 原料",
   "gui.beyond_craftlines.choose_recipe": "选择配方",
   "tooltip.beyond_craftlines.recipe_preview": "配方预览 · %s",
+  "tooltip.beyond_craftlines.recipe_type": "配方类型：%s",
   "tooltip.beyond_craftlines.recipe_id": "配方 ID：%s",
   "gui.beyond_craftlines.no_selection": "没有可用的下单目标",
   "gui.beyond_craftlines.orders": "订单状态",

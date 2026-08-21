@@ -30,6 +30,13 @@ final class RecipeOutputResolverTest
     }
 
     @Test
+    void unwrapsStackContainerOutput()
+    {
+        assertEquals(List.of("dirty_iron_slurry"),
+                RecipeOutputResolver.reflectiveOutputValues(new BoxedChemicalLikeRecipe()));
+    }
+
+    @Test
     void rotaryChemicalOutputSelectsOnlyTheFluidInputDirection()
     {
         assertEquals(List.of("getFluidInput"), RecipeResourceResolver.directionalInputMethods(
@@ -60,6 +67,19 @@ final class RecipeOutputResolverTest
     {
         public List<SplitOutput> getOutputDefinition()
         { return List.of(new SplitOutput("hydrogen", "oxygen")); }
+    }
+
+    private static final class BoxedChemicalLikeRecipe
+    {
+        public List<BoxedStack> getOutputDefinition()
+        { return List.of(new BoxedStack("dirty_iron_slurry")); }
+    }
+
+    private static final class BoxedStack
+    {
+        private final String stack;
+        private BoxedStack(String stack) { this.stack = stack; }
+        public String getChemicalStack() { return stack; }
     }
 
     private record SplitOutput(String left, String right) {}

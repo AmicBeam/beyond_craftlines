@@ -520,6 +520,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_preview",
                     RecipePlanningService.family(node.recipe)).withStyle(ChatFormatting.GRAY));
+            lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_type",
+                    RecipePlanningService.recipeTypeId(node.recipe)).withStyle(ChatFormatting.GRAY));
             lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_id", node.recipe.id().identifier())
                     .withStyle(ChatFormatting.DARK_GRAY));
         }
@@ -1151,6 +1153,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         List<Component> lines = List.of(
                 output.getRender().getDisplayName(output),
                 Component.translatable("tooltip.beyond_craftlines.recipe_preview", RecipePlanningService.family(recipe))
+                        .withStyle(ChatFormatting.GRAY),
+                Component.translatable("tooltip.beyond_craftlines.recipe_type", RecipePlanningService.recipeTypeId(recipe))
                         .withStyle(ChatFormatting.GRAY),
                 Component.translatable("tooltip.beyond_craftlines.recipe_id", recipe.id().identifier())
                         .withStyle(ChatFormatting.DARK_GRAY));

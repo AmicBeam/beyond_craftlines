@@ -88,6 +88,7 @@
   "gui.beyond_craftlines.choose_tag_item": "Choose tag ingredient",
   "gui.beyond_craftlines.choose_recipe": "Choose recipe",
   "tooltip.beyond_craftlines.recipe_preview": "Recipe preview · %s",
+  "tooltip.beyond_craftlines.recipe_type": "Recipe type: %s",
   "tooltip.beyond_craftlines.recipe_id": "Recipe ID: %s",
   "gui.beyond_craftlines.no_selection": "No orderable target is available",
   "gui.beyond_craftlines.orders": "Order status",

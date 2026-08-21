@@ -82,6 +82,11 @@ public final class RecipeOutputResolver
                 result.addAll(flatten(invokeNoArgs(value, component.getName())));
             return result;
         }
+        // Some recipe APIs wrap a concrete resource stack so that one output slot can
+        // carry multiple chemical kinds. Keep this generic and unwrap the stack-shaped
+        // container instead of linking to the owning mod's wrapper class.
+        Object containedStack = invokeNoArgs(value, "getChemicalStack");
+        if (containedStack != null && containedStack != value) return flatten(containedStack);
         return List.of(value);
     }
 

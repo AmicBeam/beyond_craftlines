@@ -15,7 +15,9 @@ import java.util.List;
 public final class RecipeOutputResolver
 {
     private static final List<String> OUTPUT_METHODS = List.of(
-            "getOutputDefinition", "getOutputDefinitions", "outputs", "getOutputs");
+            "getOutputDefinition", "getOutputDefinitions",
+            "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",
+            "outputs", "getOutputs");
 
     private RecipeOutputResolver() {}
 
@@ -25,13 +27,19 @@ public final class RecipeOutputResolver
         LinkedHashMap<IStackKey<?>, KeyAmount> result = new LinkedHashMap<>();
         ItemStack item = recipe.getResultItem(registries);
         if (!item.isEmpty()) add(result, new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount()));
-        for (String method : OUTPUT_METHODS)
-            for (Object output : flatten(invokeNoArgs(recipe, method)))
-            {
-                KeyAmount converted = RecipeResourceResolver.fromStack(output);
-                if (converted != null && !converted.isEmpty()) add(result, converted);
-            }
+        for (Object output : reflectiveOutputValues(recipe))
+        {
+            KeyAmount converted = RecipeResourceResolver.fromStack(output);
+            if (converted != null && !converted.isEmpty()) add(result, converted);
+        }
         return List.copyOf(result.values());
+    }
+
+    static List<Object> reflectiveOutputValues(Object recipe)
+    {
+        List<Object> result = new ArrayList<>();
+        for (String method : OUTPUT_METHODS) result.addAll(flatten(invokeNoArgs(recipe, method)));
+        return List.copyOf(result);
     }
 
     public static KeyAmount primary(Recipe<?> recipe, net.minecraft.core.HolderLookup.Provider registries)

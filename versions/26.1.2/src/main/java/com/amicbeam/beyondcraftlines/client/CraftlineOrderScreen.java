@@ -681,7 +681,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.IngredientSelection> selections =
                 new ArrayList<>();
         for (var ingredient : com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                .ingredients(recipe.value()))
+                .ingredientsForOutput(recipe.value(), resourceKey))
         {
             int currentSlot = ingredient.slot();
             com.wintercogs.beyonddimensions.api.storage.key.KeyAmount selectedResource =
@@ -1150,7 +1150,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 output.getRender().getDisplayName(output),
                 localizedRecipeId(recipe));
         List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> inputs =
-                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ingredients(recipe.value())
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .ingredientsForOutput(recipe.value(), output)
                         .stream().map(ingredient -> ingredient.candidates().getFirst()).toList();
         graphics.setTooltipForNextFrame(font, lines, Optional.<TooltipComponent>of(
                 new RecipePreviewTooltip(inputs,

@@ -685,7 +685,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.IngredientSelection> selections =
                 new ArrayList<>();
         for (var ingredient : com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                .ingredients(recipe.value()))
+                .ingredientsForOutput(recipe.value(), resourceKey))
         {
             int currentSlot = ingredient.slot();
             com.wintercogs.beyonddimensions.api.storage.key.KeyAmount selectedResource =
@@ -1088,7 +1088,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 RecipeHolder<?> candidateRecipe = recipePickerNode == null ? null : recipePickerRecipes.get(index);
                 ItemStack stack = candidateRecipe == null ? ingredientPickerItems.get(index) : ItemStack.EMPTY;
                 IStackKey<?> outputKey = candidateRecipe == null ? null : recipePickerNode.key;
-                IStackKey<?> candidateKey = candidateRecipe == null ? null : firstRecipeInputKey(candidateRecipe);
+                IStackKey<?> candidateKey = candidateRecipe == null ? null
+                        : firstRecipeInputKey(candidateRecipe, outputKey);
                 if (candidateRecipe != null && candidateKey == null) candidateKey = outputKey;
                 boolean selected = candidateRecipe == null
                         ? BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(ingredientPickerNode.itemId)
@@ -1151,10 +1152,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return Math.max(1, (pickerSize() + PICKER_PAGE_SIZE - 1) / PICKER_PAGE_SIZE);
     }
 
-    private static IStackKey<?> firstRecipeInputKey(RecipeHolder<?> recipe)
+    private static IStackKey<?> firstRecipeInputKey(RecipeHolder<?> recipe, IStackKey<?> output)
     {
         var ingredients = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                .ingredients(recipe.value());
+                .ingredientsForOutput(recipe.value(), output);
         return ingredients.isEmpty() ? null : ingredients.getFirst().candidates().getFirst().key();
     }
 
@@ -1165,7 +1166,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 output.getRender().getDisplayName(output),
                 localizedRecipeId(recipe));
         List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> inputs =
-                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ingredients(recipe.value())
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .ingredientsForOutput(recipe.value(), output)
                         .stream().map(ingredient -> ingredient.candidates().getFirst()).toList();
         graphics.renderTooltip(font, lines, Optional.<TooltipComponent>of(
                 new RecipePreviewTooltip(inputs,

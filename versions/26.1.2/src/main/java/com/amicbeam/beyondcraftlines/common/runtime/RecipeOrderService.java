@@ -205,7 +205,8 @@ public final class RecipeOrderService
                 server.overworld(), network, job, step, provisioner.get(), index);
         Optional<DeviceBindingRegistry.BoundMachine> machine =
                 DeviceBindingRegistry.machineFor(server, job.networkId(), step.family());
-        if (machine.isPresent()) return reserveMachine(job, step, machine.get(), index);
+        if (machine.isPresent()) return reserveMachine(
+                network.getUnifiedStorage(), job, step, machine.get(), index);
         if (!"crafting".equals(step.family()))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("bound_machine_unavailable", step.family()));
         long gameTime = server.overworld().getGameTime();
@@ -294,7 +295,7 @@ public final class RecipeOrderService
         return updated.completeCrafts(attempt.crafts(), nextTick);
     }
 
-    private static RecipeOrderJob reserveMachine(RecipeOrderJob job,
+    private static RecipeOrderJob reserveMachine(UnifiedStorage storage, RecipeOrderJob job,
                                                   RecipePlan.Step step,
                                                   DeviceBindingRegistry.BoundMachine machine,
                                                   RuntimeOrderIndex<Integer, MachineKey> index)
@@ -309,6 +310,8 @@ public final class RecipeOrderService
         if (BlockingModeLogic.shouldWait(job.blockingMode(), BoundMachineAutomation.containsAnyResources(
                 machine.level(), binding.position(), step.inputs())))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("blocking_machine_input"));
+        drainWhitelistedMachineOutputs(machine.level(), storage, step,
+                binding.position(), step.outputKey());
         long baseline = BoundMachineAutomation.countExtractable(
                 machine.level(), binding.position(), step.outputKey());
         for (KeyAmount output : recipeOutputs(machine.level(), step))
@@ -412,7 +415,8 @@ public final class RecipeOrderService
             job = working;
         }
 
-        drainBoundMachineByproducts(level, network.getUnifiedStorage(), job.steps().get(job.nextStep()), wait);
+        drainWhitelistedMachineOutputs(level, network.getUnifiedStorage(),
+                job.steps().get(job.nextStep()), wait.machinePosition(), wait.outputKey());
 
         long current = BoundMachineAutomation.countExtractable(level, wait.machinePosition(), wait.outputKey());
         long available = ExternalOrderLogic.availableMachineOutput(wait.baseline(), current);
@@ -443,26 +447,30 @@ public final class RecipeOrderService
         return job.awaitExternal(wait, encode("machine_processing", wait.collected(), wait.amount()));
     }
 
-    private static void drainBoundMachineByproducts(ServerLevel level, UnifiedStorage storage,
-                                                     RecipePlan.Step step, RecipeOrderJob.ExternalWait wait)
+    /**
+     * Continuously clears every non-primary output declared by the active recipe. The recipe
+     * outputs are the whitelist; unlike the primary output, these resources do not contribute
+     * to order completion and therefore do not need an estimated per-batch extraction cap.
+     */
+    private static void drainWhitelistedMachineOutputs(ServerLevel level, UnifiedStorage storage,
+                                                       RecipePlan.Step step, BlockPos machinePosition,
+                                                       IStackKey<?> primaryOutput)
     {
-        long batchCrafts = SaturatingLongMath.ceilDiv(wait.amount(), step.outputPerCraft());
         for (KeyAmount expected : recipeOutputs(level, step))
         {
-            if (wait.outputKey().isSame(expected.key())) continue;
+            if (primaryOutput.isSame(expected.key())) continue;
             long visible = BoundMachineAutomation.countExtractable(
-                    level, wait.machinePosition(), expected.key());
-            long limit = Math.min(visible, SaturatingLongMath.multiply(expected.amount(), batchCrafts));
-            if (limit <= 0) continue;
-            KeyAmount simulatedRemainder = storage.insert(expected.key(), limit, true);
-            long transferable = limit - simulatedRemainder.amount();
+                    level, machinePosition, expected.key());
+            if (visible <= 0) continue;
+            KeyAmount simulatedRemainder = storage.insert(expected.key(), visible, true);
+            long transferable = visible - simulatedRemainder.amount();
             if (transferable <= 0) continue;
             for (KeyAmount output : BoundMachineAutomation.extractStacks(
-                    level, wait.machinePosition(), expected.key(), transferable))
+                    level, machinePosition, expected.key(), transferable))
             {
                 KeyAmount remainder = storage.insert(output.key(), output.amount(), false);
                 if (!remainder.isEmpty()) BoundMachineAutomation.insert(
-                        level, wait.machinePosition(), remainder.key(), remainder.amount());
+                        level, machinePosition, remainder.key(), remainder.amount());
             }
         }
     }

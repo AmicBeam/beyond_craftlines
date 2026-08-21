@@ -4,7 +4,7 @@ import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import io.netty.buffer.ByteBuf;
 import java.util.UUID;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
+import com.amicbeam.beyondcraftlines.compat.protocol.StreamCodec;
 
 public final class ForgePayloadCodecs {
     public static final StreamCodec<ByteBuf, UUID> UUID = StreamCodec.of(

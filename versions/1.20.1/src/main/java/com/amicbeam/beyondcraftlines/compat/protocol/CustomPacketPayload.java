@@ -1,4 +1,4 @@
-package net.minecraft.network.protocol.common.custom;
+package com.amicbeam.beyondcraftlines.compat.protocol;
 
 import net.minecraft.resources.ResourceLocation;
 

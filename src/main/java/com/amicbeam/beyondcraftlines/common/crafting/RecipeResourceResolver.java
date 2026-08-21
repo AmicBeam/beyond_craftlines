@@ -42,14 +42,18 @@ public final class RecipeResourceResolver
         String stackTypePath = output.getTypeId().getPath();
         for (Class<?> type = recipe.getClass(); type != null; type = type.getSuperclass())
         {
-            List<String> methods = mekanismRotaryInputMethods(type.getName(), stackTypePath);
+            List<String> methods = mekanismInputMethods(type.getName(), stackTypePath);
             if (!methods.isEmpty()) return methods;
         }
         return List.of();
     }
 
-    static List<String> mekanismRotaryInputMethods(String recipeClassName, String stackTypePath)
+    static List<String> mekanismInputMethods(String recipeClassName, String stackTypePath)
     {
+        if ("mekanism.api.recipes.ItemStackChemicalToObjectRecipe".equals(recipeClassName)
+                || "mekanism.api.recipes.chemical.ItemStackChemicalToItemStackRecipe".equals(recipeClassName)
+                || "mekanism.api.recipes.ItemStackGasToItemStackRecipe".equals(recipeClassName))
+            return List.of("getItemInput", "getChemicalInput");
         if (!"mekanism.api.recipes.RotaryRecipe".equals(recipeClassName)) return List.of();
         if ("stack_type/fluid".equals(stackTypePath))
             return List.of("getGasInput", "getChemicalInput");
@@ -58,6 +62,9 @@ public final class RecipeResourceResolver
             return List.of("getFluidInput");
         return List.of();
     }
+
+    static List<String> mekanismRotaryInputMethods(String recipeClassName, String stackTypePath)
+    { return mekanismInputMethods(recipeClassName, stackTypePath); }
 
     static boolean matchesOutputDirection(IStackKey<?> selectedOutput, Object rawOutput)
     {
@@ -155,8 +162,7 @@ public final class RecipeResourceResolver
                     continue;
                 }
 
-                Object representations = invokeNoArgs(ingredientSource, "getRepresentations");
-                List<?> values = CountedInputReflection.flatten(representations);
+                List<?> values = CountedInputReflection.representationValues(ingredientSource);
                 if (values.isEmpty()) continue;
                 LinkedHashMap<IStackKey<?>, KeyAmount> candidates = new LinkedHashMap<>();
                 for (Object value : values)

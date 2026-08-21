@@ -3,7 +3,7 @@ package com.amicbeam.beyondcraftlines.compat;
 import java.util.List;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.RecipeHolder;
+import com.amicbeam.beyondcraftlines.compat.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 
 public final class RecipeManagerCompat {

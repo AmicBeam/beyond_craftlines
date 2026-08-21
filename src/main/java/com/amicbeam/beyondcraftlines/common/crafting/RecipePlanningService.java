@@ -41,6 +41,7 @@ public final class RecipePlanningService
         RecipeIngredientResolver.clearCache();
         PlanningSnapshotService.clearRecipeEpochCache();
         ClientRecipePlanner.clearCache();
+        com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.clearRecipeIndexCache();
     }
 
     public static RecipePlan plan(ServerLevel level, int networkId, ResourceLocation target, long amount)
@@ -166,7 +167,7 @@ public final class RecipePlanningService
         }
         String resourceId = RecipeResourceResolver.sortKey(resource);
         if (!visiting.add(resourceId))
-            throw CyclicRecipePathException.INSTANCE;
+            throw new CyclicRecipePathException(resource);
 
         try
         {
@@ -197,8 +198,11 @@ public final class RecipePlanningService
                             new HashSet<>(visiting), branch, overrides, mode, depth, maxDepth, budget);
                     state.replaceWith(branch);
                 }
-                catch (CyclicRecipePathException ignored)
-                { state.missing.merge(resource, remainder, SaturatingLongMath::add); }
+                catch (CyclicRecipePathException cycle)
+                {
+                    if (!resource.isSame(cycle.resource)) throw cycle;
+                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
+                }
                 return;
             }
             PlanningState best = null;
@@ -212,8 +216,9 @@ public final class RecipePlanningService
                     resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), branch,
                             overrides, mode, depth, maxDepth, budget);
                 }
-                catch (CyclicRecipePathException ignored)
+                catch (CyclicRecipePathException cycle)
                 {
+                    if (!resource.isSame(cycle.resource)) throw cycle;
                     branch = state.copy();
                     branch.missing.merge(resource, remainder, SaturatingLongMath::add);
                 }
@@ -367,7 +372,8 @@ public final class RecipePlanningService
 
     private static final class CyclicRecipePathException extends RuntimeException
     {
-        private static final CyclicRecipePathException INSTANCE = new CyclicRecipePathException();
+        private final IStackKey<?> resource;
+        private CyclicRecipePathException(IStackKey<?> resource) { this.resource = resource; }
         @Override public synchronized Throwable fillInStackTrace() { return this; }
     }
 

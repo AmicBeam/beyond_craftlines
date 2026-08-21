@@ -57,16 +57,16 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
-            var recipe = RecipePlanningService.visibleRecipes(player.level()).stream()
-                    .filter(holder -> requestedRecipe == null || holder.id().equals(requestedRecipe))
+            var level = player.level();
+            var candidates = requestedRecipe == null
+                    ? level.getRecipeManager().getOrderedRecipes().stream()
+                    : level.getRecipeManager().byKey(requestedRecipe).stream();
+            var recipe = candidates
+                    .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
                             || availableFamilies.contains(RecipePlanningService.family(holder)))
-                    .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
+                    .filter(holder -> RecipeOutputResolver.outputs(holder.value(), level.registryAccess())
                             .stream().anyMatch(output -> target.isSame(output.key())))
-                    .sorted(java.util.Comparator
-                            .comparingInt((net.minecraft.world.item.crafting.RecipeHolder<?> holder) ->
-                                    "crafting".equals(RecipePlanningService.family(holder)) ? 0 : 1)
-                            .thenComparing(holder -> holder.id().toString()))
                     .findFirst().orElse(null);
             if (recipe == null || requestedType != null
                     && !DeviceBindingRegistry.supportsJeiType(player.getServer(), networkId,

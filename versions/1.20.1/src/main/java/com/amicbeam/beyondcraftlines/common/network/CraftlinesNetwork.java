@@ -4,8 +4,9 @@ import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
+import com.amicbeam.beyondcraftlines.compat.protocol.IPayloadContext;
+import com.amicbeam.beyondcraftlines.compat.protocol.RegistryFriendlyByteBuf;
+import com.amicbeam.beyondcraftlines.compat.protocol.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -14,7 +15,6 @@ import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
 import net.minecraftforge.network.PacketDistributor;
-import net.minecraftforge.network.handling.IPayloadContext;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {

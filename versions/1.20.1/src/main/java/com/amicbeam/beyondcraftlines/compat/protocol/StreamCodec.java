@@ -1,4 +1,4 @@
-package net.minecraft.network.codec;
+package com.amicbeam.beyondcraftlines.compat.protocol;
 
 import io.netty.buffer.ByteBuf;
 import java.util.function.Function;

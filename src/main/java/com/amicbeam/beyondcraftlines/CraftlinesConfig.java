@@ -28,7 +28,7 @@ public final class CraftlinesConfig
     public static final ModConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
             .pop()
             .push("planning")
-            .comment("Maximum recipes captured per client tick while building the recipe-tree index. A separate time budget still protects frame time.")
+            .comment("Maximum recipes processed per client tick in each of the two recipe indexing stages.")
             .translation("config.beyond_craftlines.recipe_index_max_per_tick")
             .defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
 

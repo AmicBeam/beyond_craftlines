@@ -12,7 +12,6 @@ import com.wintercogs.beyonddimensions.client.gui.widget.shared.IconButton;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.common.menu.widget.slot.AbstractStackTypedSlot;
 import net.minecraft.client.Minecraft;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -117,11 +116,6 @@ public final class CraftlinesClientEvents
                 if (event.getMouseX() < x || event.getMouseX() >= x + 16
                         || event.getMouseY() < y || event.getMouseY() >= y + 16) continue;
                 if (!(typed.getStack().key() instanceof ItemStackKey itemKey)) return;
-                var target = BuiltInRegistries.ITEM.getKey(itemKey.getSource());
-                boolean hasRecipe = com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService
-                        .visibleRecipes(level).stream().anyMatch(holder -> BuiltInRegistries.ITEM.getKey(holder.value()
-                                .getResultItem(level.registryAccess()).getItem()).equals(target));
-                if (!hasRecipe) return;
                 PacketDistributor.sendToServer(new OpenOrderMenuPayload(
                         new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)), "", ""));
                 event.setCanceled(true);

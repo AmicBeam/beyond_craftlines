@@ -65,6 +65,17 @@ final class RecipeOutputResolverTest
                 "example.OtherRecipe", "stack_type/chemical"));
     }
 
+    @Test
+    void chemicalInjectionAlwaysIncludesItsItemAndChemicalInputs()
+    {
+        assertEquals(List.of("getItemInput", "getChemicalInput"),
+                RecipeResourceResolver.mekanismInputMethods(
+                        "mekanism.api.recipes.ItemStackChemicalToObjectRecipe", "stack_type/item"));
+        assertEquals(List.of("getItemInput", "getChemicalInput"),
+                RecipeResourceResolver.mekanismInputMethods(
+                        "mekanism.api.recipes.ItemStackGasToItemStackRecipe", "stack_type/item"));
+    }
+
     private static final class RotaryLikeRecipe
     {
         public List<String> getGasOutputDefinition() { return List.of("gas"); }

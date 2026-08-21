@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.menu;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
@@ -16,22 +17,23 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.WeakHashMap;
 
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
+    private static final Map<Object, Map<Set<String>, RecipeIndex>> RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private final Player player;
     private final int networkId;
     private final IStackKey<?> initialTarget;
     private final ResourceLocation initialRecipe;
     private final Set<String> availableFamilies;
-    private final List<RecipeHolder<?>> recipes;
-    private final Map<ResourceLocation, RecipeHolder<?>> recipeByOutput;
-    private final Map<ResourceLocation, List<RecipeHolder<?>>> recipesByOutput;
-    private final Map<IStackKey<?>, List<RecipeHolder<?>>> recipesByResourceOutput;
+    private final RecipeIndex recipeIndex;
+    private final RecipeHolder<?> initialRecipeHolder;
 
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
@@ -48,34 +50,17 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialTarget = initialTarget;
         this.initialRecipe = initialRecipe;
         this.availableFamilies = Set.copyOf(availableFamilies);
-        this.recipes = RecipePlanningService.visibleRecipes(player.level()).stream()
-                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
-                        || this.availableFamilies.contains(RecipePlanningService.family(holder)))
-                .toList();
-        LinkedHashMap<ResourceLocation, RecipeHolder<?>> byOutput = new LinkedHashMap<>();
-        LinkedHashMap<ResourceLocation, List<RecipeHolder<?>>> allByOutput = new LinkedHashMap<>();
-        LinkedHashMap<IStackKey<?>, List<RecipeHolder<?>>> allByResourceOutput = new LinkedHashMap<>();
-        for (RecipeHolder<?> holder : recipes)
+        var level = player.level();
+        synchronized (RECIPE_INDEX_CACHE)
         {
-            for (var output : RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess()))
-            {
-                allByResourceOutput.computeIfAbsent(output.key(), ignored -> new java.util.ArrayList<>()).add(holder);
-                if (output.key() instanceof ItemStackKey itemKey)
-                {
-                    ResourceLocation outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(itemKey.getSource());
-                    byOutput.putIfAbsent(outputId, holder);
-                    allByOutput.computeIfAbsent(outputId, ignored -> new java.util.ArrayList<>()).add(holder);
-                }
-            }
+            this.recipeIndex = RECIPE_INDEX_CACHE
+                    .computeIfAbsent(level.getRecipeManager(), ignored -> new LinkedHashMap<>())
+                    .computeIfAbsent(this.availableFamilies, ignored -> new RecipeIndex(
+                            level.getRecipeManager().getOrderedRecipes().stream()
+                                    .sorted(java.util.Comparator.comparing(holder -> holder.id().toString())).toList(), level,
+                            this.availableFamilies));
         }
-        this.recipeByOutput = Map.copyOf(byOutput);
-        LinkedHashMap<ResourceLocation, List<RecipeHolder<?>>> frozen = new LinkedHashMap<>();
-        allByOutput.forEach((output, holders) -> frozen.put(output, List.copyOf(holders)));
-        this.recipesByOutput = Map.copyOf(frozen);
-        LinkedHashMap<IStackKey<?>, List<RecipeHolder<?>>> frozenResources = new LinkedHashMap<>();
-        allByResourceOutput.forEach((output, holders) -> frozenResources.put(output, List.copyOf(holders)));
-        this.recipesByResourceOutput = Map.copyOf(frozenResources);
+        this.initialRecipeHolder = level.getRecipeManager().byKey(initialRecipe).orElse(null);
     }
 
     public int networkId() { return networkId; }
@@ -83,18 +68,121 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public String targetToken()
     { return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(initialTarget); }
     public ResourceLocation initialRecipe() { return initialRecipe; }
+    public RecipeHolder<?> initialRecipeHolder() { return initialRecipeHolder; }
     public Set<String> availableFamilies() { return availableFamilies; }
-    public List<RecipeHolder<?>> recipes() { return recipes; }
-    public RecipeHolder<?> recipeForOutput(ResourceLocation output) { return recipeByOutput.get(output); }
+    public List<RecipeHolder<?>> recipes()
+    { ensureRecipeIndexForServer(); return List.copyOf(recipeIndex.recipes); }
+    public RecipeHolder<?> recipeForOutput(ResourceLocation output)
+    { ensureRecipeIndexForServer(); return recipeIndex.recipeByOutput.get(output); }
     public List<RecipeHolder<?>> recipesForOutput(ResourceLocation output)
-    { return recipesByOutput.getOrDefault(output, List.of()); }
+    { ensureRecipeIndexForServer(); return recipeIndex.recipesByOutput.getOrDefault(output, List.of()); }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
-        for (var entry : recipesByResourceOutput.entrySet()) if (output.isSame(entry.getKey())) return entry.getValue();
+        ensureRecipeIndexForServer();
+        for (var entry : recipeIndex.recipesByResourceOutput.entrySet())
+            if (output.isSame(entry.getKey())) return entry.getValue();
         return List.of();
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
+    public RecipeHolder<?> recipe(ResourceLocation id)
+    { ensureRecipeIndexForServer(); return recipeIndex.recipesById.get(id); }
+    public ResourceLocation itemOutputForToken(String token)
+    { ensureRecipeIndexForServer(); return recipeIndex.itemOutputsByToken.get(token); }
+    public boolean recipeProduces(ResourceLocation recipe, String token)
+    {
+        ensureRecipeIndexForServer();
+        return recipeIndex.outputTokensByRecipe.getOrDefault(recipe, Set.of()).contains(token);
+    }
+
+    public void advanceRecipeIndex(int recipeBudget, long timeBudgetNanos)
+    { recipeIndex.advance(recipeBudget, timeBudgetNanos); }
+    public boolean recipeIndexComplete() { return recipeIndex.complete(); }
+    public int indexedRecipeCandidates() { return recipeIndex.next; }
+    public int totalRecipeCandidates() { return recipeIndex.candidates.size(); }
+
+    @Override public void broadcastChanges()
+    {
+        super.broadcastChanges();
+        if (!player.level().isClientSide() && !recipeIndex.complete())
+            recipeIndex.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
+    }
+
+    private void ensureRecipeIndexForServer()
+    {
+        if (!player.level().isClientSide())
+            while (!recipeIndex.complete()) recipeIndex.advance(Integer.MAX_VALUE, Long.MAX_VALUE);
+    }
+
+    public static void clearRecipeIndexCache()
+    {
+        synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
+    }
+
+    private static final class RecipeIndex
+    {
+        private final List<RecipeHolder<?>> candidates;
+        private final net.minecraft.world.level.Level level;
+        private final Set<String> availableFamilies;
+        private final List<RecipeHolder<?>> recipes = new ArrayList<>();
+        private final Map<ResourceLocation, RecipeHolder<?>> recipesById = new LinkedHashMap<>();
+        private final Map<String, ResourceLocation> itemOutputsByToken = new LinkedHashMap<>();
+        private final Map<ResourceLocation, Set<String>> outputTokensByRecipe = new LinkedHashMap<>();
+        private final Map<ResourceLocation, RecipeHolder<?>> recipeByOutput = new LinkedHashMap<>();
+        private final Map<ResourceLocation, List<RecipeHolder<?>>> recipesByOutput = new LinkedHashMap<>();
+        private final Map<IStackKey<?>, List<RecipeHolder<?>>> recipesByResourceOutput = new LinkedHashMap<>();
+        private int next;
+
+        private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level,
+                            Set<String> availableFamilies)
+        {
+            this.candidates = candidates;
+            this.level = level;
+            this.availableFamilies = availableFamilies;
+        }
+
+        private void advance(int recipeBudget, long timeBudgetNanos)
+        {
+            if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
+            int end = (int) Math.min(candidates.size(), (long) next + recipeBudget);
+            int minimum = Math.min(16, recipeBudget);
+            int processed = 0;
+            long started = System.nanoTime();
+            while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
+            {
+                RecipeHolder<?> holder = candidates.get(next++);
+                String family = RecipePlanningService.family(holder);
+                if (RecipePlanningService.supported(holder)
+                        && ("crafting".equals(family) || availableFamilies.contains(family))) add(holder);
+                processed++;
+            }
+        }
+
+        private void add(RecipeHolder<?> holder)
+        {
+            var outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
+            if (outputs.isEmpty()) return;
+            recipes.add(holder);
+            recipesById.putIfAbsent(holder.id(), holder);
+            for (var output : outputs)
+            {
+                String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .sortKey(output.key());
+                outputTokensByRecipe.computeIfAbsent(holder.id(), ignored -> new LinkedHashSet<>()).add(token);
+                recipesByResourceOutput.computeIfAbsent(output.key(), ignored -> new ArrayList<>()).add(holder);
+                if (output.key() instanceof ItemStackKey itemKey)
+                {
+                    ResourceLocation outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                            .getKey(itemKey.getSource());
+                    itemOutputsByToken.putIfAbsent(token, outputId);
+                    recipeByOutput.putIfAbsent(outputId, holder);
+                    recipesByOutput.computeIfAbsent(outputId, ignored -> new ArrayList<>()).add(holder);
+                }
+            }
+        }
+
+        private boolean complete() { return next >= candidates.size(); }
+    }
 
     public boolean canAccessNetwork(Player player)
     {

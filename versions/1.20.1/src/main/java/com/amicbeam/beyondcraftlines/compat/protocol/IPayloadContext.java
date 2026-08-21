@@ -1,4 +1,4 @@
-package net.minecraftforge.network.handling;
+package com.amicbeam.beyondcraftlines.compat.protocol;
 
 import net.minecraft.world.entity.player.Player;
 

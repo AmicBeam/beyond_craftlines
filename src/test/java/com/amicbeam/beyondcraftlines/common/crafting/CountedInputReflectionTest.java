@@ -9,6 +9,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class CountedInputReflectionTest
 {
@@ -89,6 +90,25 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void discoversCreateStyleFluidIngredientsAndMatchingStacks()
+    {
+        Object steam = new Object();
+        var provider = new MatchingFluidProvider(steam);
+        assertEquals(List.of(steam), CountedInputReflection.representationValues(provider));
+        assertNull(CountedInputReflection.read(provider));
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getFluidIngredients"));
+    }
+
+    @Test
+    void discoversSizedFluidIngredientStreamsWithoutUnwrappingThem()
+    {
+        Object steam = new Object();
+        var provider = new FluidStreamProvider(steam, 26_000);
+        assertEquals(List.of(steam), CountedInputReflection.representationValues(provider));
+        assertNull(CountedInputReflection.read(provider));
+    }
+
+    @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
         assertFalse(CountedInputReflection.INPUT_METHODS.stream()
@@ -120,6 +140,15 @@ final class CountedInputReflectionTest
     private record RepresentationProvider(Object ingredient, long count)
     {
         public List<Object> getRepresentations() { return List.of(ingredient); }
+    }
+    private record MatchingFluidProvider(Object ingredient)
+    {
+        public List<Object> getMatchingFluidStacks() { return List.of(ingredient); }
+    }
+    private record FluidStreamProvider(Object ingredient, long amount)
+    {
+        public java.util.stream.Stream<Object> getFluids()
+        { return java.util.stream.Stream.of(ingredient); }
     }
     private static final class UnrelatedPerTickRecipe
     {

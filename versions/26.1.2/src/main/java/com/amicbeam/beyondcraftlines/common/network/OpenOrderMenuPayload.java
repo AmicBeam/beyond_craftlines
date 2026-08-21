@@ -4,6 +4,7 @@ import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import io.netty.buffer.ByteBuf;
@@ -58,16 +59,13 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
-            var recipe = RecipePlanningService.visibleRecipes(player.level()).stream()
+            var recipe = RecipeCatalog.forLevel(player.level()).stream()
                     .filter(holder -> requestedRecipe == null || holder.id().identifier().equals(requestedRecipe))
+                    .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
                             || availableFamilies.contains(RecipePlanningService.family(holder)))
                     .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level())
                             .stream().anyMatch(output -> target.isSame(output.key())))
-                    .sorted(java.util.Comparator
-                            .comparingInt((net.minecraft.world.item.crafting.RecipeHolder<?> holder) ->
-                                    "crafting".equals(RecipePlanningService.family(holder)) ? 0 : 1)
-                            .thenComparing(holder -> holder.id().identifier().toString()))
                     .findFirst().orElse(null);
             if (recipe == null || requestedType != null
                     && !DeviceBindingRegistry.supportsJeiType(player.level().getServer(), networkId,

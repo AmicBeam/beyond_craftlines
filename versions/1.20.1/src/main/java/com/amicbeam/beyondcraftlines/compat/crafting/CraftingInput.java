@@ -1,4 +1,4 @@
-package net.minecraft.world.item.crafting;
+package com.amicbeam.beyondcraftlines.compat.crafting;
 
 import java.util.ArrayList;
 import java.util.List;

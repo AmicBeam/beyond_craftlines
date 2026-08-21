@@ -129,11 +129,13 @@ public final class ClientRecipePlanner
         long used = consume(state.stock, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
-        if (depth >= maxDepth || !visiting.add(RecipeResourceResolver.sortKey(resource)))
+        if (depth >= maxDepth)
         {
             state.missing.merge(resource, remainder, SaturatingLongMath::add);
             return;
         }
+        if (!visiting.add(RecipeResourceResolver.sortKey(resource)))
+            throw new CyclicRecipePathException(resource);
         String resourceId = RecipeResourceResolver.sortKey(resource);
         try
         {
@@ -153,28 +155,47 @@ public final class ClientRecipePlanner
             if (!PlanningBranches.recipesRequireBranches(candidates.size()))
             {
                 Recipe recipe = candidates.getFirst();
-                Identifier previous = state.recipes.putIfAbsent(resourceId, recipe.id());
+                State branch = state.copy();
+                Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id()))
                 {
                     state.missing.merge(resource, remainder, SaturatingLongMath::add);
                     return;
                 }
-                resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), state,
-                        manualRecipes, manualIngredients, depth, maxDepth, budget);
+                try
+                {
+                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
+                            manualRecipes, manualIngredients, depth, maxDepth, budget);
+                    state.replaceWith(branch);
+                }
+                catch (CyclicRecipePathException cycle)
+                {
+                    if (!resource.isSame(cycle.resource)) throw cycle;
+                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
+                }
                 return;
             }
             State best = null;
             Recipe bestRecipe = null;
             for (Recipe recipe : candidates)
             {
-                // The budget limits optimization, not feasibility. Always finish the first deterministic
-                // candidate, then stop trying alternatives when the soft budget is exhausted.
-                if (best != null && !budget.canOptimize()) break;
+                // An incomplete candidate is not a usable result. Keep searching for feasibility
+                // even after the soft optimization budget is exhausted.
+                if (best != null && missingAmount(best.missing) == 0 && !budget.canOptimize()) break;
                 State branch = state.copy();
                 Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
-                resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
-                        manualRecipes, manualIngredients, depth, maxDepth, budget);
+                try
+                {
+                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
+                            manualRecipes, manualIngredients, depth, maxDepth, budget);
+                }
+                catch (CyclicRecipePathException cycle)
+                {
+                    if (!resource.isSame(cycle.resource)) throw cycle;
+                    branch = state.copy();
+                    branch.missing.merge(resource, remainder, SaturatingLongMath::add);
+                }
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -230,7 +251,7 @@ public final class ClientRecipePlanner
         String bestKey = null;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if (best != null && !budget.canOptimize()) break;
+            if (best != null && missingAmount(best.missing) == 0 && !budget.canOptimize()) break;
             State branch = state.copy();
             if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
                     manualIngredients, depth, maxDepth, budget, variant)) continue;
@@ -296,6 +317,13 @@ public final class ClientRecipePlanner
         long total = 0;
         for (long value : missing.values()) total = SaturatingLongMath.add(total, value);
         return total;
+    }
+
+    private static final class CyclicRecipePathException extends RuntimeException
+    {
+        private final IStackKey<?> resource;
+        private CyclicRecipePathException(IStackKey<?> resource) { this.resource = resource; }
+        @Override public synchronized Throwable fillInStackTrace() { return this; }
     }
 
     public record Catalog(List<Recipe> recipes) { public Catalog { recipes = List.copyOf(recipes); } }

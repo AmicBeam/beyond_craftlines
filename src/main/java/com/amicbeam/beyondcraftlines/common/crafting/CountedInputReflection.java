@@ -12,6 +12,12 @@ import java.util.Set;
 /** Structural reflection for third-party counted item inputs, kept free of mod-specific classes. */
 final class CountedInputReflection
 {
+    private static final List<String> REPRESENTATION_METHODS = List.of(
+            "getRepresentations", "representations",
+            "getMatchingFluidStacks", "matchingFluidStacks",
+            "getMatchingStacks", "matchingStacks",
+            "getFluids", "fluids", "getFluidStacks", "fluidStacks",
+            "getStacks", "stacks", "getInputStacks", "inputStacks");
     private static final long MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER = 200;
     private static final Set<String> CHEMICAL_INPUT_METHODS = Set.of(
             "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
@@ -32,10 +38,13 @@ final class CountedInputReflection
             "solidInput", "getSolidInput", "inputSolid", "getInputSolid",
             "fluidInput", "getFluidInput", "fluidInputs", "getFluidInputs",
             "inputFluid", "getInputFluid", "inputFluids", "getInputFluids",
+            "fluidIngredient", "getFluidIngredient", "fluidIngredients", "getFluidIngredients",
             "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
             "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals",
+            "chemicalIngredient", "getChemicalIngredient", "chemicalIngredients", "getChemicalIngredients",
             "gasInput", "getGasInput", "gasInputs", "getGasInputs",
             "inputGas", "getInputGas", "inputGases", "getInputGases",
+            "gasIngredient", "getGasIngredient", "gasIngredients", "getGasIngredients",
             "offerings", "getOfferings");
 
     private CountedInputReflection() {}
@@ -61,6 +70,13 @@ final class CountedInputReflection
             iterable.forEach(element -> flatten(element, result, containers));
             return;
         }
+        if (value instanceof java.util.stream.BaseStream<?, ?> stream)
+        {
+            if (!containers.add(value)) return;
+            try { stream.iterator().forEachRemaining(element -> flatten(element, result, containers)); }
+            finally { stream.close(); }
+            return;
+        }
         if (value.getClass().isArray())
         {
             if (!containers.add(value)) return;
@@ -83,19 +99,36 @@ final class CountedInputReflection
             // InputIngredient implementations (notably chemical/fluid ingredients) may
             // themselves look like counted wrappers while their public representations
             // carry the actual resource type and amount. Keep those objects intact.
-            if (hasNoArgMethod(current, "getRepresentations")) break;
+            if (hasRepresentationMethod(current)) break;
             Object ingredient = invokeNoArgs(current, "ingredient");
             if (ingredient == null) ingredient = invokeNoArgs(current, "getIngredient");
             if (ingredient == null) break;
             wrapped = true;
             Object rawCount = invokeNoArgs(current, "count");
             if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "getCount");
+            if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "amount");
+            if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "getAmount");
             long factor = rawCount instanceof Number number ? Math.max(1L, number.longValue()) : 1L;
             count = saturatedMultiply(count, factor);
             current = ingredient;
         }
         return wrapped && current != null ? new Value(current, count) : null;
     }
+
+    static List<?> representationValues(Object ingredient)
+    {
+        if (ingredient == null) return List.of();
+        for (String method : REPRESENTATION_METHODS)
+        {
+            Object values = invokeNoArgs(ingredient, method);
+            List<?> flattened = flatten(values);
+            if (!flattened.isEmpty()) return flattened;
+        }
+        return List.of();
+    }
+
+    private static boolean hasRepresentationMethod(Object target)
+    { return REPRESENTATION_METHODS.stream().anyMatch(method -> hasNoArgMethod(target, method)); }
 
     /** Mirrors Mekanism's recipe-viewer total for chemicals consumed once per processing tick. */
     static long recipeInputMultiplier(Object recipe, String inputMethod)

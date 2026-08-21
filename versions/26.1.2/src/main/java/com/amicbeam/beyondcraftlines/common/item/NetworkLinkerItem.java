@@ -1,0 +1,93 @@
+package com.amicbeam.beyondcraftlines.common.item;
+
+import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
+import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.network.BindMachinePayload;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.TooltipDisplay;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.Level;
+import java.util.function.Consumer;
+import java.util.function.BiFunction;
+
+public final class NetworkLinkerItem extends Item
+{
+    public static volatile BiFunction<UseOnContext, Boolean, InteractionResult> CLIENT_BIND_REQUEST =
+            (context, unbind) -> InteractionResult.SUCCESS;
+
+    public NetworkLinkerItem(Properties properties) { super(properties.stacksTo(1)); }
+
+    @Override public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display,
+                                          Consumer<Component> tooltip, TooltipFlag flag)
+    {
+        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.linker.description")
+                .withStyle(ChatFormatting.GRAY));
+    }
+
+    @Override
+    public InteractionResult use(Level level, Player player, InteractionHand usedHand)
+    {
+        ItemStack stack = player.getItemInHand(usedHand);
+        if (!level.isClientSide())
+        {
+            boolean cleared = DeviceBindingRegistry.clearSelectedProvisionerRecipes(player);
+            player.sendSystemMessage(Component.translatable(cleared
+                    ? "message.beyond_craftlines.provisioner_recipes_cleared"
+                    : "error.beyond_craftlines.no_selected_provisioner_recipes"));
+        }
+        return level.isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
+    }
+
+    @Override public InteractionResult useOn(UseOnContext context)
+    {
+        if (context.getPlayer() == null) return InteractionResult.PASS;
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(
+                context.getLevel().getBlockState(context.getClickedPos()).getBlock());
+        if (context.getLevel().getBlockState(context.getClickedPos()).is(CraftlinesBlocks.CRAFTLINE_PROVISIONER.get()))
+        {
+            if (!context.getPlayer().isShiftKeyDown()) return InteractionResult.FAIL;
+            if (!context.getLevel().isClientSide())
+            {
+                boolean selected = DeviceBindingRegistry.selectProvisioner(
+                        context.getPlayer(), context.getClickedPos());
+                context.getPlayer().sendSystemMessage(Component.translatable(selected
+                        ? "message.beyond_craftlines.provisioner_selected"
+                        : "error.beyond_craftlines.provisioner_selection_failed"));
+            }
+            return context.getLevel().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
+        }
+        if (DeviceType.fromBlockId(blockId.toString()).isNativeBeyondRecipeMachine())
+        {
+            if (context.getLevel().isClientSide()) context.getPlayer().sendSystemMessage(
+                    Component.translatable("error.beyond_craftlines.native_machine_not_bindable"));
+            return InteractionResult.FAIL;
+        }
+        if (!DeviceType.isThirdPartyMachine(blockId.toString()))
+        {
+            if (context.getLevel().isClientSide()) context.getPlayer().sendSystemMessage(
+                    Component.translatable("error.beyond_craftlines.only_third_party_machines"));
+            return InteractionResult.FAIL;
+        }
+        if (context.getLevel().isClientSide())
+            return CLIENT_BIND_REQUEST.apply(context, context.getPlayer().isShiftKeyDown());
+        return InteractionResult.SUCCESS_SERVER;
+    }
+
+    @Override
+    public InteractionResult onItemUseFirst(ItemStack stack, UseOnContext context)
+    {
+        // Machines commonly consume the normal block interaction to open their menu before Item#useOn runs.
+        // A linker is a tool interaction, so handle it in NeoForge's pre-block hook and consume the click.
+        return useOn(context);
+    }
+}

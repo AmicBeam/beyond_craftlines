@@ -979,7 +979,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 int y = ingredientPickerY + 18 + local / PICKER_COLUMNS * 20;
                 RecipeHolder<?> candidateRecipe = recipePickerNode == null ? null : recipePickerRecipes.get(index);
                 ItemStack stack = candidateRecipe == null ? ingredientPickerItems.get(index) : ItemStack.EMPTY;
-                IStackKey<?> candidateKey = candidateRecipe == null ? null : recipePickerNode.key;
+                IStackKey<?> outputKey = candidateRecipe == null ? null : recipePickerNode.key;
+                IStackKey<?> candidateKey = candidateRecipe == null ? null : firstRecipeInputKey(candidateRecipe);
+                if (candidateRecipe != null && candidateKey == null) candidateKey = outputKey;
                 boolean selected = candidateRecipe == null
                         ? BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(ingredientPickerNode.itemId)
                         : recipePickerNode.recipe != null && candidateRecipe.id().equals(recipePickerNode.recipe.id());
@@ -991,7 +993,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 if (hover)
                 {
                     hovered = stack;
-                    hoveredKey = candidateKey;
+                    hoveredKey = outputKey;
                     hoveredRecipe = candidateRecipe;
                 }
             }
@@ -1039,6 +1041,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int pickerPages()
     {
         return Math.max(1, (pickerSize() + PICKER_PAGE_SIZE - 1) / PICKER_PAGE_SIZE);
+    }
+
+    private static IStackKey<?> firstRecipeInputKey(RecipeHolder<?> recipe)
+    {
+        var ingredients = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                .ingredients(recipe.value());
+        return ingredients.isEmpty() ? null : ingredients.getFirst().candidates().getFirst().key();
     }
 
     private void renderRecipeCandidateTooltip(GuiGraphics graphics, RecipeHolder<?> recipe, IStackKey<?> output,

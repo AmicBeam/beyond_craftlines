@@ -1,0 +1,68 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+version = mod_version
+group = mod_group_id
+base { archivesName = "${mod_id}-${minecraft_version}-neoforge" }
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+
+sourceSets.main.resources.srcDir '../../src/main/resources'
+sourceSets.test.java.srcDir '../../src/test/java'
+
+neoForge {
+    version = project.neo_version
+    runs {
+        client { client() }
+        server { server(); programArgument '--nogui' }
+    }
+    mods { beyond_craftlines { sourceSet sourceSets.main } }
+    unitTest { enable(); testedMod = mods.beyond_craftlines }
+}
+
+repositories {
+    mavenCentral()
+    maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' }
+}
+
+dependencies {
+    implementation "maven.modrinth:beyonddimensions:${beyond_dimensions_version}"
+    compileOnly "maven.modrinth:jei:${jei_version}"
+    runtimeOnly "maven.modrinth:jei:${jei_version}"
+    compileOnly "maven.modrinth:jade:${jade_version}"
+    runtimeOnly "maven.modrinth:jade:${jade_version}"
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation "net.neoforged:testframework:${neo_version}"
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+            minecraft_version_range: minecraft_version_range,
+            neo_version_range: neo_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id,
+            mod_name: mod_name,
+            mod_license: 'MIT',
+            mod_version: mod_version,
+            mod_authors: mod_authors,
+            mod_description: mod_description,
+            beyond_dimensions_version: beyond_dimensions_version,
+            jei_version: jei_version
+    ]
+    inputs.properties replaceProperties
+    filteringCharset = 'UTF-8'
+    from 'src/main/templates'
+    expand replaceProperties
+    into layout.buildDirectory.dir('generated/sources/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs.add('-Xmaxerrs')
+    options.compilerArgs.add('1000')
+}
+tasks.named('test', Test) { useJUnitPlatform() }

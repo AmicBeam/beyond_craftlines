@@ -20,12 +20,6 @@ import java.util.Set;
 /** Resolves item and non-item recipe inputs into Beyond Dimensions' native resource keys. */
 public final class RecipeResourceResolver
 {
-    private static final List<String> INPUT_METHODS = List.of(
-            "getInput", "getMainInput", "getExtraInput", "getItemInput",
-            "getInputA", "getInputB", "getInputOne", "getInputTwo",
-            "getLeftInput", "getRightInput", "getPrimaryInput", "getSecondaryInput",
-            "getInputSolid", "getInputFluid", "getInputChemical",
-            "getFluidInput", "getChemicalInput", "getGasInput", "getInputGas");
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
@@ -69,8 +63,8 @@ public final class RecipeResourceResolver
         }
 
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        Set<String> signatures = new java.util.HashSet<>();
-        result.forEach(value -> signatures.add(signature(value.candidates())));
+        Set<String> canonicalSignatures = new java.util.HashSet<>();
+        result.forEach(value -> canonicalSignatures.add(signature(value.candidates())));
 
         // Some data-driven machine recipes expose their item inputs as records such as
         // CountedIngredient(Ingredient ingredient, int count, ...), while intentionally
@@ -83,41 +77,53 @@ public final class RecipeResourceResolver
             {
                 if (input == null || seen.contains(input)) continue;
                 CountedInputReflection.Value reflected = CountedInputReflection.read(input);
-                Ingredient ingredient = reflected != null && reflected.ingredient() instanceof Ingredient value
-                        ? value : null;
-                if (ingredient == null || ingredient.isEmpty()) continue;
-                seen.add(input);
-                long count = reflected.count();
-                List<KeyAmount> candidates = new ArrayList<>();
-                for (ItemStack stack : ingredient.getItems())
-                    if (!stack.isEmpty()) candidates.add(new KeyAmount(
-                            new ItemStackKey(stack.copyWithCount(1)), count));
-                if (candidates.isEmpty()) continue;
-                // Keep equal-looking inputs as distinct slots: two separate counted inputs
-                // may intentionally request the same ingredient twice.
-                signatures.add(signature(candidates));
-                result.add(new ResourceIngredient(slot++, List.copyOf(candidates), ingredient));
-            }
-        }
+                Object ingredientSource = reflected == null ? input : reflected.ingredient();
+                long multiplier = reflected == null ? 1 : reflected.count();
 
-        for (String methodName : INPUT_METHODS)
-        {
-            Object input = invokeNoArgs(recipe, methodName);
-            if (input == null || !seen.add(input) || input instanceof Ingredient) continue;
-            Object representations = invokeNoArgs(input, "getRepresentations");
-            if (!(representations instanceof List<?> values)) continue;
-            LinkedHashMap<IStackKey<?>, KeyAmount> candidates = new LinkedHashMap<>();
-            for (Object value : values)
-            {
-                KeyAmount converted = fromStack(value);
-                if (converted != null) candidates.putIfAbsent(converted.key(), converted);
+                if (ingredientSource instanceof Ingredient ingredient)
+                {
+                    if (ingredient.isEmpty()) continue;
+                    List<KeyAmount> candidates = itemCandidates(ingredient, multiplier);
+                    if (candidates.isEmpty()) continue;
+                    seen.add(input);
+                    // Recipe#getIngredients() is authoritative when it already exposes this
+                    // slot. Reflection only fills inputs omitted by the vanilla recipe API.
+                    if (canonicalSignatures.contains(signature(candidates))) continue;
+                    result.add(new ResourceIngredient(slot++, candidates, ingredient));
+                    continue;
+                }
+
+                Object representations = invokeNoArgs(ingredientSource, "getRepresentations");
+                List<?> values = CountedInputReflection.flatten(representations);
+                if (values.isEmpty()) continue;
+                LinkedHashMap<IStackKey<?>, KeyAmount> candidates = new LinkedHashMap<>();
+                for (Object value : values)
+                {
+                    KeyAmount converted = fromStack(value);
+                    if (converted == null) continue;
+                    long amount = SaturatingLongMath.multiply(converted.amount(), multiplier);
+                    if (amount > 0) candidates.putIfAbsent(converted.key(),
+                            new KeyAmount(converted.key(), amount));
+                }
+                if (candidates.isEmpty()) continue;
+                seen.add(input);
+                // Distinct but equal inputs remain distinct slots. Identity de-duplication
+                // above only removes aliases that expose the same input object twice.
+                if (canonicalSignatures.contains(signature(List.copyOf(candidates.values())))) continue;
+                result.add(new ResourceIngredient(slot++, List.copyOf(candidates.values()), null));
             }
-            if (candidates.isEmpty()) continue;
-            String signature = signature(List.copyOf(candidates.values()));
-            if (signatures.add(signature)) result.add(new ResourceIngredient(slot++,
-                    List.copyOf(candidates.values()), null));
         }
         return List.copyOf(result);
+    }
+
+    private static List<KeyAmount> itemCandidates(Ingredient ingredient, long count)
+    {
+        List<KeyAmount> candidates = new ArrayList<>();
+        for (ItemStack stack : ingredient.getItems())
+            if (!stack.isEmpty()) candidates.add(new KeyAmount(
+                    new ItemStackKey(stack.copyWithCount(1)),
+                    SaturatingLongMath.multiply(Math.max(1, stack.getCount()), count)));
+        return List.copyOf(candidates);
     }
 
     private static String signature(List<KeyAmount> candidates)

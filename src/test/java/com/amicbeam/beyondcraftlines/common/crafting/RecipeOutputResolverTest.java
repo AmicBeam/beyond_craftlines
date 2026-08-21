@@ -22,6 +22,28 @@ final class RecipeOutputResolverTest
                 RecipeOutputResolver.reflectiveOutputValues(new ModernRotaryLikeRecipe()));
     }
 
+    @Test
+    void unwrapsMekanismElectrolysisOutputRecord()
+    {
+        assertEquals(List.of("hydrogen", "oxygen"),
+                RecipeOutputResolver.reflectiveOutputValues(new ElectrolysisLikeRecipe()));
+    }
+
+    @Test
+    void rotaryChemicalOutputSelectsOnlyTheFluidInputDirection()
+    {
+        assertEquals(List.of("getFluidInput"), RecipeResourceResolver.directionalInputMethods(
+                new ModernRotaryLikeRecipe(), "chemical"::equals));
+    }
+
+    @Test
+    void rotaryFluidOutputSelectsOnlyTheChemicalInputDirection()
+    {
+        assertEquals(List.of("getGasInput", "getChemicalInput"),
+                RecipeResourceResolver.directionalInputMethods(
+                        new ModernRotaryLikeRecipe(), "fluid"::equals));
+    }
+
     private static final class RotaryLikeRecipe
     {
         public List<String> getGasOutputDefinition() { return List.of("gas"); }
@@ -33,4 +55,12 @@ final class RecipeOutputResolverTest
         public List<String> getChemicalOutputDefinition() { return List.of("chemical"); }
         public List<String> getFluidOutputDefinition() { return List.of("fluid"); }
     }
+
+    private static final class ElectrolysisLikeRecipe
+    {
+        public List<SplitOutput> getOutputDefinition()
+        { return List.of(new SplitOutput("hydrogen", "oxygen")); }
+    }
+
+    private record SplitOutput(String left, String right) {}
 }

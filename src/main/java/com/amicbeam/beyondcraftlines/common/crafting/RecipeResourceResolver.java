@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /** Resolves item and non-item recipe inputs into Beyond Dimensions' native resource keys. */
 public final class RecipeResourceResolver
@@ -27,6 +28,25 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredients(Recipe<?> recipe)
     { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolve); }
+
+    public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
+    {
+        List<String> inputMethods = directionalInputMethods(recipe, raw -> {
+            KeyAmount converted = fromStack(raw);
+            return converted != null && output.isSame(converted.key());
+        });
+        return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
+    }
+
+    static List<String> directionalInputMethods(Object recipe, Predicate<Object> selectedOutput)
+    {
+        if (RecipeOutputResolver.reflectiveOutputValues(recipe,
+                List.of("getGasOutputDefinition", "getChemicalOutputDefinition"))
+                .stream().anyMatch(selectedOutput)) return List.of("getFluidInput");
+        if (RecipeOutputResolver.reflectiveOutputValues(recipe, List.of("getFluidOutputDefinition"))
+                .stream().anyMatch(selectedOutput)) return List.of("getGasInput", "getChemicalInput");
+        return List.of();
+    }
 
     public static void clearCache() { CACHE.clear(); }
 
@@ -49,18 +69,23 @@ public final class RecipeResourceResolver
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
+    { return resolve(recipe, CountedInputReflection.INPUT_METHODS, true); }
+
+    private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
+                                                    boolean includeVanillaIngredients)
     {
         List<ResourceIngredient> result = new ArrayList<>();
         int slot = 0;
-        for (Ingredient ingredient : recipe.getIngredients())
-        {
-            List<KeyAmount> candidates = new ArrayList<>();
-            for (ItemStack stack : ingredient.getItems())
-                if (!stack.isEmpty()) candidates.add(new KeyAmount(
-                        new ItemStackKey(stack.copyWithCount(1)), Math.max(1, stack.getCount())));
-            if (!candidates.isEmpty()) result.add(new ResourceIngredient(slot, candidates, ingredient));
-            slot++;
-        }
+        if (includeVanillaIngredients)
+            for (Ingredient ingredient : recipe.getIngredients())
+            {
+                List<KeyAmount> candidates = new ArrayList<>();
+                for (ItemStack stack : ingredient.getItems())
+                    if (!stack.isEmpty()) candidates.add(new KeyAmount(
+                            new ItemStackKey(stack.copyWithCount(1)), Math.max(1, stack.getCount())));
+                if (!candidates.isEmpty()) result.add(new ResourceIngredient(slot, candidates, ingredient));
+                slot++;
+            }
 
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<String> canonicalSignatures = new java.util.HashSet<>();
@@ -70,7 +95,7 @@ public final class RecipeResourceResolver
         // CountedIngredient(Ingredient ingredient, int count, ...), while intentionally
         // leaving Recipe#getIngredients() empty. Read that common shape without linking
         // Craftlines to the owning mod.
-        for (String methodName : CountedInputReflection.INPUT_METHODS)
+        for (String methodName : inputMethods)
         {
             Object rawInput = invokeNoArgs(recipe, methodName);
             for (Object input : CountedInputReflection.flatten(rawInput))

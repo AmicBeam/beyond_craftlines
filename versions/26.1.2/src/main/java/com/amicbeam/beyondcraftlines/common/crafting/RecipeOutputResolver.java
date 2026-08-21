@@ -40,9 +40,12 @@ public final class RecipeOutputResolver
     }
 
     static List<Object> reflectiveOutputValues(Object recipe)
+    { return reflectiveOutputValues(recipe, OUTPUT_METHODS); }
+
+    static List<Object> reflectiveOutputValues(Object recipe, List<String> methods)
     {
         List<Object> result = new ArrayList<>();
-        for (String method : OUTPUT_METHODS) result.addAll(flatten(invokeNoArgs(recipe, method)));
+        for (String method : methods) result.addAll(flatten(invokeNoArgs(recipe, method)));
         return List.copyOf(result);
     }
 
@@ -58,18 +61,25 @@ public final class RecipeOutputResolver
     private static List<?> flatten(Object value)
     {
         if (value == null) return List.of();
-        if (value instanceof List<?> list) return list;
         if (value instanceof Iterable<?> iterable)
         {
             List<Object> result = new ArrayList<>();
-            iterable.forEach(result::add);
+            iterable.forEach(element -> result.addAll(flatten(element)));
             return result;
         }
         if (value.getClass().isArray())
         {
             int length = java.lang.reflect.Array.getLength(value);
             List<Object> result = new ArrayList<>(length);
-            for (int i = 0; i < length; i++) result.add(java.lang.reflect.Array.get(value, i));
+            for (int i = 0; i < length; i++)
+                result.addAll(flatten(java.lang.reflect.Array.get(value, i)));
+            return result;
+        }
+        if (value.getClass().isRecord())
+        {
+            List<Object> result = new ArrayList<>();
+            for (java.lang.reflect.RecordComponent component : value.getClass().getRecordComponents())
+                result.addAll(flatten(invokeNoArgs(value, component.getName())));
             return result;
         }
         return List.of(value);

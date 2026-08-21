@@ -210,7 +210,7 @@ public final class RecipePlanningService
         List<Integer> slots = new ArrayList<>();
         List<List<KeyAmount>> options = new ArrayList<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
-                RecipeResourceResolver.ingredients(holder.value());
+                RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
         for (RecipeResourceResolver.ResourceIngredient ingredient : recipeIngredients)
         {
             int currentIndex = ingredient.slot();
@@ -266,7 +266,7 @@ public final class RecipePlanningService
         long crafts = SaturatingLongMath.ceilDiv(remainder, perCraft);
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
-                RecipeResourceResolver.ingredients(holder.value());
+                RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
         List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
         for (int i = 0; i < variant.size(); i++)
             if (variant.get(i).key() instanceof ItemStackKey itemKey)

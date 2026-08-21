@@ -57,20 +57,21 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
                 return;
             }
             var binding = DeviceBindingRegistry.bindMachine(player, target, types);
-            String message = binding.map(value -> value.deviceType()
+            var result = binding.result();
+            String message = binding.isSuccess()
+                    ? result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING
-                    ? value.autoSelected()
+                    ? result.autoSelected()
                     ? "message.beyond_craftlines.provisioner_target_bound_single"
                     : "message.beyond_craftlines.provisioner_target_bound"
-                    : "message.beyond_craftlines.machine_bound")
-                    .orElse("error.beyond_craftlines.machine_binding_failed");
-            Component feedback = binding.isPresent() && binding.get().deviceType()
+                    : "message.beyond_craftlines.machine_bound"
+                    : binding.failure().messageKey();
+            Component feedback = !binding.isSuccess() || result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING
                     ? Component.translatable(message)
-                    : Component.translatable(message,
-                    binding.map(value -> String.join(", ", value.recipeFamilies())).orElse(""));
+                    : Component.translatable(message, String.join(", ", result.recipeFamilies()));
             player.displayClientMessage(feedback, false);
-            if (binding.isPresent()) BindingVisualsPayload.broadcast(player.serverLevel());
+            if (binding.isSuccess()) BindingVisualsPayload.broadcast(player.serverLevel());
         });
     }
 

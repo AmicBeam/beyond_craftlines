@@ -44,39 +44,45 @@ public final class DeviceBindingRegistry
         return network != null && network.isManager(player) && data.remove(player.level().dimension(), position);
     }
 
-    public static Optional<BindResult> bindMachine(Player player, BlockPos position,
-                                                   Set<Identifier> jeiTypes)
+    public static BindAttempt bindMachine(Player player, BlockPos position,
+                                          Set<Identifier> jeiTypes)
     {
-        if (!(player.level() instanceof ServerLevel level) || level.getServer() == null) return Optional.empty();
+        if (!(player.level() instanceof ServerLevel level) || level.getServer() == null)
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
         DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
-        if (network == null || !network.isManager(player) || !level.isLoaded(position)) return Optional.empty();
+        if (network == null || !network.isManager(player))
+            return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
+        if (!level.isLoaded(position)) return BindAttempt.failure(BindFailure.INVALID_TARGET);
         BindingSavedData data = BindingSavedData.get(level.getServer());
         BindingRecord existing = data.at(level.dimension(), position);
-        if (existing != null && existing.networkId() != network.getId()) return Optional.empty();
+        if (existing != null && existing.networkId() != network.getId())
+            return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
         var state = level.getBlockState(position);
         Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (!DeviceType.isThirdPartyMachine(blockId.toString()) || level.getBlockEntity(position) == null)
-            return Optional.empty();
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
         Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         var resolved = JeiRecipeFamilyRegistry.resolve(jeiTypes, loadedFamilies);
-        if (resolved.isEmpty()) return Optional.empty();
+        if (resolved.isEmpty()) return BindAttempt.failure(BindFailure.UNSUPPORTED_RECIPE_TYPE);
         ProvisionerSelection selection = validSelection(level.getServer(), player.getUUID(), network.getId());
         DeviceType deviceType = selection == null ? DeviceType.EXTERNAL_RECIPE_MACHINE
                 : DeviceType.PROVISIONER_RECIPE_BINDING;
         if (deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE
-                && !BoundMachineAutomation.isAutomatable(level, position)) return Optional.empty();
+                && !BoundMachineAutomation.isAutomatable(level, position))
+            return BindAttempt.failure(BindFailure.UNSUPPORTED_CAPABILITY);
         if (selection == null)
         {
             BindingRecord record = new BindingRecord(UUID.randomUUID(), player.getUUID(), network.getId(),
                     level.dimension(), position, deviceType, resolved.jeiTypes(), resolved.families(), blockId,
                     null, null, "", false, level.getGameTime());
             data.add(record);
-            return Optional.of(new BindResult(deviceType, resolved.families(), false));
+            return BindAttempt.success(new BindResult(deviceType, resolved.families(), false));
         }
         ServerLevel provisionerLevel = level.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
-                instanceof CraftlineProvisionerBlockEntity provisioner)) return Optional.empty();
+                instanceof CraftlineProvisionerBlockEntity provisioner))
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
         ItemStack targetIcon = new ItemStack(state.getBlock());
         provisioner.addRecipeCandidates(resolved.jeiTypes(), blockId, targetIcon);
         Set<Identifier> candidates = provisioner.recipeCandidates();
@@ -84,7 +90,7 @@ public final class DeviceBindingRegistry
                 && data.recipeTypesForProvisioner(selection.dimension(), selection.position()).isEmpty()
                 && configureProvisioner(player, provisionerLevel, selection.position(), provisioner, candidates);
         PROVISIONER_SELECTIONS.remove(player.getUUID());
-        return Optional.of(new BindResult(deviceType, resolved.families(), autoSelected));
+        return BindAttempt.success(new BindResult(deviceType, resolved.families(), autoSelected));
     }
 
     public static boolean configureProvisioner(Player player, BlockPos position,
@@ -224,6 +230,23 @@ public final class DeviceBindingRegistry
     public record BoundMachine(BindingRecord binding, ServerLevel level) {}
     public record ProvisionerTarget(BindingRecord binding, CraftlineProvisionerBlockEntity provisioner) {}
     public record BindResult(DeviceType deviceType, Set<String> recipeFamilies, boolean autoSelected) {}
+    public record BindAttempt(BindResult result, BindFailure failure)
+    {
+        public static BindAttempt success(BindResult result) { return new BindAttempt(result, null); }
+        public static BindAttempt failure(BindFailure failure) { return new BindAttempt(null, failure); }
+        public boolean isSuccess() { return result != null; }
+    }
+    public enum BindFailure
+    {
+        NO_NETWORK_PERMISSION("error.beyond_craftlines.machine_binding_no_network_permission"),
+        UNSUPPORTED_RECIPE_TYPE("error.beyond_craftlines.machine_recipe_type_unknown"),
+        UNSUPPORTED_CAPABILITY("error.beyond_craftlines.machine_capability_unsupported"),
+        INVALID_TARGET("error.beyond_craftlines.machine_binding_invalid_target");
+
+        private final String messageKey;
+        BindFailure(String messageKey) { this.messageKey = messageKey; }
+        public String messageKey() { return messageKey; }
+    }
     private record ProvisionerSelection(ResourceKey<Level> dimension, BlockPos position, int networkId) {}
 
     public static void removeAt(MinecraftServer server, ResourceKey<Level> dimension, BlockPos position)

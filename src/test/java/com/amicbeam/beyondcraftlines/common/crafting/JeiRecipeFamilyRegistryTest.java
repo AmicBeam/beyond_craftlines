@@ -27,6 +27,16 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
+    void mekanismRotaryDirectionsMapToTheSharedServerRecipeType()
+    {
+        var result = JeiRecipeFamilyMappings.resolve(
+                Set.of("mekanism:condensentrating", "mekanism:decondensentrating"),
+                Set.of("mekanism:rotary"));
+        assertEquals(Set.of("mekanism:condensentrating", "mekanism:decondensentrating"), result.jeiTypes());
+        assertEquals(Set.of("mekanism:rotary"), result.families());
+    }
+
+    @Test
     void categoryIsRejectedWhenServerRecipeTypeIsNotLoaded()
     {
         assertTrue(JeiRecipeFamilyMappings.resolve(

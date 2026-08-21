@@ -8,14 +8,25 @@ public final class JeiRecipeFamilyMappings
 {
     private JeiRecipeFamilyMappings() {}
 
+    private static String serverFamily(String jeiType)
+    {
+        return switch (jeiType)
+        {
+            // Mekanism exposes the two rotary directions as separate JEI categories,
+            // while both are backed by the same server-side RecipeType.
+            case "mekanism:condensentrating", "mekanism:decondensentrating" -> "mekanism:rotary";
+            default -> jeiType.startsWith("minecraft:")
+                    ? jeiType.substring("minecraft:".length()) : jeiType;
+        };
+    }
+
     public static Resolution resolve(Set<String> jeiTypes, Set<String> loadedFamilies)
     {
         LinkedHashSet<String> acceptedTypes = new LinkedHashSet<>();
         LinkedHashSet<String> families = new LinkedHashSet<>();
         for (String jeiType : jeiTypes)
         {
-            String family = jeiType.startsWith("minecraft:")
-                    ? jeiType.substring("minecraft:".length()) : jeiType;
+            String family = serverFamily(jeiType);
             if (!loadedFamilies.contains(family)) continue;
             acceptedTypes.add(jeiType);
             families.add(family);

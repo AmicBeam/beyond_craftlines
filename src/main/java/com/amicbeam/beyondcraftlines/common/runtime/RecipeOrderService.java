@@ -225,8 +225,8 @@ public final class RecipeOrderService
         if (job.externalWait() != null) return job.externalWait().provisioner()
                 ? tickProvisioner(server, network, job) : job.externalWait().nativeFurnace()
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
-        if (job.nextStep() >= job.steps().size()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
-        RecipePlan.Step step = job.steps().get(job.nextStep());
+        if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
+        RecipePlan.Step step = job.step(job.nextStep());
         if (NATIVE_FURNACE_FAMILIES.contains(step.family()))
         {
             Optional<NativeFurnaceRegistry.NativeFurnace> furnace =
@@ -321,7 +321,7 @@ public final class RecipeOrderService
         UnifiedStorage storage = network.getUnifiedStorage();
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
                 level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections(),
-                job.reserved(), job.nextStep() + 1 < job.steps().size(),
+                job.reserved(), job.nextStep() + 1 < job.stepCount(),
                 PlanningSnapshotService.capture(job.networkId()));
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
@@ -410,7 +410,7 @@ public final class RecipeOrderService
         if (!wait.remainingInputs().isEmpty())
         {
             RecipeOrderJob working = job;
-            RecipePlan.Step step = job.steps().get(job.nextStep());
+            RecipePlan.Step step = job.step(job.nextStep());
             InputSelection selection = selectInputs(level, network.getUnifiedStorage(),
                     working, step, wait.remainingInputs());
             List<InputChunk> dispatch = selection == null ? List.of() : dispatchableInputs(
@@ -470,7 +470,7 @@ public final class RecipeOrderService
         }
 
         drainWhitelistedMachineOutputs(level, network.getUnifiedStorage(),
-                job.steps().get(job.nextStep()), wait.machinePosition(), wait.outputKey());
+                job.step(job.nextStep()), wait.machinePosition(), wait.outputKey());
 
         long current = BoundMachineAutomation.countExtractable(level, wait.machinePosition(), wait.outputKey());
         long available = ExternalOrderLogic.availableMachineOutput(wait.baseline(), current);
@@ -479,7 +479,7 @@ public final class RecipeOrderService
         {
             long inserted = 0;
             List<RecipePlan.ReservedMaterial> produced = new ArrayList<>();
-            boolean escrowOutput = job.nextStep() + 1 < job.steps().size();
+            boolean escrowOutput = job.nextStep() + 1 < job.stepCount();
             for (KeyAmount output : BoundMachineAutomation.extractStacks(
                     level, wait.machinePosition(), wait.outputKey(), transferable))
             {
@@ -545,7 +545,7 @@ public final class RecipeOrderService
                 instanceof CraftlineProvisionerBlockEntity provisioner)
                 || provisioner.getNetId() != job.networkId())
             return job.with(RecipeOrderJob.Status.ERROR, encode("provisioner_removed"));
-        RecipePlan.Step step = job.steps().get(job.nextStep());
+        RecipePlan.Step step = job.step(job.nextStep());
         BindingRecord binding = BindingSavedData.get(server).at(wait.machineDimension(), wait.machinePosition());
         boolean stillAssigned = binding != null && binding.networkId() == job.networkId()
                 && binding.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
@@ -557,7 +557,7 @@ public final class RecipeOrderService
         ExternalOrderLogic.NetworkCredit credit = ExternalOrderLogic.creditNetworkOutput(
                 wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
         long newlyCredited = Math.max(0, credit.collected() - wait.collected());
-        if (newlyCredited > 0 && job.nextStep() + 1 < job.steps().size())
+        if (newlyCredited > 0 && job.nextStep() + 1 < job.stepCount())
         {
             List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
                     wait.outputKey(), newlyCredited, wait.networkBaselineStacks());
@@ -586,7 +586,7 @@ public final class RecipeOrderService
                 || furnace.getNetId() != job.networkId())
             return job.with(RecipeOrderJob.Status.ERROR, encode("native_furnace_removed"));
 
-        String expectedFamily = job.steps().get(job.nextStep()).family();
+        String expectedFamily = job.step(job.nextStep()).family();
         if (!NativeFurnaceRegistry.supports(furnace, expectedFamily))
             return job.with(RecipeOrderJob.Status.ERROR, encode("native_furnace_type_changed"));
 
@@ -594,7 +594,7 @@ public final class RecipeOrderService
         {
             List<RecipePlan.Material> remaining = new ArrayList<>();
             RecipeOrderJob working = job;
-            RecipePlan.Step step = job.steps().get(job.nextStep());
+            RecipePlan.Step step = job.step(job.nextStep());
             for (RecipePlan.Material input : wait.remainingInputs())
             {
                 InputSelection selection = selectInputs(level, network.getUnifiedStorage(),
@@ -634,7 +634,7 @@ public final class RecipeOrderService
         ExternalOrderLogic.NetworkCredit networkCredit = ExternalOrderLogic.creditNetworkOutput(
                 wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
         long credited = Math.max(0, networkCredit.collected() - wait.collected());
-        if (credited > 0 && job.nextStep() + 1 < job.steps().size())
+        if (credited > 0 && job.nextStep() + 1 < job.stepCount())
         {
             List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
                     wait.output(), credited, wait.networkBaselineStacks());
@@ -657,7 +657,7 @@ public final class RecipeOrderService
         {
             long inserted = 0;
             List<RecipePlan.ReservedMaterial> produced = new ArrayList<>();
-            boolean escrowOutput = job.nextStep() + 1 < job.steps().size();
+            boolean escrowOutput = job.nextStep() + 1 < job.stepCount();
             for (KeyAmount output : NativeFurnaceAutomation.extractOutputStacks(
                     furnace, wait.output(), transferable))
             {

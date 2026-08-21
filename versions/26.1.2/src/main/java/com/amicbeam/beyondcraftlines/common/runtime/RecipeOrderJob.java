@@ -53,6 +53,10 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
     public List<RecipePlan.Step> steps()
     { return executions.stream().map(StepExecution::step).toList(); }
 
+    /** Constant-time accessors for the server tick hot path. */
+    public int stepCount() { return executions.size(); }
+    public RecipePlan.Step step(int index) { return executions.get(index).step(); }
+
     public int nextStep()
     {
         if (activeStep >= 0) return activeStep;

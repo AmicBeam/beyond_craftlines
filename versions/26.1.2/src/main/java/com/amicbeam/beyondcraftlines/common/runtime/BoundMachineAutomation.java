@@ -157,6 +157,15 @@ public final class BoundMachineAutomation
         return best;
     }
 
+    /** Counts matching contents even when an input-only capability does not permit extraction. */
+    public static long countPresent(ServerLevel level, BlockPos position, IStackKey<?> key)
+    {
+        long best = 0;
+        for (BdResourceHandler handler : resourceHandlers(level, position))
+            if (handler.type().equals(key.getTypeId())) best = Math.max(best, handler.present(key));
+        return best;
+    }
+
     public static List<KeyAmount> extractStacks(ServerLevel level, BlockPos position,
                                                 IStackKey<?> key, long amount)
     {
@@ -368,6 +377,19 @@ public final class BoundMachineAutomation
                     long extracted = wrapper.extract(slot, present.amount(), true);
                     result = result > Long.MAX_VALUE - extracted ? Long.MAX_VALUE : result + extracted;
                 }
+            }
+            return result;
+        }
+
+        long present(IStackKey<?> key)
+        {
+            long result = 0;
+            for (int slot = 0; slot < wrapper.getSlots(); slot++)
+            {
+                KeyAmount value = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
+                if (value != null && key.isSame(value.key()))
+                    result = result > Long.MAX_VALUE - value.amount()
+                            ? Long.MAX_VALUE : result + value.amount();
             }
             return result;
         }

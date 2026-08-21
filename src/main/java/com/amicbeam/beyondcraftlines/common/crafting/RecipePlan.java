@@ -74,14 +74,19 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
 
     public record Step(ResourceLocation recipe, String family, IStackKey<?> outputKey,
                        long outputPerCraft, long crafts, List<Material> inputs,
-                       List<IngredientSelection> ingredientSelections)
+                       List<IngredientSelection> ingredientSelections, List<Integer> dependencies)
     {
+        public Step(ResourceLocation recipe, String family, IStackKey<?> outputKey,
+                    long outputPerCraft, long crafts, List<Material> inputs,
+                    List<IngredientSelection> ingredientSelections)
+        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs, ingredientSelections, List.of()); }
+
         public Step(ResourceLocation recipe, String family, ResourceLocation output,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections)
         { this(recipe, family, new ItemStackKey(new net.minecraft.world.item.ItemStack(
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.get(output))), outputPerCraft, crafts,
-                inputs, ingredientSelections); }
+                inputs, ingredientSelections, List.of()); }
 
         public Step
         {
@@ -90,6 +95,9 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
                 throw new IllegalArgumentException("invalid recipe step");
             inputs = List.copyOf(inputs);
             ingredientSelections = List.copyOf(ingredientSelections);
+            dependencies = List.copyOf(dependencies);
+            if (dependencies.stream().anyMatch(index -> index == null || index < 0))
+                throw new IllegalArgumentException("invalid recipe dependency");
         }
 
         /** Legacy item/source id used by item-only UI choices. */

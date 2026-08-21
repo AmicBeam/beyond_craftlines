@@ -41,16 +41,20 @@ public record RequestOrderStatusPayload(int networkId) implements CustomPacketPa
                     .limit(20).forEach(job -> {
                         CompoundTag value = new CompoundTag(); value.putUUID("id", job.id());
                         value.putString("target", job.target().toString()); value.putLong("requested", job.requested());
-                        value.putInt("next", job.nextStep()); value.putInt("total", job.steps().size());
+                        value.putInt("next", (int) job.executions().stream()
+                                .filter(com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderJob.StepExecution::complete)
+                                .count());
+                        value.putInt("total", job.executions().size());
                         value.putBoolean("blocking_mode", job.blockingMode());
                         value.putString("status", job.status().name()); value.putString("message", job.message());
                         List<StepStatus> unfinished = new java.util.ArrayList<>();
-                        for (int stepIndex = job.nextStep(); stepIndex < job.steps().size(); stepIndex++)
+                        for (var execution : job.executions())
                         {
-                            RecipePlan.Step step = job.steps().get(stepIndex);
+                            if (execution.complete()) continue;
+                            RecipePlan.Step step = execution.step();
                             long required = SaturatingLongMath.multiply(step.outputPerCraft(), step.crafts());
-                            long completed = stepIndex == job.nextStep() && job.externalWait() != null
-                                    ? Math.min(required, job.externalWait().collected()) : 0;
+                            long completed = execution.externalWait() != null
+                                    ? Math.min(required, execution.externalWait().collected()) : 0;
                             StepStatus existing = unfinished.stream()
                                     .filter(candidate -> candidate.key().isSame(step.outputKey())).findFirst().orElse(null);
                             if (existing == null) unfinished.add(new StepStatus(step.outputKey(), completed, required));

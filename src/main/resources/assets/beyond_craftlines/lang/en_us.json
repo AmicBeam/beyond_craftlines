@@ -68,6 +68,7 @@
   "gui.beyond_craftlines.order_message.execution_failed": "Order execution failed",
   "gui.beyond_craftlines.order_message.execution_failed_returning": "Execution failed; returning reserved materials",
   "gui.beyond_craftlines.order_message.waiting_network_transaction": "Waiting for an earlier network order",
+  "gui.beyond_craftlines.order_message.waiting_dependencies": "Waiting for prerequisite recipe steps",
   "gui.beyond_craftlines.order_message.waiting_return_reserved": "Waiting to return reserved materials",
   "gui.beyond_craftlines.order_message.network_unavailable": "Network unavailable",
   "gui.beyond_craftlines.order_message.native_furnace_unavailable": "No BD network furnace is available for %s",

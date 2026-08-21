@@ -289,6 +289,7 @@ public final class RecipePlanningService
                                              PlanningBudget budget,
                                              List<KeyAmount> variant)
     {
+        int dependencyStart = state.steps.size();
         KeyAmount result = RecipeOutputResolver.outputs(holder.value(), level.registryAccess()).stream()
                 .filter(value -> outputKey.isSame(value.key())).findFirst().orElseThrow();
         long perCraft = Math.max(1, result.amount());
@@ -313,8 +314,10 @@ public final class RecipePlanningService
             resolve(level, choice.key(), inputAmount, ingredient.itemIngredient(), byOutput,
                     visiting, state, overrides, mode, depth + 1, maxDepth, budget);
         }
+        List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
+                .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id(), family(holder), outputKey,
-                perCraft, crafts, inputs, selections));
+                perCraft, crafts, inputs, selections, dependencies));
         long produced = SaturatingLongMath.multiply(perCraft, crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);

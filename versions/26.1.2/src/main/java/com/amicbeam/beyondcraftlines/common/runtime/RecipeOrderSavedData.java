@@ -49,14 +49,35 @@ public final class RecipeOrderSavedData extends SavedData
                 ListTag encodedSteps = value.getListOrEmpty("steps");
                 for (int j = 0; j < encodedSteps.size(); j++)
                     steps.add(readStep(encodedSteps.getCompoundOrEmpty(j), registries));
-                RecipeOrderJob job = new RecipeOrderJob(NbtCompat.getUuid(value, "id"), NbtCompat.getUuid(value, "owner"),
+                boolean parallel = !encodedSteps.isEmpty()
+                        && encodedSteps.getCompoundOrEmpty(0).contains("execution_complete");
+                RecipeOrderJob job;
+                if (parallel)
+                {
+                    List<RecipeOrderJob.StepExecution> executions = new ArrayList<>();
+                    for (int j = 0; j < encodedSteps.size(); j++)
+                    {
+                        CompoundTag encoded = encodedSteps.getCompoundOrEmpty(j);
+                        executions.add(new RecipeOrderJob.StepExecution(steps.get(j),
+                                encoded.getBooleanOr("execution_complete", false),
+                                encoded.getLongOr("execution_next_crafting_tick", 0L),
+                                readExternalWait(encoded, registries)));
+                    }
+                    job = new RecipeOrderJob(NbtCompat.getUuid(value, "id"), NbtCompat.getUuid(value, "owner"),
+                            value.getIntOr("network", -1), Identifier.parse(value.getStringOr("target", "minecraft:air")),
+                            value.getLongOr("requested", 0L), executions, -1,
+                            value.getBooleanOr("blocking_mode", false),
+                            RecipeOrderJob.Status.valueOf(value.getStringOr("status", "ERROR")),
+                            value.getStringOr("message", ""), value.getLongOr("created", 0L),
+                            value.getLongOr("finished", 0L), readReserved(value, registries));
+                }
+                else job = new RecipeOrderJob(NbtCompat.getUuid(value, "id"), NbtCompat.getUuid(value, "owner"),
                         value.getIntOr("network", -1), Identifier.parse(value.getStringOr("target", "minecraft:air")),
                         value.getLongOr("requested", 0L), steps, value.getIntOr("next", 0),
                         value.getBooleanOr("blocking_mode", false),
                         RecipeOrderJob.Status.valueOf(value.getStringOr("status", "ERROR")), value.getStringOr("message", ""),
                         value.getLongOr("created", 0L), value.getLongOr("finished", 0L), value.getLongOr("next_crafting_tick", 0L),
-                        readExternalWait(value, registries),
-                        readReserved(value, registries));
+                        readExternalWait(value, registries), readReserved(value, registries));
                 data.jobs.put(job.id(), job);
             }
             catch (RuntimeException ignored) {}
@@ -123,45 +144,17 @@ public final class RecipeOrderSavedData extends SavedData
                 reserved.add(encoded);
             }
             value.put("reserved", reserved);
-            if (job.externalWait() != null)
-            {
-                CompoundTag wait = new CompoundTag();
-                wait.putString("dimension", job.externalWait().machineDimension().identifier().toString());
-                wait.putLong("position", job.externalWait().machinePosition().asLong());
-                wait.putString("output", job.externalWait().output().toString());
-                CompoundTag waitOutputKey = new CompoundTag();
-                writeKey(waitOutputKey, job.externalWait().outputKey(), registries);
-                wait.put("output_key", waitOutputKey);
-                wait.putBoolean("native_furnace", job.externalWait().nativeFurnace());
-                wait.putBoolean("provisioner", job.externalWait().provisioner());
-                wait.putLong("baseline", job.externalWait().baseline());
-                wait.putLong("network_baseline", job.externalWait().networkBaseline());
-                wait.putLong("network_observed", job.externalWait().networkObserved());
-                wait.putLong("amount", job.externalWait().amount());
-                wait.putLong("collected", job.externalWait().collected());
-                ListTag networkBaselineStacks = new ListTag();
-                for (RecipePlan.ReservedMaterial material : job.externalWait().networkBaselineStacks())
-                {
-                    CompoundTag encoded = new CompoundTag();
-                    writeKey(encoded, material.key(), registries);
-                    encoded.putLong("amount", material.amount());
-                    networkBaselineStacks.add(encoded);
-                }
-                wait.put("network_baseline_stacks", networkBaselineStacks);
-                ListTag remaining = new ListTag();
-                for (RecipePlan.Material input : job.externalWait().remainingInputs())
-                {
-                    CompoundTag encoded = new CompoundTag();
-                    writeKey(encoded, input.key(), registries);
-                    encoded.putLong("amount", input.amount());
-                    encoded.putInt("ingredient_slot", input.ingredientSlot());
-                    remaining.add(encoded);
-                }
-                wait.put("remaining_inputs", remaining);
-                value.put("external_wait", wait);
-            }
+            if (job.externalWait() != null) writeExternalWait(value, job.externalWait(), registries);
             ListTag steps = new ListTag();
-            job.steps().forEach(step -> steps.add(writeStep(step, registries)));
+            for (RecipeOrderJob.StepExecution execution : job.executions())
+            {
+                CompoundTag step = writeStep(execution.step(), registries);
+                step.putBoolean("execution_complete", execution.complete());
+                step.putLong("execution_next_crafting_tick", execution.nextCraftingTick());
+                if (execution.externalWait() != null)
+                    writeExternalWait(step, execution.externalWait(), registries);
+                steps.add(step);
+            }
             value.put("steps", steps); list.add(value);
         }
         tag.put("jobs", list);
@@ -197,6 +190,7 @@ public final class RecipeOrderSavedData extends SavedData
             selections.add(value);
         }
         tag.put("ingredient_selections", selections);
+        tag.putIntArray("dependencies", step.dependencies().stream().mapToInt(Integer::intValue).toArray());
         return tag;
     }
 
@@ -224,8 +218,49 @@ public final class RecipeOrderSavedData extends SavedData
                 : new ItemStackKey(new net.minecraft.world.item.ItemStack(
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(
                         Identifier.parse(tag.getStringOr("output", "minecraft:air")))));
+        int[] dependencies = tag.getIntArray("dependencies").orElse(new int[0]);
         return new RecipePlan.Step(Identifier.parse(tag.getStringOr("recipe", "minecraft:air")), tag.getStringOr("family", ""),
-                output, tag.getLongOr("per", 0L), tag.getLongOr("crafts", 0L), inputs, selections);
+                output, tag.getLongOr("per", 0L), tag.getLongOr("crafts", 0L), inputs, selections,
+                java.util.Arrays.stream(dependencies).boxed().toList());
+    }
+
+    private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,
+                                          HolderLookup.Provider registries)
+    {
+        CompoundTag wait = new CompoundTag();
+        wait.putString("dimension", externalWait.machineDimension().identifier().toString());
+        wait.putLong("position", externalWait.machinePosition().asLong());
+        wait.putString("output", externalWait.output().toString());
+        CompoundTag waitOutputKey = new CompoundTag();
+        writeKey(waitOutputKey, externalWait.outputKey(), registries);
+        wait.put("output_key", waitOutputKey);
+        wait.putBoolean("native_furnace", externalWait.nativeFurnace());
+        wait.putBoolean("provisioner", externalWait.provisioner());
+        wait.putLong("baseline", externalWait.baseline());
+        wait.putLong("network_baseline", externalWait.networkBaseline());
+        wait.putLong("network_observed", externalWait.networkObserved());
+        wait.putLong("amount", externalWait.amount());
+        wait.putLong("collected", externalWait.collected());
+        ListTag networkBaselineStacks = new ListTag();
+        for (RecipePlan.ReservedMaterial material : externalWait.networkBaselineStacks())
+        {
+            CompoundTag encoded = new CompoundTag();
+            writeKey(encoded, material.key(), registries);
+            encoded.putLong("amount", material.amount());
+            networkBaselineStacks.add(encoded);
+        }
+        wait.put("network_baseline_stacks", networkBaselineStacks);
+        ListTag remaining = new ListTag();
+        for (RecipePlan.Material input : externalWait.remainingInputs())
+        {
+            CompoundTag encoded = new CompoundTag();
+            writeKey(encoded, input.key(), registries);
+            encoded.putLong("amount", input.amount());
+            encoded.putInt("ingredient_slot", input.ingredientSlot());
+            remaining.add(encoded);
+        }
+        wait.put("remaining_inputs", remaining);
+        owner.put("external_wait", wait);
     }
 
     private static RecipeOrderJob.ExternalWait readExternalWait(CompoundTag job,

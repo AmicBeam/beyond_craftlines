@@ -68,6 +68,7 @@
   "gui.beyond_craftlines.order_message.execution_failed": "订单执行失败",
   "gui.beyond_craftlines.order_message.execution_failed_returning": "执行失败，正在返还预留材料",
   "gui.beyond_craftlines.order_message.waiting_network_transaction": "正在等待更早的网络订单",
+  "gui.beyond_craftlines.order_message.waiting_dependencies": "正在等待前置配方步骤",
   "gui.beyond_craftlines.order_message.waiting_return_reserved": "正在等待返还预留材料",
   "gui.beyond_craftlines.order_message.network_unavailable": "网络不可用",
   "gui.beyond_craftlines.order_message.native_furnace_unavailable": "没有可用于 %s 的 BD 网络熔炉",

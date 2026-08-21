@@ -90,6 +90,7 @@
   "tooltip.beyond_craftlines.recipe_preview": "Recipe preview · %s",
   "tooltip.beyond_craftlines.recipe_type": "Recipe type: %s",
   "tooltip.beyond_craftlines.recipe_id": "Recipe ID: %s",
+  "tooltip.beyond_craftlines.recipe_id_localized": "Recipe ID: %s (%s)",
   "gui.beyond_craftlines.no_selection": "No orderable target is available",
   "gui.beyond_craftlines.orders": "Order status",
   "gui.beyond_craftlines.material_summary": "Material summary",

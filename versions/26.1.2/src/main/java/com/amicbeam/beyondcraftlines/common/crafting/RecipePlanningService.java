@@ -427,12 +427,6 @@ public final class RecipePlanningService
         return serializer == null ? type.toString() : serializer.toString();
     }
 
-    public static String recipeTypeId(RecipeHolder<?> holder)
-    {
-        Identifier id = BuiltInRegistries.RECIPE_TYPE.getKey(holder.value().getType());
-        return id == null ? holder.value().getType().toString() : id.toString();
-    }
-
     public static String family(RecipeType<?> type)
     {
         if (type == RecipeType.CRAFTING) return "crafting";

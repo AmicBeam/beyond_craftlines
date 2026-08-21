@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.client;
 
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
+import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -521,12 +522,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL));
         if (node.recipe != null)
         {
-            lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_preview",
-                    RecipePlanningService.family(node.recipe)).withStyle(ChatFormatting.GRAY));
-            lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_type",
-                    RecipePlanningService.recipeTypeId(node.recipe)).withStyle(ChatFormatting.GRAY));
-            lines.add(Component.translatable("tooltip.beyond_craftlines.recipe_id", node.recipe.id())
-                    .withStyle(ChatFormatting.DARK_GRAY));
+            lines.add(localizedRecipeId(node.recipe).withStyle(ChatFormatting.GRAY));
         }
         lines.add(Component.translatable("tooltip.beyond_craftlines.node_need", node.needed)
                 .withStyle(ChatFormatting.AQUA));
@@ -1167,12 +1163,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         List<Component> lines = List.of(
                 output.getRender().getDisplayName(output),
-                Component.translatable("tooltip.beyond_craftlines.recipe_preview", RecipePlanningService.family(recipe))
-                        .withStyle(ChatFormatting.GRAY),
-                Component.translatable("tooltip.beyond_craftlines.recipe_type", RecipePlanningService.recipeTypeId(recipe))
-                        .withStyle(ChatFormatting.GRAY),
-                Component.translatable("tooltip.beyond_craftlines.recipe_id", recipe.id())
-                        .withStyle(ChatFormatting.DARK_GRAY));
+                localizedRecipeId(recipe).withStyle(ChatFormatting.GRAY));
         List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> inputs =
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ingredients(recipe.value())
                         .stream().map(ingredient -> ingredient.candidates().getFirst()).toList();
@@ -1181,9 +1172,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                                 .outputs(recipe.value(), minecraft.level.registryAccess()).stream()
                                 .filter(value -> output.isSame(value.key())).findFirst()
-                                .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))),
+                        .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))),
                 output instanceof ItemStackKey itemKey ? itemKey.getReadOnlyStack() : ItemStack.EMPTY,
                 mouseX, mouseY);
+    }
+
+    private static Component localizedRecipeId(RecipeHolder<?> recipe)
+    {
+        ResourceLocation type = BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
+        if (type == null) return Component.translatable("tooltip.beyond_craftlines.recipe_id",
+                recipe.value().getType().toString());
+        return JeiCatalystIndex.recipeTypeTitle(type)
+                .<Component>map(title -> Component.translatable("tooltip.beyond_craftlines.recipe_id_localized",
+                        type, title))
+                .orElseGet(() -> Component.translatable("tooltip.beyond_craftlines.recipe_id", type));
     }
 
     @Override

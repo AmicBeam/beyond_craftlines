@@ -90,6 +90,7 @@
   "tooltip.beyond_craftlines.recipe_preview": "配方预览 · %s",
   "tooltip.beyond_craftlines.recipe_type": "配方类型：%s",
   "tooltip.beyond_craftlines.recipe_id": "配方 ID：%s",
+  "tooltip.beyond_craftlines.recipe_id_localized": "配方 ID：%s（%s）",
   "gui.beyond_craftlines.no_selection": "没有可用的下单目标",
   "gui.beyond_craftlines.orders": "订单状态",
   "gui.beyond_craftlines.material_summary": "原料汇总",

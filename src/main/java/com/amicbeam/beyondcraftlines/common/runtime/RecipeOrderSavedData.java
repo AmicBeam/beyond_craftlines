@@ -62,10 +62,10 @@ public final class RecipeOrderSavedData extends SavedData
     }
     public List<RecipeOrderJob> forOwner(UUID owner) { return jobs.values().stream().filter(j -> j.owner().equals(owner)).toList(); }
     public RecipeOrderJob get(UUID id) { return jobs.get(id); }
-    public void removeExpiredCompleted(long gameTime)
+    public void removeExpiredDisplayedTerminal(long gameTime)
     {
-        boolean removed = jobs.values().removeIf(job -> OrderRetention.expiredCompleted(
-                job.status() == RecipeOrderJob.Status.COMPLETE, job.finishedAt(), gameTime));
+        boolean removed = jobs.values().removeIf(job ->
+                OrderRetention.expired(job.status(), job.finishedAt(), gameTime));
         if (removed) setDirty();
     }
     public void put(RecipeOrderJob job)

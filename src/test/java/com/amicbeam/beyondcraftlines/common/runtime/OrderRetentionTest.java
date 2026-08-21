@@ -8,25 +8,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class OrderRetentionTest
 {
     @Test
-    void completedOrderExpiresAtFiveMinutes()
+    void displayedTerminalOrderExpiresAtFiveMinutes()
     {
         long finished = 12_000;
-        assertFalse(OrderRetention.expiredCompleted(true,
-                finished, finished + OrderRetention.COMPLETED_TICKS - 1));
-        assertTrue(OrderRetention.expiredCompleted(true,
-                finished, finished + OrderRetention.COMPLETED_TICKS));
+        assertFalse(OrderRetention.expired(RecipeOrderJob.Status.COMPLETE,
+                finished, finished + OrderRetention.DISPLAY_TICKS - 1));
+        assertTrue(OrderRetention.expired(RecipeOrderJob.Status.COMPLETE,
+                finished, finished + OrderRetention.DISPLAY_TICKS));
+        assertTrue(OrderRetention.expired(RecipeOrderJob.Status.CANCELLED,
+                finished, finished + OrderRetention.DISPLAY_TICKS));
     }
 
     @Test
-    void activeAndOtherTerminalStatusesAreNotAffected()
+    void activeAndFailedOrdersAreNotAffected()
     {
         long now = 100_000;
-        assertFalse(OrderRetention.expiredCompleted(false, 1, now));
+        assertFalse(OrderRetention.expired(RecipeOrderJob.Status.RUNNING, 1, now));
+        assertFalse(OrderRetention.expired(RecipeOrderJob.Status.ERROR, 1, now));
     }
 
     @Test
-    void legacyCompletedOrderWithoutTimestampExpires()
+    void legacyDisplayedTerminalOrderWithoutTimestampExpires()
     {
-        assertTrue(OrderRetention.expiredCompleted(true, 0, 100));
+        assertTrue(OrderRetention.expired(RecipeOrderJob.Status.CANCELLED, 0, 100));
     }
 }

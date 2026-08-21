@@ -34,7 +34,7 @@ public record RequestOrderStatusPayload(int networkId) implements CustomPacketPa
                     || network.getPlayers().contains(player.getUUID()))) return;
             ListTag list = new ListTag();
             RecipeOrderSavedData data = RecipeOrderSavedData.get(player.level().getServer());
-            data.removeExpiredCompleted(player.level().getServer().overworld().getGameTime());
+            data.removeExpiredDisplayedTerminal(player.level().getServer().overworld().getGameTime());
             data.forOwner(player.getUUID()).stream()
                     .filter(job -> job.networkId() == payload.networkId())
                     .sorted(java.util.Comparator.comparingLong(com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderJob::createdAt).reversed())

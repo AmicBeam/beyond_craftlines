@@ -31,11 +31,23 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
-        List<String> inputMethods = directionalInputMethods(recipe, raw -> {
-            KeyAmount converted = fromStack(raw);
-            return converted != null && output.isSame(converted.key());
-        });
+        List<String> inputMethods = directionalInputMethods(recipe,
+                raw -> matchesOutputDirection(output, raw));
         return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
+    }
+
+    static boolean matchesOutputDirection(IStackKey<?> selectedOutput, Object rawOutput)
+    {
+        KeyAmount converted = fromStack(rawOutput);
+        if (converted == null) return false;
+        IStackKey<?> candidate = converted.key();
+        // Prefer exact resource semantics. The type fallback is intentional: some
+        // external keys retain registry-holder identity, so a key reconstructed from
+        // the network may not compare equal to the same locally enumerated resource.
+        // Directional output groups (for example chemical versus fluid) still have
+        // distinct stack type IDs and therefore remain unambiguous.
+        return selectedOutput.isSame(candidate) || candidate.isSame(selectedOutput)
+                || selectedOutput.getTypeId().equals(candidate.getTypeId());
     }
 
     static List<String> directionalInputMethods(Object recipe, Predicate<Object> selectedOutput)

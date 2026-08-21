@@ -36,6 +36,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     private List<OrderView> orders = List.of();
     private UUID selectedOrder;
     private final Set<UUID> collapsedOrders = new HashSet<>();
+    private boolean defaultExpansionApplied;
     private int scrollOffset;
     private int statusTicks;
     private Button cancelButton;
@@ -91,6 +92,12 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                     value.getString("status"), value.getString("message"), List.copyOf(steps)));
         }
         orders = List.copyOf(next);
+        if (!defaultExpansionApplied)
+        {
+            for (int index = 1; index < orders.size(); index++)
+                collapsedOrders.add(orders.get(index).id());
+            defaultExpansionApplied = true;
+        }
         if (selectedOrder == null || orders.stream().noneMatch(order -> order.id().equals(selectedOrder)))
             selectedOrder = orders.stream().filter(OrderView::active).findFirst()
                     .or(() -> orders.stream().findFirst()).map(OrderView::id).orElse(null);

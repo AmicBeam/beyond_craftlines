@@ -100,7 +100,7 @@ public final class RecipeOrderService
     {
         RecipeOrderSavedData data = RecipeOrderSavedData.get(server);
         long gameTime = server.overworld().getGameTime();
-        data.removeExpiredCompleted(gameTime);
+        data.removeExpiredDisplayedTerminal(gameTime);
         List<RecipeOrderJob> jobs = data.active().stream()
                 .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt)
                         .thenComparing(RecipeOrderJob::id)).toList();

@@ -51,6 +51,20 @@ final class RecipeOutputResolverTest
                         new ModernRotaryLikeRecipe(), "fluid"::equals));
     }
 
+    @Test
+    void specializedRotaryDirectionSupportsModernAndLegacyChemicalKeys()
+    {
+        String rotary = "mekanism.api.recipes.RotaryRecipe";
+        assertEquals(List.of("getFluidInput"), RecipeResourceResolver.mekanismRotaryInputMethods(
+                rotary, "stack_type/chemical"));
+        assertEquals(List.of("getFluidInput"), RecipeResourceResolver.mekanismRotaryInputMethods(
+                rotary, "stack_type/chemicals/gas"));
+        assertEquals(List.of("getGasInput", "getChemicalInput"),
+                RecipeResourceResolver.mekanismRotaryInputMethods(rotary, "stack_type/fluid"));
+        assertEquals(List.of(), RecipeResourceResolver.mekanismRotaryInputMethods(
+                "example.OtherRecipe", "stack_type/chemical"));
+    }
+
     private static final class RotaryLikeRecipe
     {
         public List<String> getGasOutputDefinition() { return List.of("gas"); }

@@ -519,7 +519,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL));
         if (node.recipe != null)
         {
-            lines.add(localizedRecipeId(node.recipe).withStyle(ChatFormatting.GRAY));
+            lines.add(localizedRecipeId(node.recipe));
         }
         lines.add(Component.translatable("tooltip.beyond_craftlines.node_need", node.needed)
                 .withStyle(ChatFormatting.AQUA));
@@ -1148,7 +1148,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         List<Component> lines = List.of(
                 output.getRender().getDisplayName(output),
-                localizedRecipeId(recipe).withStyle(ChatFormatting.GRAY));
+                localizedRecipeId(recipe));
         List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> inputs =
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ingredients(recipe.value())
                         .stream().map(ingredient -> ingredient.candidates().getFirst()).toList();
@@ -1166,11 +1166,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         Identifier type = BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
         if (type == null) return Component.translatable("tooltip.beyond_craftlines.recipe_id",
-                recipe.value().getType().toString());
+                recipe.value().getType().toString()).withStyle(ChatFormatting.GRAY);
         return JeiCatalystIndex.recipeTypeTitle(type)
                 .<Component>map(title -> Component.translatable("tooltip.beyond_craftlines.recipe_id_localized",
-                        type, title))
-                .orElseGet(() -> Component.translatable("tooltip.beyond_craftlines.recipe_id", type));
+                        type, title).withStyle(ChatFormatting.GRAY))
+                .orElseGet(() -> Component.translatable("tooltip.beyond_craftlines.recipe_id", type)
+                        .withStyle(ChatFormatting.GRAY));
     }
 
     @Override

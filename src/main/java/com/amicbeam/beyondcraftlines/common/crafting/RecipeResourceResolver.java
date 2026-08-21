@@ -31,9 +31,32 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
-        List<String> inputMethods = directionalInputMethods(recipe,
+        List<String> inputMethods = specializedDirectionalInputMethods(recipe, output);
+        if (inputMethods.isEmpty()) inputMethods = directionalInputMethods(recipe,
                 raw -> matchesOutputDirection(output, raw));
         return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
+    }
+
+    private static List<String> specializedDirectionalInputMethods(Recipe<?> recipe, IStackKey<?> output)
+    {
+        String stackTypePath = output.getTypeId().getPath();
+        for (Class<?> type = recipe.getClass(); type != null; type = type.getSuperclass())
+        {
+            List<String> methods = mekanismRotaryInputMethods(type.getName(), stackTypePath);
+            if (!methods.isEmpty()) return methods;
+        }
+        return List.of();
+    }
+
+    static List<String> mekanismRotaryInputMethods(String recipeClassName, String stackTypePath)
+    {
+        if (!"mekanism.api.recipes.RotaryRecipe".equals(recipeClassName)) return List.of();
+        if ("stack_type/fluid".equals(stackTypePath))
+            return List.of("getGasInput", "getChemicalInput");
+        if ("stack_type/chemical".equals(stackTypePath)
+                || stackTypePath.startsWith("stack_type/chemicals/"))
+            return List.of("getFluidInput");
+        return List.of();
     }
 
     static boolean matchesOutputDirection(IStackKey<?> selectedOutput, Object rawOutput)

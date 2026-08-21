@@ -86,6 +86,39 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         return List.copyOf(payloads);
     }
 
+    public static List<PlanPreviewPayload> missing(long nonce, RecipePlan plan)
+    {
+        Map<String, Identifier> recipes = new LinkedHashMap<>();
+        Map<Slot, Identifier> ingredients = new LinkedHashMap<>();
+        for (RecipePlan.Step step : plan.steps())
+        {
+            recipes.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                    .sortKey(step.outputKey()), step.recipe());
+            for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
+                ingredients.put(new Slot(step.recipe(), selection.slot()), selection.item());
+        }
+        List<SubmitOrderPayload.RecipeChoice> recipeChoices = recipes.entrySet().stream()
+                .map(entry -> new SubmitOrderPayload.RecipeChoice(
+                        entry.getKey(), entry.getValue().toString())).toList();
+        List<SubmitOrderPayload.IngredientChoice> ingredientChoices = ingredients.entrySet().stream()
+                .map(entry -> new SubmitOrderPayload.IngredientChoice(
+                        entry.getKey().recipe().toString(), entry.getKey().slot(),
+                        entry.getValue().toString())).toList();
+        List<DisplayEntry> displayEntries = plan.missing().stream()
+                .map(material -> new DisplayEntry("M", material.key(), "", material.amount(), 0, 0)).toList();
+        var pages = PreviewPagePartitioner.partition(recipeChoices, ingredientChoices, displayEntries, 256);
+        List<PlanPreviewPayload> payloads = new ArrayList<>(pages.size());
+        for (int pageIndex = 0; pageIndex < pages.size(); pageIndex++)
+        {
+            var page = pages.get(pageIndex);
+            payloads.add(new PlanPreviewPayload(nonce,
+                    com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(plan.targetKey()),
+                    new Header(true, "", "missing", pageIndex, pages.size()),
+                    page.first(), page.second(), page.third()));
+        }
+        return List.copyOf(payloads);
+    }
+
     public static PlanPreviewPayload failure(long nonce, String itemId, String error)
     {
         String message = error == null || error.isBlank() ? "plan preview failed" : error;

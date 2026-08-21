@@ -104,7 +104,12 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
                 snapshot, menu.availableFamilies(), overrides);
         if (!overrides.completelyResolves(plan))
             throw new IllegalArgumentException("client proposal is incomplete");
-        if (!plan.craftable()) throw new IllegalStateException("missing: " + plan.missing());
+        if (!plan.craftable())
+        {
+            for (PlanPreviewPayload page : PlanPreviewPayload.missing(payload.nonce(), plan))
+                PacketDistributor.sendToPlayer(player, page);
+            return;
+        }
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
                 menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides));

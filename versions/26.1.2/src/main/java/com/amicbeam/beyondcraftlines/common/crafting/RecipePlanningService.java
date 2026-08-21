@@ -166,10 +166,7 @@ public final class RecipePlanningService
         }
         String resourceId = RecipeResourceResolver.sortKey(resource);
         if (!visiting.add(resourceId))
-        {
-            state.missing.merge(resource, remainder, SaturatingLongMath::add);
-            return;
-        }
+            throw CyclicRecipePathException.INSTANCE;
 
         try
         {
@@ -194,8 +191,15 @@ public final class RecipePlanningService
 
             if (!PlanningBranches.recipesRequireBranches(candidates.size()))
             {
-                resolveRecipe(level, resource, remainder, candidates.getFirst(), byOutput,
-                        new HashSet<>(visiting), state, overrides, mode, depth, maxDepth, budget);
+                PlanningState branch = state.copy();
+                try
+                {
+                    resolveRecipe(level, resource, remainder, candidates.getFirst(), byOutput,
+                            new HashSet<>(visiting), branch, overrides, mode, depth, maxDepth, budget);
+                    state.replaceWith(branch);
+                }
+                catch (CyclicRecipePathException ignored)
+                { state.missing.merge(resource, remainder, SaturatingLongMath::add); }
                 return;
             }
             PlanningState best = null;
@@ -204,8 +208,16 @@ public final class RecipePlanningService
             {
                 budget.enterBranch();
                 PlanningState branch = state.copy();
-                resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), branch,
-                        overrides, mode, depth, maxDepth, budget);
+                try
+                {
+                    resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), branch,
+                            overrides, mode, depth, maxDepth, budget);
+                }
+                catch (CyclicRecipePathException ignored)
+                {
+                    branch = state.copy();
+                    branch.missing.merge(resource, remainder, SaturatingLongMath::add);
+                }
                 if (best == null || compare(branch, holder.id().identifier(), best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -336,12 +348,9 @@ public final class RecipePlanningService
         if (mode == ResolutionMode.FIXED && ingredient.candidates().stream()
                 .anyMatch(choice -> choice.key() instanceof ItemStackKey))
             throw new IllegalArgumentException("client proposal is incomplete");
-        if (mode == ResolutionMode.FIXED && ingredient.candidates().size() > 1)
-            throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
                         value.key().getTypeId(), value.key()::isSame)).reversed()
-                .thenComparing(value -> value.key() instanceof ItemStackKey item
-                        && !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
+                .thenComparing(value -> !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
                 .thenComparing(value -> RecipeResourceResolver.sortKey(value.key()));
         List<KeyAmount> choices = ingredient.candidates();
         for (int i = 0; i < choices.size(); i++)
@@ -352,6 +361,12 @@ public final class RecipePlanningService
     }
 
     private enum ResolutionMode { SEARCH, FIXED }
+
+    private static final class CyclicRecipePathException extends RuntimeException
+    {
+        private static final CyclicRecipePathException INSTANCE = new CyclicRecipePathException();
+        @Override public synchronized Throwable fillInStackTrace() { return this; }
+    }
 
     private static List<RecipeHolder<?>> recipesFor(Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                                      IStackKey<?> resource)

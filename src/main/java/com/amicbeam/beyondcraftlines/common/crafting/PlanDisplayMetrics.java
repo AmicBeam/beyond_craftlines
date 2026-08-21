@@ -31,17 +31,26 @@ public final class PlanDisplayMetrics
         LinkedHashMap<IStackKey<?>, Long> needed = new LinkedHashMap<>();
         needed.put(theoretical.targetKey(), theoretical.requested());
         LinkedHashMap<IStackKey<?>, Long> produced = new LinkedHashMap<>();
-        LinkedHashMap<IStackKey<?>, MutableNode> nodes = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, MutableNode> theoreticalNodes = new LinkedHashMap<>();
         for (RecipePlan.Step step : theoretical.steps())
         {
             IStackKey<?> outputKey = step.outputKey();
             long output = SaturatingLongMath.multiply(step.outputPerCraft(), step.crafts());
             produced.merge(outputKey, output, SaturatingLongMath::add);
-            MutableNode node = nodes.computeIfAbsent(outputKey, ignored -> new MutableNode(step.recipe()));
+            MutableNode node = theoreticalNodes.computeIfAbsent(outputKey, ignored -> new MutableNode(step.recipe()));
             node.produced = SaturatingLongMath.add(node.produced, output);
             node.crafts = SaturatingLongMath.add(node.crafts, step.crafts());
             for (RecipePlan.Material input : step.inputs())
                 needed.merge(input.key(), input.amount(), SaturatingLongMath::add);
+        }
+
+        LinkedHashMap<IStackKey<?>, MutableNode> actualNodes = new LinkedHashMap<>();
+        for (RecipePlan.Step step : actual.steps())
+        {
+            MutableNode node = actualNodes.computeIfAbsent(step.outputKey(), ignored -> new MutableNode(step.recipe()));
+            node.produced = SaturatingLongMath.add(node.produced,
+                    SaturatingLongMath.multiply(step.outputPerCraft(), step.crafts()));
+            node.crafts = SaturatingLongMath.add(node.crafts, step.crafts());
         }
 
         LinkedHashMap<IStackKey<?>, Long> leftovers = new LinkedHashMap<>();
@@ -52,10 +61,20 @@ public final class PlanDisplayMetrics
         addCraftingRemainders(level, theoretical.steps(), leftovers);
 
         List<Node> nodeList = new ArrayList<>();
-        nodes.forEach((item, node) -> nodeList.add(new Node(item, node.recipe,
-                needed.getOrDefault(item, node.produced), node.produced, node.crafts)));
+        theoreticalNodes.forEach((item, theoreticalNode) -> {
+            MutableNode actualNode = actualNodes.get(item);
+            nodeList.add(new Node(item, actualNode == null ? theoreticalNode.recipe : actualNode.recipe,
+                    needed.getOrDefault(item, theoreticalNode.produced),
+                    actualNode == null ? 0 : actualNode.produced,
+                    actualNode == null ? 0 : actualNode.crafts));
+        });
+        actualNodes.forEach((item, actualNode) -> {
+            if (!theoreticalNodes.containsKey(item)) nodeList.add(new Node(item, actualNode.recipe,
+                    needed.getOrDefault(item, actualNode.produced), actualNode.produced, actualNode.crafts));
+        });
         totalCost.forEach((item, amount) -> {
-            if (!nodes.containsKey(item)) nodeList.add(new Node(item, null, amount, 0, 0));
+            if (!theoreticalNodes.containsKey(item) && !actualNodes.containsKey(item))
+                nodeList.add(new Node(item, null, amount, 0, 0));
         });
         return new Summary(sorted(totalCost), sorted(extraction), sorted(leftovers), List.copyOf(nodeList));
     }

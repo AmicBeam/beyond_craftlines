@@ -57,4 +57,16 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
     {
         return new CraftlineProvisionerBlockEntity(pos, state);
     }
+
+    @Override
+    protected void onRemove(BlockState state, Level level, BlockPos pos,
+                            BlockState newState, boolean movedByPiston)
+    {
+        if (!state.is(newState.getBlock()))
+        {
+            if (level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity provisioner)
+                provisioner.dropContent();
+            super.onRemove(state, level, pos, newState, movedByPiston);
+        }
+    }
 }

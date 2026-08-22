@@ -2,9 +2,14 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
+import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.api.util.CapCtx;
 import com.wintercogs.beyonddimensions.api.util.USHandler;
 import com.wintercogs.beyonddimensions.common.block.entity.NetedBlockEntity;
+import com.wintercogs.beyonddimensions.common.init.BDDataComponents;
+import com.wintercogs.beyonddimensions.common.init.BDItems;
+import com.wintercogs.beyonddimensions.common.item.MatterCompressionBall;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -22,8 +27,10 @@ import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.neoforged.neoforge.client.model.data.ModelProperty;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
@@ -43,6 +50,31 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public boolean isEmpty() { return storage.isEmpty(); }
     public Set<ResourceLocation> recipeCandidates() { return Set.copyOf(recipeCandidates); }
     public ItemStack targetItemIcon() { return targetItemIcon; }
+
+    /** Drops every staged BD resource in the same lossless container used by BD machines. */
+    public void dropContent()
+    {
+        if (level == null || level.isClientSide()) return;
+
+        List<KeyAmount> compressed = new ArrayList<>();
+        for (KeyAmount stack : storage.getStorage())
+        {
+            if (stack.isEmpty()) continue;
+            if (stack.key() instanceof ItemStackKey itemKey
+                    && itemKey.getSource() instanceof MatterCompressionBall)
+            {
+                Block.popResource(level, worldPosition, itemKey.copyStackWithCount(stack.amount()));
+            }
+            else compressed.add(stack);
+        }
+        if (!compressed.isEmpty())
+        {
+            ItemStack ball = new ItemStack(BDItems.MATTER_COMPRESS_BALL.get());
+            ball.set(BDDataComponents.ISTACK_SLOTS, List.copyOf(compressed));
+            Block.popResource(level, worldPosition, ball);
+        }
+        storage.clearStorage();
+    }
 
     public void addRecipeCandidates(Set<ResourceLocation> candidates)
     { addRecipeCandidates(candidates, null, ItemStack.EMPTY); }

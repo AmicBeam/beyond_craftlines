@@ -13,7 +13,7 @@ public final class CraftlinesBlocks
     public static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(BeyondCraftlines.MOD_ID);
     public static final DeferredBlock<Block> CRAFTLINE_PROVISIONER = BLOCKS.registerBlock(
             "craftline_provisioner", CraftlineProvisionerBlock::new,
-            properties -> properties.strength(3.5f));
+            properties -> properties.strength(1.5f).requiresCorrectToolForDrops());
 
     public static void register(IEventBus bus) { BLOCKS.register(bus); }
     private CraftlinesBlocks() {}

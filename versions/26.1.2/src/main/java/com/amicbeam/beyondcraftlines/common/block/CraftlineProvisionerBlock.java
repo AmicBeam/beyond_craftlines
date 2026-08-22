@@ -8,15 +8,20 @@ import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import com.wintercogs.beyonddimensions.common.block.NetedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.phys.BlockHitResult;
+
+import java.util.function.BiConsumer;
 
 public final class CraftlineProvisionerBlock extends NetedBlock implements EntityBlock
 {
@@ -56,5 +61,23 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state)
     {
         return new CraftlineProvisionerBlockEntity(pos, state);
+    }
+
+    @Override
+    public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state, Player player)
+    {
+        if (level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity provisioner)
+            provisioner.dropContent();
+        return super.playerWillDestroy(level, pos, state, player);
+    }
+
+    @Override
+    protected void onExplosionHit(BlockState state, ServerLevel level, BlockPos pos,
+                                  Explosion explosion, BiConsumer<ItemStack, BlockPos> onHit)
+    {
+        if (explosion.getBlockInteraction() != Explosion.BlockInteraction.TRIGGER_BLOCK
+                && level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity provisioner)
+            provisioner.dropContent();
+        super.onExplosionHit(state, level, pos, explosion, onHit);
     }
 }

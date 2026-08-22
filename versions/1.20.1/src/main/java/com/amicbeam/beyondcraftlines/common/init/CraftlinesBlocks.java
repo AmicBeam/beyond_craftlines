@@ -12,7 +12,8 @@ import net.minecraftforge.registries.RegistryObject;
 public final class CraftlinesBlocks {
     public static final DeferredRegister<Block> BLOCKS = DeferredRegister.create(ForgeRegistries.BLOCKS, BeyondCraftlines.MOD_ID);
     public static final RegistryObject<Block> CRAFTLINE_PROVISIONER = BLOCKS.register("craftline_provisioner",
-            () -> new CraftlineProvisionerBlock(BlockBehaviour.Properties.of().strength(3.5F)));
+            () -> new CraftlineProvisionerBlock(BlockBehaviour.Properties.of()
+                    .strength(1.5F).requiresCorrectToolForDrops()));
     public static void register(IEventBus bus) { BLOCKS.register(bus); }
     private CraftlinesBlocks() {}
 }

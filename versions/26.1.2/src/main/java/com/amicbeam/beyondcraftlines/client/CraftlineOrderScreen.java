@@ -566,12 +566,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void renderNodeTooltip(GuiGraphicsExtractor graphics, GraphNode node, int mouseX, int mouseY)
     {
-        if (node.recipe == null && !node.stockSatisfied && node.jumpTarget == null
-                && node.key instanceof ItemStackKey)
-        {
-            graphics.setTooltipForNextFrame(font, node.stack, mouseX, mouseY);
-            return;
-        }
         List<Component> lines = node.key instanceof ItemStackKey
                 ? new ArrayList<>(Screen.getTooltipFromItem(minecraft, node.stack))
                 : new ArrayList<>(node.key.getRender().getTooltipLines(node.key, resourceAvailable(node.key),
@@ -591,7 +585,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 resourceAvailable(node.key)).withStyle(ChatFormatting.BLUE));
         if (node.partiallySatisfied) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.stock_partially_satisfied", node.stockUsed,
-                node.needed - node.stockUsed).withStyle(ChatFormatting.GOLD));
+                node.needed - node.stockUsed).withStyle(node.recipe == null
+                ? ChatFormatting.RED : ChatFormatting.GOLD));
         if (node.cycleBlocked) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.cycle_blocked").withStyle(ChatFormatting.RED));
         if (node.stockSatisfied) lines.add(Component.translatable(
@@ -686,8 +681,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         int y = nodeY(node);
         boolean hover = mouseX >= x && mouseX < x + 28 && mouseY >= y && mouseY < y + 28;
         int edge = node.jumpTarget != null ? BD_VIOLET : node.cyclic || node.cycleBlocked ? 0xFFB23A48
-                : node.partiallySatisfied ? BD_ORANGE : node.stockSatisfied ? 0xFF39A96B
-                : node.recipe == null ? 0xFFB23A48 : BD_BLUE;
+                : node.stockSatisfied ? 0xFF39A96B : node.recipe == null ? 0xFFB23A48
+                : node.partiallySatisfied ? BD_ORANGE : BD_BLUE;
         graphics.fill(x - 1, y - 1, x + 29, y + 29, PANEL_SHADOW);
         graphics.fill(x, y, x + 28, y + 28, hover ? 0xFF293C50 : 0xFF142131);
         graphics.fill(x, y, x + 28, y + 1, edge);

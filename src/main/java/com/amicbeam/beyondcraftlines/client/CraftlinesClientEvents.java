@@ -127,7 +127,7 @@ public final class CraftlinesClientEvents
         }
     }
 
-    private static void showBindFeedback(String rawType)
+    public static void showBindFeedback(String rawType)
     {
         var player = Minecraft.getInstance().player;
         if (player == null) return;

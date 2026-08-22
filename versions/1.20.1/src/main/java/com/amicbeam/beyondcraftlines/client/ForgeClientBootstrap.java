@@ -18,6 +18,8 @@ public final class ForgeClientBootstrap {
 
     public static void register(IEventBus modBus) {
         ClientBindingVisuals.initialize();
+        com.amicbeam.beyondcraftlines.common.network.BindMachineFeedbackPayload.clientReceiver =
+                CraftlinesClientEvents::showBindFeedback;
         modBus.addListener(ForgeClientBootstrap::setup);
         modBus.addListener(ForgeClientBootstrap::registerTooltipComponents);
         modBus.addListener(ForgeClientBootstrap::modifyModels);

@@ -118,7 +118,71 @@ public final class RecipeResourceResolver
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
-    { return resolve(recipe, CountedInputReflection.INPUT_METHODS, true); }
+    {
+        List<ResourceIngredient> result = new ArrayList<>(resolve(recipe, List.of(), true));
+        List<PendingInput> structured = new ArrayList<>();
+        for (CountedInputReflection.InputSection section : CountedInputReflection.inputSections(recipe))
+            for (Object input : section.inputs())
+            {
+                PendingInput pending = pendingInput(recipe, section.methodName(),
+                        section.inputGroup(), input);
+                if (pending != null) structured.add(pending);
+            }
+        if (structured.isEmpty()) return List.copyOf(result);
+
+        List<Object> vanillaSources = result.stream().map(ResourceIngredient::itemIngredient)
+                .map(value -> (Object) value).toList();
+        List<Object> structuredSources = structured.stream().map(PendingInput::source).toList();
+        int[] matches = CountedInputReflection.matchIdentityOccurrences(
+                vanillaSources, structuredSources);
+        int nextSlot = result.stream().mapToInt(ResourceIngredient::slot).max().orElse(-1) + 1;
+        for (int i = 0; i < structured.size(); i++)
+        {
+            PendingInput pending = structured.get(i);
+            if (matches[i] >= 0)
+            {
+                int resultIndex = matches[i];
+                int slot = result.get(resultIndex).slot();
+                result.set(resultIndex, new ResourceIngredient(slot, pending.candidates(),
+                        pending.itemIngredient(), pending.inputGroup()));
+            }
+            else
+                result.add(new ResourceIngredient(nextSlot++, pending.candidates(),
+                        pending.itemIngredient(), pending.inputGroup()));
+        }
+        return List.copyOf(result);
+    }
+
+    private static PendingInput pendingInput(Recipe<?> recipe, String methodName,
+                                             String inputGroup, Object input)
+    {
+        if (input == null) return null;
+        CountedInputReflection.Value reflected = CountedInputReflection.read(input);
+        Object ingredientSource = reflected == null ? input : reflected.ingredient();
+        long multiplier = SaturatingLongMath.multiply(
+                reflected == null ? 1 : reflected.count(),
+                CountedInputReflection.recipeInputMultiplier(recipe, methodName));
+        if (ingredientSource instanceof Ingredient ingredient)
+        {
+            if (ingredient.isEmpty()) return null;
+            List<KeyAmount> candidates = itemCandidates(ingredient, multiplier);
+            return candidates.isEmpty() ? null
+                    : new PendingInput(ingredientSource, candidates, ingredient, inputGroup);
+        }
+
+        List<?> values = CountedInputReflection.representationValues(ingredientSource);
+        if (values.isEmpty()) return null;
+        LinkedHashMap<IStackKey<?>, KeyAmount> candidates = new LinkedHashMap<>();
+        for (Object value : values)
+        {
+            KeyAmount converted = fromStack(value);
+            if (converted == null) continue;
+            long amount = SaturatingLongMath.multiply(converted.amount(), multiplier);
+            if (amount > 0) candidates.putIfAbsent(converted.key(), new KeyAmount(converted.key(), amount));
+        }
+        return candidates.isEmpty() ? null : new PendingInput(ingredientSource,
+                List.copyOf(candidates.values()), null, inputGroup);
+    }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)
@@ -221,6 +285,9 @@ public final class RecipeResourceResolver
         }
         catch (ReflectiveOperationException | RuntimeException ignored) { return null; }
     }
+
+    private record PendingInput(Object source, List<KeyAmount> candidates,
+                                Ingredient itemIngredient, String inputGroup) {}
 
     public record ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient,
                                      String inputGroup)

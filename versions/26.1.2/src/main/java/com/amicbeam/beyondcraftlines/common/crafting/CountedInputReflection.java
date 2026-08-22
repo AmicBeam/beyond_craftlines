@@ -2,11 +2,16 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -23,33 +28,82 @@ final class CountedInputReflection
     private static final Set<String> CHEMICAL_INPUT_METHODS = Set.of(
             "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
             "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals");
-
-    static final List<String> INPUT_METHODS = List.of(
-            "input", "getInput", "inputs", "getInputs",
-            "inputA", "getInputA", "inputB", "getInputB", "inputC", "getInputC",
-            "inputOne", "getInputOne", "inputTwo", "getInputTwo", "inputThree", "getInputThree",
-            "leftInput", "getLeftInput", "rightInput", "getRightInput",
-            "middleInput", "getMiddleInput",
-            "primaryInput", "getPrimaryInput", "primaryInputs", "getPrimaryInputs",
-            "main", "getMain", "mainInput", "getMainInput",
-            "activationItem", "getActivationItem",
-            "extraInput", "getExtraInput", "extraInputs", "getExtraInputs",
-            "secondaryInput", "getSecondaryInput", "secondaryInputs", "getSecondaryInputs",
-            "itemInput", "getItemInput", "itemInputs", "getItemInputs",
-            "inputItem", "getInputItem", "inputItems", "getInputItems",
-            "solidInput", "getSolidInput", "inputSolid", "getInputSolid",
-            "fluidInput", "getFluidInput", "fluidInputs", "getFluidInputs",
-            "inputFluid", "getInputFluid", "inputFluids", "getInputFluids",
-            "fluidIngredient", "getFluidIngredient", "fluidIngredients", "getFluidIngredients",
-            "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
-            "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals",
-            "chemicalIngredient", "getChemicalIngredient", "chemicalIngredients", "getChemicalIngredients",
-            "gasInput", "getGasInput", "gasInputs", "getGasInputs",
-            "inputGas", "getInputGas", "inputGases", "getInputGases",
-            "gasIngredient", "getGasIngredient", "gasIngredients", "getGasIngredients",
-            "offerings", "getOfferings");
+    private static final Set<String> MERGED_OR_OUTPUT_GROUPS = Set.of(
+            "ingredient", "ingredients", "result", "results", "result_item", "result_items",
+            "output", "outputs", "output_item", "output_items", "remaining_items");
 
     private CountedInputReflection() {}
+
+    /**
+     * Finds logical input sections by their public no-argument accessors. Discovery is based on
+     * returned value structure, never on a mod id, recipe id, or third-party class name.
+     */
+    static List<InputSection> inputSections(Object target)
+    {
+        if (target == null) return List.of();
+        Map<String, InputSection> sections = new LinkedHashMap<>();
+        Arrays.stream(target.getClass().getMethods())
+                .filter(CountedInputReflection::mayExposeInputSection)
+                .sorted(Comparator.comparing(Method::getName))
+                .forEach(method ->
+                {
+                    String group = inputGroup(method.getName());
+                    if (sections.containsKey(group)) return; // getFoo()/foo() aliases
+                    List<?> values = flatten(invokeNoArgs(target, method));
+                    if (values.isEmpty() || values.stream().anyMatch(value -> !isInputValue(value))) return;
+                    sections.put(group, new InputSection(method.getName(), group, values));
+                });
+        return List.copyOf(sections.values());
+    }
+
+    private static boolean mayExposeInputSection(Method method)
+    {
+        if (method.getParameterCount() != 0 || Modifier.isStatic(method.getModifiers())
+                || method.isBridge() || method.isSynthetic() || method.getDeclaringClass() == Object.class)
+            return false;
+        String group = inputGroup(method.getName());
+        if (MERGED_OR_OUTPUT_GROUPS.contains(group)
+                || group.contains("output") || group.contains("result")) return false;
+        Class<?> type = method.getReturnType();
+        if (type == void.class || type.isPrimitive() || type.isEnum()
+                || Number.class.isAssignableFrom(type) || CharSequence.class.isAssignableFrom(type))
+            return false;
+        return hasTypeNamed(type, "net.minecraft.world.item.crafting.Ingredient") || type.isArray()
+                || Iterable.class.isAssignableFrom(type) || Optional.class.isAssignableFrom(type)
+                || java.util.stream.BaseStream.class.isAssignableFrom(type)
+                || hasNoArgMethod(type, "ingredient") || hasNoArgMethod(type, "getIngredient")
+                || REPRESENTATION_METHODS.stream().anyMatch(name -> hasNoArgMethod(type, name));
+    }
+
+    private static boolean isInputValue(Object value)
+    {
+        if (hasTypeNamed(value.getClass(), "net.minecraft.world.item.crafting.Ingredient")) return true;
+        Value wrapped = read(value);
+        Object source = wrapped == null ? value : wrapped.ingredient();
+        return source != null && (hasTypeNamed(source.getClass(),
+                "net.minecraft.world.item.crafting.Ingredient")
+                || !representationValues(source).isEmpty());
+    }
+
+    /** Matches repeated values by identity and occurrence instead of collapsing equal inputs. */
+    static int[] matchIdentityOccurrences(List<?> available, List<?> requested)
+    {
+        int[] matches = new int[requested.size()];
+        Arrays.fill(matches, -1);
+        boolean[] used = new boolean[available.size()];
+        for (int request = 0; request < requested.size(); request++)
+        {
+            Object wanted = requested.get(request);
+            for (int candidate = 0; candidate < available.size(); candidate++)
+                if (!used[candidate] && available.get(candidate) == wanted)
+                {
+                    used[candidate] = true;
+                    matches[request] = candidate;
+                    break;
+                }
+        }
+        return matches;
+    }
 
     /** Stable, protocol-safe name for the logical input section exposed by an accessor. */
     static String inputGroup(String methodName)
@@ -169,9 +223,12 @@ final class CountedInputReflection
     }
 
     private static boolean hasNoArgMethod(Object target, String name)
+    { return target != null && hasNoArgMethod(target.getClass(), name); }
+
+    private static boolean hasNoArgMethod(Class<?> type, String name)
     {
-        try { return target.getClass().getMethod(name).getParameterCount() == 0; }
-        catch (ReflectiveOperationException | RuntimeException ignored) { return false; }
+        try { return type.getMethod(name).getParameterCount() == 0; }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
     }
 
     private static Object invokeNoArgs(Object target, String name)
@@ -179,12 +236,31 @@ final class CountedInputReflection
         try
         {
             Method method = target.getClass().getMethod(name);
+            return invokeNoArgs(target, method);
+        }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return null; }
+    }
+
+    private static Object invokeNoArgs(Object target, Method method)
+    {
+        try
+        {
             if (method.getParameterCount() != 0) return null;
             if (!method.canAccess(target) && !method.trySetAccessible()) return null;
             return method.invoke(target);
         }
-        catch (ReflectiveOperationException | RuntimeException ignored) { return null; }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return null; }
     }
 
+    record InputSection(String methodName, String inputGroup, List<?> inputs)
+    {
+        InputSection
+        {
+            if (methodName == null || methodName.isBlank() || inputGroup == null
+                    || inputGroup.isBlank() || inputs == null || inputs.isEmpty())
+                throw new IllegalArgumentException("invalid input section");
+            inputs = List.copyOf(inputs);
+        }
+    }
     record Value(Object ingredient, long count) {}
 }

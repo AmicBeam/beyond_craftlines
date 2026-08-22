@@ -237,6 +237,17 @@ public final class DeviceBindingRegistry
                     || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                     && record.acceptsAnyInputGroup(family)
                     && validProvisionerTarget(server, record).isPresent()))) return true;
+
+        boolean requestedTypeMatchesFamily = JeiRecipeFamilyRegistry.resolve(
+                Set.of(jeiType), Set.of(family)).families().contains(family);
+        if (requestedTypeMatchesFamily)
+            for (BindingRecord record : BindingSavedData.get(server).forNetwork(networkId))
+                if (record.recipeFamilies().contains(family)
+                        && ((record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                        && validMachine(server, record).isPresent())
+                        || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
+                        && record.acceptsAnyInputGroup(family)
+                        && validProvisionerTarget(server, record).isPresent()))) return true;
         Set<String> nativeFamilies = NativeFurnaceRegistry.availableFamilies(server, networkId);
         if ("crafting".equals(family)) nativeFamilies = Set.of("crafting");
         return JeiRecipeFamilyRegistry.resolve(Set.of(jeiType), nativeFamilies)

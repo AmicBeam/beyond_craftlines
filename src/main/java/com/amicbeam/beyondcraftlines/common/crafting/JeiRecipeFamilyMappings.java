@@ -46,6 +46,13 @@ public final class JeiRecipeFamilyMappings
             // Mekanism exposes the two rotary directions as separate JEI categories,
             // while both are backed by the same server-side RecipeType.
             case "mekanism:condensentrating", "mekanism:decondensentrating" -> "mekanism:rotary";
+
+            // Ars Nouveau 1.20.x still uses legacy JEI category ids for some recipe
+            // types, and the imbuement machine block id is used as the binding fallback
+            // when JEI's catalyst snapshot is not available yet.
+            case "ars_nouveau:glyph_recipe" -> "ars_nouveau:glyph";
+            case "ars_nouveau:enchantment_apparatus" -> "ars_nouveau:enchantment";
+            case "ars_nouveau:imbuement_chamber" -> "ars_nouveau:imbuement";
             default -> jeiType.startsWith("minecraft:")
                     ? jeiType.substring("minecraft:".length()) : jeiType;
         };

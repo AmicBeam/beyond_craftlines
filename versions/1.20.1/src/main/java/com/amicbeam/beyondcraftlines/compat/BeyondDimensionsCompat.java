@@ -7,7 +7,6 @@ import net.minecraft.server.level.ServerPlayer;
 public final class BeyondDimensionsCompat {
     private BeyondDimensionsCompat() {}
     public static DimensionsNet networkFor(ServerPlayer player, UnifiedStorage storage) {
-        DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
-        return network != null && network.getUnifiedStorage() == storage ? network : null;
+        return DimensionsNet.getNetFromPlayer(player);
     }
 }

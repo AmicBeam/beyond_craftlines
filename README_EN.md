@@ -50,7 +50,7 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 The three artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.1.2+1.20.1.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.1.3+1.20.1.jar`
 - `build/libs/beyond_craftlines-0.1.2+1.21.1.jar`
 - `versions/26.1.2/build/libs/beyond_craftlines-0.1.2+26.1.2.jar`
 

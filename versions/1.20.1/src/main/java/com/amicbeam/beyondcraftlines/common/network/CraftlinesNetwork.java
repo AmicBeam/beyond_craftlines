@@ -5,7 +5,6 @@ import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 import net.minecraft.network.FriendlyByteBuf;
 import com.amicbeam.beyondcraftlines.compat.protocol.IPayloadContext;
-import com.amicbeam.beyondcraftlines.compat.protocol.RegistryFriendlyByteBuf;
 import com.amicbeam.beyondcraftlines.compat.protocol.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -18,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "10";
+    private static final String PROTOCOL = "11";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -75,8 +74,8 @@ public final class CraftlinesNetwork {
                                     BiConsumer<T, IPayloadContext> handler, NetworkDirection direction) {
         StreamCodec raw = codec;
         CHANNEL.registerMessage(discriminator++, type,
-                (payload, buffer) -> raw.encode(new RegistryFriendlyByteBuf(buffer), payload),
-                buffer -> (T) raw.decode(new RegistryFriendlyByteBuf(buffer)),
+                (payload, buffer) -> raw.encode(buffer, payload),
+                buffer -> (T) raw.decode(buffer),
                 (payload, context) -> handle(payload, context, handler), java.util.Optional.of(direction));
     }
 

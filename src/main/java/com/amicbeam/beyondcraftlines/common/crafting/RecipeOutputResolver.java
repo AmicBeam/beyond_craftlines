@@ -6,7 +6,6 @@ import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Recipe;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -17,7 +16,10 @@ public final class RecipeOutputResolver
     private static final List<String> OUTPUT_METHODS = List.of(
             "getOutputDefinition", "getOutputDefinitions",
             "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",
-            "outputs", "getOutputs");
+            "outputs", "getOutputs",
+            // Ars Nouveau 1.20 and similar data-driven recipes expose a public result/output
+            // field while intentionally returning ItemStack.EMPTY from Recipe#getResultItem.
+            "output", "getOutput", "result", "getResult");
 
     private RecipeOutputResolver() {}
 
@@ -41,7 +43,8 @@ public final class RecipeOutputResolver
     static List<Object> reflectiveOutputValues(Object recipe, List<String> methods)
     {
         List<Object> result = new ArrayList<>();
-        for (String method : methods) result.addAll(flatten(invokeNoArgs(recipe, method)));
+        for (String method : methods)
+            result.addAll(flatten(RecipeReflection.readPublicMember(recipe, method)));
         return List.copyOf(result);
     }
 
@@ -75,26 +78,14 @@ public final class RecipeOutputResolver
         {
             List<Object> result = new ArrayList<>();
             for (java.lang.reflect.RecordComponent component : value.getClass().getRecordComponents())
-                result.addAll(flatten(invokeNoArgs(value, component.getName())));
+                result.addAll(flatten(RecipeReflection.readPublicMember(value, component.getName())));
             return result;
         }
         // Some recipe APIs wrap a concrete resource stack so that one output slot can
         // carry multiple chemical kinds. Keep this generic and unwrap the stack-shaped
         // container instead of linking to the owning mod's wrapper class.
-        Object containedStack = invokeNoArgs(value, "getChemicalStack");
+        Object containedStack = RecipeReflection.readPublicMember(value, "getChemicalStack");
         if (containedStack != null && containedStack != value) return flatten(containedStack);
         return List.of(value);
-    }
-
-    private static Object invokeNoArgs(Object target, String name)
-    {
-        try
-        {
-            Method method = target.getClass().getMethod(name);
-            if (method.getParameterCount() != 0) return null;
-            if (!method.canAccess(target) && !method.trySetAccessible()) return null;
-            return method.invoke(target);
-        }
-        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return null; }
     }
 }

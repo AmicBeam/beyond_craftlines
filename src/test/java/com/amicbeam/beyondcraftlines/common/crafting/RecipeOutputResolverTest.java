@@ -37,6 +37,13 @@ final class RecipeOutputResolverTest
     }
 
     @Test
+    void readsArsNouveauStylePublicOutputFields()
+    {
+        assertEquals(List.of("imbued_gem", "apparatus_result"),
+                RecipeOutputResolver.reflectiveOutputValues(new PublicFieldOutputRecipe()));
+    }
+
+    @Test
     void rotaryChemicalOutputSelectsOnlyTheFluidInputDirection()
     {
         assertEquals(List.of("getFluidInput"), RecipeResourceResolver.directionalInputMethods(
@@ -98,6 +105,12 @@ final class RecipeOutputResolverTest
     {
         public List<BoxedStack> getOutputDefinition()
         { return List.of(new BoxedStack("dirty_iron_slurry")); }
+    }
+
+    private static final class PublicFieldOutputRecipe
+    {
+        public final String output = "imbued_gem";
+        public final String result = "apparatus_result";
     }
 
     private static final class BoxedStack

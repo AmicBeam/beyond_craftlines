@@ -8,7 +8,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -147,7 +146,7 @@ public final class RecipeResourceResolver
         // Craftlines to the owning mod.
         for (String methodName : inputMethods)
         {
-            Object rawInput = invokeNoArgs(recipe, methodName);
+            Object rawInput = RecipeReflection.readPublicMember(recipe, methodName);
             for (Object input : CountedInputReflection.flatten(rawInput))
             {
                 if (input == null || seen.contains(input)) continue;
@@ -208,18 +207,6 @@ public final class RecipeResourceResolver
     {
         return candidates.stream().map(value -> sortKey(value.key()) + "@" + value.amount())
                 .sorted().collect(java.util.stream.Collectors.joining(","));
-    }
-
-    private static Object invokeNoArgs(Object target, String name)
-    {
-        try
-        {
-            Method method = target.getClass().getMethod(name);
-            if (method.getParameterCount() != 0) return null;
-            if (!method.canAccess(target) && !method.trySetAccessible()) return null;
-            return method.invoke(target);
-        }
-        catch (ReflectiveOperationException | RuntimeException ignored) { return null; }
     }
 
     public record ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient,

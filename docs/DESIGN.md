@@ -60,7 +60,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 
 服务端是库存变化、计划有效性、订单状态和绑定权限的唯一权威。客户端可以基于服务端签发的只读库存快照搜索建议配方树，但建议必须由服务端按当前配方注册表和相同快照版本完整复算后才能下单。
 
-第三方机器配方可能把原版 `Recipe#getIngredients()` 保持为空。此时规划器从配方公开 input 对象的 `getRepresentations()` 读取候选，并通过 BD `IStackKey` 注册表转换为统一资源。物品、流体以及已加载 Mekanism 联动所注册的化学品等资源共同参与客户端树、库存抵扣、缺料与网络提取汇总、计划签名、服务端校验、订单预留和机器投送。
+第三方机器配方可能把原版 `Recipe#getIngredients()` 或 `getResultItem()` 保持为空。此时规划器从配方公开的零参 accessor 或公共字段读取 `input`、`reagent`、`pedestalItems`、`output`、`result` 等结构；input representations 通过 BD `IStackKey` 注册表转换为统一资源。物品、流体以及已加载 Mekanism 联动所注册的化学品等资源共同参与客户端树、库存抵扣、缺料与网络提取汇总、计划签名、服务端校验、订单预留和机器投送。依赖运行时中心物品才能确定产物的动态配方不作为固定产物机器配方索引。
 
 ## 4. JEI 入口与订单界面
 
@@ -139,7 +139,7 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络联结器
 1. 客户端从 JEI runtime 建立“催化剂物品 → category UID”索引；
 2. 绑定时最多发送 32 个 category UID；
 3. 服务端只接受当前已加载配方族中同名的类型；
-4. `minecraft:*` UID 去掉命名空间后匹配原版短族名，第三方 UID 必须与服务端 `RecipeType` ID 一致。
+4. `minecraft:*` UID 去掉命名空间后匹配原版短族名；第三方 UID 通常与服务端 `RecipeType` ID 一致，已知版本差异使用不依赖第三方类的确定性别名映射（包括 Ars Nouveau 1.20 的旧 JEI 分类名和灌注室方块回退 ID）。
 
 实现不包含 Mekanism、Goety、群峦传说或其他具体模组的硬编码分支。
 

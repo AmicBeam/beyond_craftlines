@@ -241,22 +241,6 @@ public final class DeviceBindingRegistry
                     || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                     && record.acceptsAnyInputGroup(family)
                     && validProvisionerTarget(server, record).isPresent()))) return true;
-
-        // A JEI category id is client integration metadata, not the execution identity.
-        // Older integrations can expose a legacy alias while the binding was captured
-        // from a newer category id (or from the machine-block fallback). Once both ids
-        // resolve to the same loaded server RecipeType, availability must be decided by
-        // the valid machine/provisioner family rather than exact JEI-id equality.
-        boolean requestedTypeMatchesFamily = JeiRecipeFamilyRegistry.resolve(
-                Set.of(jeiType), Set.of(family)).families().contains(family);
-        if (requestedTypeMatchesFamily)
-            for (BindingRecord record : BindingSavedData.get(server).forNetwork(networkId))
-                if (record.recipeFamilies().contains(family)
-                        && ((record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
-                        && validMachine(server, record).isPresent())
-                        || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
-                        && record.acceptsAnyInputGroup(family)
-                        && validProvisionerTarget(server, record).isPresent()))) return true;
         Set<String> nativeFamilies = NativeFurnaceRegistry.availableFamilies(server, networkId);
         if ("crafting".equals(family)) nativeFamilies = Set.of("crafting");
         return JeiRecipeFamilyRegistry.resolve(Set.of(jeiType), nativeFamilies)

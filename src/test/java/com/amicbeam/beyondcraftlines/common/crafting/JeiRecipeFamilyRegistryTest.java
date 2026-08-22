@@ -27,6 +27,26 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
+    void jeiVanillaFurnaceAliasMapsToSmelting()
+    {
+        var result = JeiRecipeFamilyMappings.resolve(
+                Set.of("minecraft:furnace"), Set.of("smelting"));
+        assertEquals(Set.of("smelting"), result.families());
+    }
+
+    @Test
+    void mekanismMachineCategoriesMapToServerProcessTypes()
+    {
+        var result = JeiRecipeFamilyMappings.resolve(
+                Set.of("mekanism:enrichment_chamber", "mekanism:metallurgic_infuser"),
+                Set.of("mekanism:enriching", "mekanism:metallurgic_infusing"));
+        assertEquals(Set.of("mekanism:enrichment_chamber", "mekanism:metallurgic_infuser"),
+                result.jeiTypes());
+        assertEquals(Set.of("mekanism:enriching", "mekanism:metallurgic_infusing"),
+                result.families());
+    }
+
+    @Test
     void mekanismRotaryDirectionsMapToTheSharedServerRecipeType()
     {
         var result = JeiRecipeFamilyMappings.resolve(

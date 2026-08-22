@@ -124,7 +124,26 @@ tasks.named('prepareVersionSources') {
     outputs.upToDateWhen { false }
 }
 sourceSets.main.java.srcDir prepareVersionSources
-sourceSets.main.resources.srcDir '../../src/main/resources'
+def prepareVersionResources = tasks.register('prepareVersionResources', Sync) {
+    from '../../src/main/resources'
+    into layout.buildDirectory.dir('generated/versionResources/main')
+    filteringCharset = 'UTF-8'
+    eachFile { details ->
+        details.path = details.path
+                .replace('/recipe/', '/recipes/')
+                .replace('/loot_table/', '/loot_tables/')
+    }
+    filter { line -> line
+            .replace('"id": "beyond_craftlines:', '"item": "beyond_craftlines:')
+            .replace('"c:ingots/iron"', '"forge:ingots/iron"')
+            .replace('"c:dusts/redstone"', '"forge:dusts/redstone"')
+            .replace('"c:chests/wooden"', '"forge:chests/wooden"')
+    }
+}
+tasks.named('prepareVersionResources') {
+    outputs.upToDateWhen { false }
+}
+sourceSets.main.resources.srcDir prepareVersionResources
 def prepareVersionTests = tasks.register('prepareVersionTests', Sync) {
     from '../../src/test/java'
     into layout.buildDirectory.dir('generated/versionSources/test/java')

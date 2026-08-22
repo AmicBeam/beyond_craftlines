@@ -68,9 +68,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     .filter(holder -> RecipeOutputResolver.outputs(holder.value(), level.registryAccess())
                             .stream().anyMatch(output -> target.isSame(output.key())))
                     .findFirst().orElse(null);
-            if (recipe == null || requestedType != null
+            String family = recipe == null ? "" : RecipePlanningService.family(recipe);
+            if (recipe == null || requestedType != null && !"crafting".equals(family)
                     && !DeviceBindingRegistry.supportsJeiType(player.getServer(), networkId,
-                    requestedType, RecipePlanningService.family(recipe)))
+                    requestedType, family))
             {
                 player.displayClientMessage(Component.translatable(
                         "error.beyond_craftlines.invalid_order_recipe"), false);

@@ -20,6 +20,7 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 public final class NetworkLinkerItem extends Item
@@ -83,8 +84,7 @@ public final class NetworkLinkerItem extends Item
             {
                 ItemStack catalyst = new ItemStack(
                         context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-                Set<ResourceLocation> types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
-                        .recipeTypesFor(catalyst);
+                Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
                 PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types, true));
             }
             return InteractionResult.SUCCESS;
@@ -93,8 +93,7 @@ public final class NetworkLinkerItem extends Item
         {
             ItemStack catalyst = new ItemStack(
                     context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-            Set<ResourceLocation> types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
-                    .recipeTypesFor(catalyst);
+            Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
             if (types.isEmpty())
             {
                 context.getPlayer().displayClientMessage(Component.translatable(
@@ -104,6 +103,18 @@ public final class NetworkLinkerItem extends Item
             PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types, false));
         }
         return InteractionResult.SUCCESS;
+    }
+
+    private static Set<ResourceLocation> recipeTypes(ItemStack catalyst, ResourceLocation blockId)
+    {
+        LinkedHashSet<ResourceLocation> types = new LinkedHashSet<>(
+                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                        .recipeTypesFor(catalyst));
+        // Several JEI integrations (notably Mekanism 1.20.1) use the machine block id as their
+        // category id. Preserve that authoritative fallback when JEI's catalyst snapshot is late
+        // or omits a machine, and let the server validate it against loaded recipe families.
+        types.add(blockId);
+        return Set.copyOf(types);
     }
 
     @Override

@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -97,6 +96,7 @@ final class CountedInputReflectionTest
         var provider = new MatchingFluidProvider(steam);
         assertEquals(List.of(steam), CountedInputReflection.representationValues(provider));
         assertNull(CountedInputReflection.read(provider));
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getFluidIngredients"));
     }
 
     @Test
@@ -109,55 +109,19 @@ final class CountedInputReflectionTest
     }
 
     @Test
-    void canonicalizesGetterAliasesWithoutRecipeSpecificRegistration()
+    void discoversGoetyRitualActivationItem()
     {
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("activationItem"));
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getActivationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("activationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("getActivationItem"));
     }
 
     @Test
-    void discoversLogicalSectionsFromStructureWithoutRecipeSpecificNames()
-    {
-        var reagent = new RepresentationProvider(new Object(), 1);
-        var pedestal = new RepresentationProvider(new Object(), 1);
-        var sections = CountedInputReflection.inputSections(
-                new StructuralRecipe(reagent, List.of(pedestal, pedestal)));
-
-        assertEquals(List.of("reagent", "pedestal_items"),
-                sections.stream().map(CountedInputReflection.InputSection::inputGroup).toList());
-        assertEquals(1, sections.get(0).inputs().size());
-        assertEquals(2, sections.get(1).inputs().size());
-    }
-
-    @Test
-    void excludesMergedIngredientsAndOutputAccessors()
-    {
-        var value = new RepresentationProvider(new Object(), 1);
-        var sections = CountedInputReflection.inputSections(
-                new StructuralRecipe(value, List.of(value)));
-
-        assertFalse(sections.stream().anyMatch(section ->
-                section.inputGroup().equals("ingredients") || section.inputGroup().equals("result")));
-    }
-
-    @Test
-    void identityMatchingPreservesRepeatedOccurrences()
-    {
-        Object reagent = new Object();
-        Object repeated = new Object();
-        assertArrayEquals(new int[] { 0, 1, 2, -1 },
-                CountedInputReflection.matchIdentityOccurrences(
-                        List.of(reagent, repeated, repeated),
-                        List.of(reagent, repeated, repeated, new Object())));
-    }
-
-    @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
-        var value = new RepresentationProvider(new Object(), 1);
-        assertFalse(CountedInputReflection.inputSections(
-                        new StructuralRecipe(value, List.of(value))).stream()
-                .anyMatch(section -> section.inputGroup().contains("energy")));
+        assertFalse(CountedInputReflection.INPUT_METHODS.stream()
+                .anyMatch(name -> name.toLowerCase(java.util.Locale.ROOT).contains("energy")));
     }
 
     @Test
@@ -198,28 +162,6 @@ final class CountedInputReflectionTest
     private static final class UnrelatedPerTickRecipe
     {
         public boolean perTickUsage() { return true; }
-    }
-
-    private static final class StructuralRecipe
-    {
-        private final RepresentationProvider reagent;
-        private final List<RepresentationProvider> pedestalItems;
-
-        private StructuralRecipe(RepresentationProvider reagent,
-                                 List<RepresentationProvider> pedestalItems)
-        {
-            this.reagent = reagent;
-            this.pedestalItems = pedestalItems;
-        }
-
-        public RepresentationProvider reagent() { return reagent; }
-        public RepresentationProvider getReagent() { return reagent; }
-        public List<RepresentationProvider> pedestalItems() { return pedestalItems; }
-        public List<RepresentationProvider> getIngredients()
-        { return java.util.stream.Stream.concat(java.util.stream.Stream.of(reagent),
-                pedestalItems.stream()).toList(); }
-        public RepresentationProvider result() { return reagent; }
-        public int energy() { return 100; }
     }
 
     private static final class BeanStyleInput

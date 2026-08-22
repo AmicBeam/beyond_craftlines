@@ -6,6 +6,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
 
 import java.util.Set;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 
 public record BindingRecord(
@@ -17,6 +19,7 @@ public record BindingRecord(
         DeviceType deviceType,
         Set<Identifier> jeiRecipeTypes,
         Set<String> recipeFamilies,
+        Map<String, Set<String>> provisionerInputGroups,
         Identifier lastBlockId,
         ResourceKey<Level> provisionerDimension,
         BlockPos provisionerPosition,
@@ -24,8 +27,26 @@ public record BindingRecord(
         boolean favorite,
         long boundGameTime
 ) {
+    public static final String ALL_INPUT_GROUPS =
+            com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection.ALL;
+
     public BindingRecord {
         jeiRecipeTypes = Set.copyOf(jeiRecipeTypes);
         recipeFamilies = Set.copyOf(recipeFamilies);
+        HashMap<String, Set<String>> groups = new HashMap<>();
+        provisionerInputGroups.forEach((family, values) -> groups.put(family, Set.copyOf(values)));
+        provisionerInputGroups = Map.copyOf(groups);
+    }
+
+    public boolean acceptsInputGroup(String family, String group)
+    {
+        Set<String> accepted = provisionerInputGroups.get(family);
+        return accepted != null && (accepted.contains(ALL_INPUT_GROUPS) || accepted.contains(group));
+    }
+
+    public boolean acceptsAnyInputGroup(String family)
+    {
+        Set<String> accepted = provisionerInputGroups.get(family);
+        return accepted != null && !accepted.isEmpty();
     }
 }

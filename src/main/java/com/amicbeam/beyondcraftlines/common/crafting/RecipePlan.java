@@ -46,12 +46,15 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
     { return new ItemStackKey(new net.minecraft.world.item.ItemStack(
             net.minecraft.core.registries.BuiltInRegistries.ITEM.get(target))); }
 
-    public record Material(IStackKey<?> key, long amount, int ingredientSlot)
+    public record Material(IStackKey<?> key, long amount, int ingredientSlot, String inputGroup)
     {
-        public Material(IStackKey<?> key, long amount) { this(key, amount, -1); }
+        public Material(IStackKey<?> key, long amount) { this(key, amount, -1, "ingredients"); }
+        public Material(IStackKey<?> key, long amount, int ingredientSlot)
+        { this(key, amount, ingredientSlot, "ingredients"); }
         public Material
         {
-            if (key == null || key.isEmpty() || amount < 1 || ingredientSlot < -1)
+            if (key == null || key.isEmpty() || amount < 1 || ingredientSlot < -1
+                    || inputGroup == null || inputGroup.isBlank())
                 throw new IllegalArgumentException("invalid material");
         }
         public ResourceLocation item()

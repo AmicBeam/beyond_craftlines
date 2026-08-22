@@ -11,6 +11,8 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
@@ -19,43 +21,110 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private final BlockPos position;
     private final Set<Identifier> candidates;
     private final Set<Identifier> selected;
+    private final Map<Identifier, Set<String>> availableGroups;
+    private final Map<Identifier, Set<String>> selectedGroups;
 
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
-        this(id, inventory, data.readBlockPos(), readTypes(data), readTypes(data));
+        this(id, inventory, readOptions(data));
     }
 
+    private ProvisionerConfigMenu(int id, Inventory inventory, Options options)
+    { this(id, inventory, options.position(), options.candidates(), options.selected(),
+            options.availableGroups(), options.selectedGroups()); }
+
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
-                                 Set<Identifier> candidates, Set<Identifier> selected)
+                                 Set<Identifier> candidates, Set<Identifier> selected,
+                                 Map<Identifier, Set<String>> availableGroups,
+                                 Map<Identifier, Set<String>> selectedGroups)
     {
         super(CraftlinesMenus.PROVISIONER.get(), id);
         this.position = position.immutable();
         this.candidates = Set.copyOf(candidates);
         this.selected = Set.copyOf(selected);
+        this.availableGroups = copyGroups(availableGroups);
+        this.selectedGroups = copyGroups(selectedGroups);
     }
 
     public BlockPos position() { return position; }
     public Set<Identifier> candidates() { return candidates; }
     public Set<Identifier> selected() { return selected; }
+    public Map<Identifier, Set<String>> availableGroups() { return availableGroups; }
+    public Map<Identifier, Set<String>> selectedGroups() { return selectedGroups; }
 
-    public static void writeTypes(FriendlyByteBuf buffer, Set<Identifier> types)
+    public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
+                                    Set<Identifier> candidates, Set<Identifier> selected,
+                                    Map<Identifier, Set<String>> availableGroups,
+                                    Map<Identifier, Set<String>> selectedGroups)
     {
-        var sorted = types.stream().sorted(Comparator.comparing(Identifier::toString)).limit(32).toList();
+        buffer.writeBlockPos(position);
+        var sorted = candidates.stream().sorted(Comparator.comparing(Identifier::toString)).limit(32).toList();
         buffer.writeVarInt(sorted.size());
-        sorted.forEach(type -> buffer.writeUtf(type.toString()));
+        for (Identifier type : sorted)
+        {
+            buffer.writeUtf(type.toString());
+            buffer.writeBoolean(selected.contains(type));
+            writeGroups(buffer, availableGroups.getOrDefault(type, Set.of()));
+            writeGroups(buffer, selectedGroups.getOrDefault(type, Set.of()));
+        }
     }
 
-    private static Set<Identifier> readTypes(FriendlyByteBuf data)
+    private static Options readOptions(FriendlyByteBuf data)
     {
+        BlockPos position = data.readBlockPos();
         int count = Math.min(32, Math.max(0, data.readVarInt()));
-        LinkedHashSet<Identifier> result = new LinkedHashSet<>();
+        LinkedHashSet<Identifier> candidates = new LinkedHashSet<>();
+        LinkedHashSet<Identifier> selected = new LinkedHashSet<>();
+        Map<Identifier, Set<String>> availableGroups = new HashMap<>();
+        Map<Identifier, Set<String>> selectedGroups = new HashMap<>();
         for (int i = 0; i < count; i++)
         {
             Identifier type = Identifier.tryParse(data.readUtf(256));
-            if (type != null) result.add(type);
+            boolean enabled = data.readBoolean();
+            Set<String> available = readGroups(data);
+            Set<String> groups = readGroups(data);
+            if (type == null) continue;
+            candidates.add(type);
+            if (enabled) selected.add(type);
+            availableGroups.put(type, available);
+            selectedGroups.put(type, groups);
+        }
+        return new Options(position, Set.copyOf(candidates), Set.copyOf(selected),
+                copyGroups(availableGroups), copyGroups(selectedGroups));
+    }
+
+    private static void writeGroups(FriendlyByteBuf buffer, Set<String> groups)
+    {
+        var sorted = groups.stream().filter(ProvisionerConfigMenu::validGroup).sorted().limit(16).toList();
+        buffer.writeVarInt(sorted.size());
+        sorted.forEach(group -> buffer.writeUtf(group, 64));
+    }
+
+    private static Set<String> readGroups(FriendlyByteBuf data)
+    {
+        int count = Math.min(16, Math.max(0, data.readVarInt()));
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (int i = 0; i < count; i++)
+        {
+            String group = data.readUtf(64);
+            if (validGroup(group)) result.add(group);
         }
         return Set.copyOf(result);
     }
+
+    private static boolean validGroup(String group)
+    { return group != null && !group.isBlank() && group.length() <= 64; }
+
+    private static Map<Identifier, Set<String>> copyGroups(Map<Identifier, Set<String>> source)
+    {
+        HashMap<Identifier, Set<String>> result = new HashMap<>();
+        source.forEach((type, groups) -> result.put(type, Set.copyOf(groups)));
+        return Map.copyOf(result);
+    }
+
+    private record Options(BlockPos position, Set<Identifier> candidates, Set<Identifier> selected,
+                           Map<Identifier, Set<String>> availableGroups,
+                           Map<Identifier, Set<String>> selectedGroups) {}
 
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
 

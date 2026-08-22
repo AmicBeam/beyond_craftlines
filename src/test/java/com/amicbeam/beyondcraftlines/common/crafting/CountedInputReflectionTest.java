@@ -113,6 +113,8 @@ final class CountedInputReflectionTest
     {
         assertTrue(CountedInputReflection.INPUT_METHODS.contains("activationItem"));
         assertTrue(CountedInputReflection.INPUT_METHODS.contains("getActivationItem"));
+        assertEquals("activation_item", CountedInputReflection.inputGroup("activationItem"));
+        assertEquals("activation_item", CountedInputReflection.inputGroup("getActivationItem"));
     }
 
     @Test

@@ -21,10 +21,13 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.core.Direction;
 
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class DeviceBindingRegistry
@@ -83,7 +86,7 @@ public final class DeviceBindingRegistry
             var selected = JeiRecipeFamilyRegistry.resolve(Set.of(selectedType), loadedFamilies);
             BindingRecord record = new BindingRecord(existing == null ? UUID.randomUUID() : existing.id(),
                     existing == null ? player.getUUID() : existing.owner(), network.getId(),
-                    level.dimension(), position, deviceType, selected.jeiTypes(), selected.families(), blockId,
+                    level.dimension(), position, deviceType, selected.jeiTypes(), selected.families(), Map.of(), blockId,
                     null, null, existing == null ? "" : existing.nickname(),
                     existing != null && existing.favorite(),
                     existing == null ? level.getGameTime() : existing.boundGameTime());
@@ -108,16 +111,27 @@ public final class DeviceBindingRegistry
 
     public static boolean configureProvisioner(Player player, BlockPos position,
                                                Set<Identifier> selectedTypes)
+    { return configureProvisioner(player, position, selectedTypes, Map.of()); }
+
+    public static boolean configureProvisioner(Player player, BlockPos position,
+                                               Set<Identifier> selectedTypes,
+                                               Map<Identifier, Set<String>> selectedGroups)
     {
         if (!(player.level() instanceof ServerLevel level) || level.getServer() == null
                 || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
             return false;
-        return configureProvisioner(player, level, position, provisioner, selectedTypes);
+        return configureProvisioner(player, level, position, provisioner, selectedTypes, selectedGroups);
     }
 
     private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
                                                 CraftlineProvisionerBlockEntity provisioner,
                                                 Set<Identifier> selectedTypes)
+    { return configureProvisioner(player, level, position, provisioner, selectedTypes, Map.of()); }
+
+    private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
+                                                CraftlineProvisionerBlockEntity provisioner,
+                                                Set<Identifier> selectedTypes,
+                                                Map<Identifier, Set<String>> selectedGroups)
     {
         DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
         if (network == null || !network.isManager(player)) return false;
@@ -133,12 +147,27 @@ public final class DeviceBindingRegistry
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
         if (resolved.isEmpty() || resolved.jeiTypes().size() != selectedTypes.size()) return false;
+        Map<Identifier, Set<String>> availableGroups = inputGroupsByJeiType(level, selectedTypes);
+        if (!selectedGroups.keySet().stream().allMatch(selectedTypes::contains)) return false;
+        LinkedHashMap<String, Set<String>> groupsByFamily = new LinkedHashMap<>();
+        for (Identifier type : selectedTypes)
+        {
+            Set<String> available = availableGroups.getOrDefault(type, Set.of());
+            Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
+            if (!available.containsAll(chosen)) return false;
+            var typeResolution = JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies);
+            for (String family : typeResolution.families())
+                groupsByFamily.merge(family,
+                        com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection
+                                .accepted(available, chosen),
+                        DeviceBindingRegistry::mergeInputGroups);
+        }
         BindingRecord existing = data.at(level.dimension(), position);
         Identifier provisionerId = BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock());
         BindingRecord replacement = new BindingRecord(
                 existing == null ? UUID.randomUUID() : existing.id(), player.getUUID(), network.getId(),
                 level.dimension(), position, DeviceType.PROVISIONER_RECIPE_BINDING,
-                resolved.jeiTypes(), resolved.families(), provisionerId,
+                resolved.jeiTypes(), resolved.families(), Map.copyOf(groupsByFamily), provisionerId,
                 level.dimension(), position, existing == null ? "" : existing.nickname(),
                 existing != null && existing.favorite(),
                 existing == null ? level.getGameTime() : existing.boundGameTime());
@@ -190,10 +219,11 @@ public final class DeviceBindingRegistry
     {
         HashSet<String> result = new HashSet<>(NativeFurnaceRegistry.availableFamilies(server, networkId));
         for (BindingRecord record : BindingSavedData.get(server).forNetwork(networkId))
-            if ((record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
-                    && validMachine(server, record).isPresent())
-                    || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
-                    && validProvisionerTarget(server, record).isPresent())) result.addAll(record.recipeFamilies());
+            if (record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                    && validMachine(server, record).isPresent()) result.addAll(record.recipeFamilies());
+            else if (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
+                    && validProvisionerTarget(server, record).isPresent())
+                record.recipeFamilies().stream().filter(record::acceptsAnyInputGroup).forEach(result::add);
         return Set.copyOf(result);
     }
 
@@ -205,6 +235,7 @@ public final class DeviceBindingRegistry
                     && ((record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
                     && validMachine(server, record).isPresent())
                     || (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
+                    && record.acceptsAnyInputGroup(family)
                     && validProvisionerTarget(server, record).isPresent()))) return true;
         Set<String> nativeFamilies = NativeFurnaceRegistry.availableFamilies(server, networkId);
         if ("crafting".equals(family)) nativeFamilies = Set.of("crafting");
@@ -217,7 +248,70 @@ public final class DeviceBindingRegistry
         return BindingSavedData.get(server).forNetwork(networkId).stream()
                 .filter(record -> record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
                 .filter(record -> record.recipeFamilies().contains(family))
+                .filter(record -> record.acceptsAnyInputGroup(family))
                 .map(record -> validProvisionerTarget(server, record)).flatMap(Optional::stream).findFirst();
+    }
+
+    public static List<ProvisionerTarget> provisionersFor(MinecraftServer server, int networkId,
+                                                          String family, String inputGroup)
+    {
+        return BindingSavedData.get(server).forNetwork(networkId).stream()
+                .filter(record -> record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
+                .filter(record -> record.recipeFamilies().contains(family))
+                .filter(record -> record.acceptsInputGroup(family, inputGroup))
+                .map(record -> validProvisionerTarget(server, record)).flatMap(Optional::stream)
+                .sorted(java.util.Comparator.comparing(target -> target.binding().dimension().identifier().toString()
+                        + "|" + target.binding().position().asLong())).toList();
+    }
+
+    public static Map<Identifier, Set<String>> inputGroupsByJeiType(ServerLevel level,
+                                                                    Set<Identifier> jeiTypes)
+    {
+        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
+                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Map<String, Set<String>> byFamily = new HashMap<>();
+        level.recipeAccess().getRecipes().forEach(holder -> {
+            String family = RecipePlanningService.family(holder);
+            Set<String> groups = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                    .inputGroups(holder.value());
+            byFamily.merge(family, groups, DeviceBindingRegistry::mergeInputGroups);
+        });
+        LinkedHashMap<Identifier, Set<String>> result = new LinkedHashMap<>();
+        for (Identifier type : jeiTypes)
+        {
+            Set<String> groups = new HashSet<>();
+            JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families()
+                    .forEach(family -> groups.addAll(byFamily.getOrDefault(family, Set.of())));
+            result.put(type, Set.copyOf(groups));
+        }
+        return Map.copyOf(result);
+    }
+
+    public static Map<Identifier, Set<String>> selectedGroupsByJeiType(
+            ServerLevel level, Set<Identifier> jeiTypes, Map<String, Set<String>> stored)
+    {
+        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
+                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        LinkedHashMap<Identifier, Set<String>> result = new LinkedHashMap<>();
+        for (Identifier type : jeiTypes)
+        {
+            HashSet<String> groups = new HashSet<>();
+            JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families().forEach(family -> {
+                Set<String> values = stored.getOrDefault(family, Set.of());
+                if (!values.contains(BindingRecord.ALL_INPUT_GROUPS)) groups.addAll(values);
+            });
+            result.put(type, Set.copyOf(groups));
+        }
+        return Map.copyOf(result);
+    }
+
+    private static Set<String> mergeInputGroups(Set<String> left, Set<String> right)
+    {
+        if (left.contains(BindingRecord.ALL_INPUT_GROUPS) || right.contains(BindingRecord.ALL_INPUT_GROUPS))
+            return Set.of(BindingRecord.ALL_INPUT_GROUPS);
+        HashSet<String> merged = new HashSet<>(left);
+        merged.addAll(right);
+        return Set.copyOf(merged);
     }
 
     private static Optional<BoundMachine> validMachine(MinecraftServer server, BindingRecord record)
@@ -301,7 +395,7 @@ public final class DeviceBindingRegistry
                 data.replaceProvisionerBinding(record.provisionerDimension(), record.provisionerPosition(),
                         new BindingRecord(record.id(), record.owner(), record.networkId(),
                                 record.provisionerDimension(), record.provisionerPosition(), record.deviceType(),
-                                recipeTypes, recipeFamilies, provisionerId,
+                                recipeTypes, recipeFamilies, record.provisionerInputGroups(), provisionerId,
                                 record.provisionerDimension(), record.provisionerPosition(), record.nickname(),
                                 record.favorite(), record.boundGameTime()));
             }

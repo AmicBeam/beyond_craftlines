@@ -178,6 +178,7 @@ public final class RecipeOrderSavedData extends SavedData
             writeKey(value, input.key(), registries);
             value.putLong("amount", input.amount());
             value.putInt("ingredient_slot", input.ingredientSlot());
+            value.putString("input_group", input.inputGroup());
             inputs.add(value);
         }
         tag.put("inputs", inputs);
@@ -203,7 +204,8 @@ public final class RecipeOrderSavedData extends SavedData
             CompoundTag value = encoded.getCompoundOrEmpty(i);
             inputs.add(new RecipePlan.Material(readKey(value, registries),
                     value.getLongOr("amount", 0L), value.contains("ingredient_slot")
-                    ? value.getIntOr("ingredient_slot", -1) : -1));
+                    ? value.getIntOr("ingredient_slot", -1) : -1,
+                    value.getStringOr("input_group", "ingredients")));
         }
         List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
         ListTag encodedSelections = tag.getListOrEmpty("ingredient_selections");
@@ -241,6 +243,16 @@ public final class RecipeOrderSavedData extends SavedData
         wait.putLong("network_observed", externalWait.networkObserved());
         wait.putLong("amount", externalWait.amount());
         wait.putLong("collected", externalWait.collected());
+        ListTag occupiedMachines = new ListTag();
+        for (RecipeOrderJob.MachineLocation machine : externalWait.occupiedMachines())
+        {
+            CompoundTag encoded = new CompoundTag();
+            encoded.putString("dimension", machine.dimension().identifier().toString());
+            encoded.putLong("position", machine.position().asLong());
+            encoded.putString("input_group", machine.inputGroup());
+            occupiedMachines.add(encoded);
+        }
+        wait.put("occupied_machines", occupiedMachines);
         ListTag networkBaselineStacks = new ListTag();
         for (RecipePlan.ReservedMaterial material : externalWait.networkBaselineStacks())
         {
@@ -257,6 +269,7 @@ public final class RecipeOrderSavedData extends SavedData
             writeKey(encoded, input.key(), registries);
             encoded.putLong("amount", input.amount());
             encoded.putInt("ingredient_slot", input.ingredientSlot());
+            encoded.putString("input_group", input.inputGroup());
             remaining.add(encoded);
         }
         wait.put("remaining_inputs", remaining);
@@ -275,12 +288,28 @@ public final class RecipeOrderSavedData extends SavedData
             CompoundTag input = encoded.getCompoundOrEmpty(i);
             remaining.add(new RecipePlan.Material(readKey(input, registries),
                     input.getLongOr("amount", 0L), input.contains("ingredient_slot")
-                    ? input.getIntOr("ingredient_slot", -1) : -1));
+                    ? input.getIntOr("ingredient_slot", -1) : -1,
+                    input.getStringOr("input_group", "ingredients")));
         }
-        return new RecipeOrderJob.ExternalWait(
+        net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension =
                 net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
-                        Identifier.parse(wait.getStringOr("dimension", "minecraft:overworld"))),
-                net.minecraft.core.BlockPos.of(wait.getLongOr("position", 0L)),
+                        Identifier.parse(wait.getStringOr("dimension", "minecraft:overworld")));
+        net.minecraft.core.BlockPos position = net.minecraft.core.BlockPos.of(wait.getLongOr("position", 0L));
+        List<RecipeOrderJob.MachineLocation> occupiedMachines = new ArrayList<>();
+        ListTag encodedMachines = wait.getListOrEmpty("occupied_machines");
+        for (int i = 0; i < encodedMachines.size(); i++)
+        {
+            CompoundTag encodedMachine = encodedMachines.getCompoundOrEmpty(i);
+            occupiedMachines.add(new RecipeOrderJob.MachineLocation(
+                    net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
+                            Identifier.parse(encodedMachine.getStringOr("dimension", "minecraft:overworld"))),
+                    net.minecraft.core.BlockPos.of(encodedMachine.getLongOr("position", 0L)),
+                    encodedMachine.getStringOr("input_group", "")));
+        }
+        if (occupiedMachines.isEmpty())
+            occupiedMachines.add(new RecipeOrderJob.MachineLocation(dimension, position, ""));
+        return new RecipeOrderJob.ExternalWait(
+                dimension, position,
                 wait.contains("output_key")
                         ? readKey(wait.getCompoundOrEmpty("output_key"), registries)
                         : new ItemStackKey(new net.minecraft.world.item.ItemStack(
@@ -289,7 +318,7 @@ public final class RecipeOrderSavedData extends SavedData
                 wait.getBooleanOr("native_furnace", false), wait.getBooleanOr("provisioner", false), wait.getLongOr("baseline", 0L),
                 wait.getLongOr("network_baseline", 0L), wait.getLongOr("network_observed", 0L), wait.getLongOr("amount", 0L),
                 wait.getLongOr("collected", 0L), remaining, readReservedList(
-                wait, "network_baseline_stacks", registries));
+                wait, "network_baseline_stacks", registries), occupiedMachines);
     }
 
     private static List<RecipePlan.ReservedMaterial> readReserved(CompoundTag job,

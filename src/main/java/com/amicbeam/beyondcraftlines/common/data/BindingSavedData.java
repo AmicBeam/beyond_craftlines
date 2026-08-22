@@ -63,6 +63,18 @@ public final class BindingSavedData extends SavedData
         provisionerRecords(dimension, position).forEach(record -> result.addAll(record.recipeFamilies()));
         return Set.copyOf(result);
     }
+    public Map<String, Set<String>> inputGroupsForProvisioner(ResourceKey<Level> dimension, BlockPos position)
+    {
+        HashMap<String, Set<String>> result = new HashMap<>();
+        provisionerRecords(dimension, position).forEach(record ->
+                record.provisionerInputGroups().forEach((family, groups) ->
+                        result.merge(family, groups, (left, right) -> {
+                            HashSet<String> merged = new HashSet<>(left);
+                            merged.addAll(right);
+                            return Set.copyOf(merged);
+                        })));
+        return Map.copyOf(result);
+    }
     public BindingRecord at(ResourceKey<Level> dimension, BlockPos position)
     {
         return byPosition.get(new BindingKey(dimension, position));
@@ -190,6 +202,18 @@ public final class BindingSavedData extends SavedData
         ListTag jeiTypes = new ListTag();
         record.jeiRecipeTypes().forEach(type -> jeiTypes.add(StringTag.valueOf(type.toString())));
         entry.put("jei_types", jeiTypes);
+        ListTag inputGroups = new ListTag();
+        record.provisionerInputGroups().entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(groupEntry -> {
+                    CompoundTag encoded = new CompoundTag();
+                    encoded.putString("family", groupEntry.getKey());
+                    ListTag groups = new ListTag();
+                    groupEntry.getValue().stream().sorted()
+                            .forEach(group -> groups.add(StringTag.valueOf(group)));
+                    encoded.put("groups", groups);
+                    inputGroups.add(encoded);
+                });
+        entry.put("provisioner_input_groups", inputGroups);
         return entry;
     }
 
@@ -207,6 +231,21 @@ public final class BindingSavedData extends SavedData
                 ResourceLocation type = ResourceLocation.tryParse(jeiTypeList.getString(i));
                 if (type != null) jeiTypes.add(type);
             }
+            Map<String, Set<String>> inputGroups = new HashMap<>();
+            if (entry.contains("provisioner_input_groups", Tag.TAG_LIST))
+            {
+                ListTag encodedGroups = entry.getList("provisioner_input_groups", Tag.TAG_COMPOUND);
+                for (int i = 0; i < encodedGroups.size(); i++)
+                {
+                    CompoundTag encoded = encodedGroups.getCompound(i);
+                    HashSet<String> groups = new HashSet<>();
+                    ListTag values = encoded.getList("groups", Tag.TAG_STRING);
+                    for (int j = 0; j < values.size(); j++) groups.add(values.getString(j));
+                    inputGroups.put(encoded.getString("family"), Set.copyOf(groups));
+                }
+            }
+            else if (readDeviceType(entry.getString("device")) == DeviceType.PROVISIONER_RECIPE_BINDING)
+                families.forEach(family -> inputGroups.put(family, Set.of(BindingRecord.ALL_INPUT_GROUPS)));
             ResourceKey<Level> provisionerDimension = entry.contains("provisioner_dimension", Tag.TAG_STRING)
                     ? ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                     ResourceLocation.parse(entry.getString("provisioner_dimension"))) : null;
@@ -217,7 +256,7 @@ public final class BindingSavedData extends SavedData
                     ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
                             ResourceLocation.parse(entry.getString("dimension"))),
                     new BlockPos(entry.getInt("x"), entry.getInt("y"), entry.getInt("z")),
-                    readDeviceType(entry.getString("device")), jeiTypes, families,
+                    readDeviceType(entry.getString("device")), jeiTypes, families, inputGroups,
                     ResourceLocation.parse(entry.getString("block")), provisionerDimension, provisionerPosition,
                     entry.getString("name"),
                     entry.getBoolean("favorite"), entry.getLong("time"));

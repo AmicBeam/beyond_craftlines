@@ -132,7 +132,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
             long amount = input.amount() - BlockingModeLogic.amountToDispatch(
                     true, input.amount(), current.crafts());
             if (amount > 0) remainingInputs.add(new RecipePlan.Material(
-                    input.key(), amount, input.ingredientSlot()));
+                    input.key(), amount, input.ingredientSlot(), input.inputGroup()));
         }
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,
@@ -213,8 +213,18 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                                long baseline, long networkBaseline, long networkObserved,
                                long amount, long collected,
                                List<RecipePlan.Material> remainingInputs,
-                               List<RecipePlan.ReservedMaterial> networkBaselineStacks)
+                               List<RecipePlan.ReservedMaterial> networkBaselineStacks,
+                               List<MachineLocation> occupiedMachines)
     {
+        public ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,
+                            IStackKey<?> outputKey, boolean nativeFurnace, boolean provisioner,
+                            long baseline, long networkBaseline, long networkObserved,
+                            long amount, long collected, List<RecipePlan.Material> remainingInputs,
+                            List<RecipePlan.ReservedMaterial> networkBaselineStacks)
+        { this(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
+                baseline, networkBaseline, networkObserved, amount, collected, remainingInputs,
+                networkBaselineStacks, List.of(new MachineLocation(machineDimension, machinePosition, ""))); }
+
         public ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,
                             ResourceLocation output, boolean nativeFurnace, boolean provisioner,
                             long baseline, long networkBaseline, long networkObserved,
@@ -233,25 +243,40 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                 throw new IllegalArgumentException("invalid external wait");
             remainingInputs = List.copyOf(remainingInputs);
             networkBaselineStacks = List.copyOf(networkBaselineStacks);
+            occupiedMachines = List.copyOf(occupiedMachines);
+            if (occupiedMachines.isEmpty()) throw new IllegalArgumentException("external wait has no machine");
         }
 
         public ExternalWait withInputs(List<RecipePlan.Material> inputs)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
-                baseline, networkBaseline, networkObserved, amount, collected, inputs, networkBaselineStacks); }
+                baseline, networkBaseline, networkObserved, amount, collected, inputs, networkBaselineStacks,
+                occupiedMachines); }
 
         public ExternalWait withCollected(long value)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
-                baseline, networkBaseline, networkObserved, amount, value, remainingInputs, networkBaselineStacks); }
+                baseline, networkBaseline, networkObserved, amount, value, remainingInputs, networkBaselineStacks,
+                occupiedMachines); }
 
         public ExternalWait withProgress(long observed, long value)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
-                baseline, networkBaseline, observed, amount, value, remainingInputs, networkBaselineStacks); }
+                baseline, networkBaseline, observed, amount, value, remainingInputs, networkBaselineStacks,
+                occupiedMachines); }
 
         public ResourceLocation output()
         {
             if (outputKey instanceof ItemStackKey item)
                 return net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(item.getSource());
             return outputKey.getTypeId();
+        }
+    }
+
+    public record MachineLocation(ResourceKey<Level> dimension, BlockPos position, String inputGroup)
+    {
+        public MachineLocation
+        {
+            if (dimension == null || position == null || inputGroup == null)
+                throw new IllegalArgumentException("invalid machine location");
+            position = position.immutable();
         }
     }
 }

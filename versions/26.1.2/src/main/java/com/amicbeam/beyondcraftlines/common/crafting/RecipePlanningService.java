@@ -316,7 +316,8 @@ public final class RecipePlanningService
             boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
             long inputAmount = reusable ? choice.amount()
                     : SaturatingLongMath.multiply(crafts, choice.amount());
-            inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot()));
+            inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
+                    ingredient.inputGroup()));
             resolve(level, choice.key(), inputAmount, ingredient.itemIngredient(), byOutput,
                     visiting, state, overrides, mode, depth + 1, maxDepth, budget);
         }

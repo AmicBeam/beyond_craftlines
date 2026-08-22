@@ -41,12 +41,15 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
                 BindingVisualsPayload.broadcast(serverPlayer.serverLevel());
             }
             var configured = selected;
+            var availableGroups = DeviceBindingRegistry.inputGroupsByJeiType(serverPlayer.serverLevel(), candidates);
+            var selectedGroups = DeviceBindingRegistry.selectedGroupsByJeiType(serverPlayer.serverLevel(), candidates,
+                    BindingSavedData.get(serverPlayer.getServer()).inputGroupsForProvisioner(level.dimension(), pos));
             serverPlayer.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new ProvisionerConfigMenu(id, inventory, pos, candidates, configured),
+                    new ProvisionerConfigMenu(id, inventory, pos, candidates, configured,
+                            availableGroups, selectedGroups),
                     Component.translatable("menu.beyond_craftlines.provisioner")), buffer -> {
-                        buffer.writeBlockPos(pos);
-                        ProvisionerConfigMenu.writeTypes(buffer, candidates);
-                        ProvisionerConfigMenu.writeTypes(buffer, configured);
+                        ProvisionerConfigMenu.writeOptions(buffer, pos, candidates, configured,
+                                availableGroups, selectedGroups);
                     });
         }
         return InteractionResult.sidedSuccess(level.isClientSide());

@@ -21,6 +21,7 @@ import java.util.function.Predicate;
 /** Resolves item and non-item recipe inputs into Beyond Dimensions' native resource keys. */
 public final class RecipeResourceResolver
 {
+    public static final String VANILLA_INPUT_GROUP = "ingredients";
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
@@ -28,6 +29,12 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredients(Recipe<?> recipe)
     { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolve); }
+
+    public static Set<String> inputGroups(Recipe<?> recipe)
+    {
+        return ingredients(recipe).stream().map(ResourceIngredient::inputGroup)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
@@ -125,7 +132,8 @@ public final class RecipeResourceResolver
                 for (ItemStack stack : ingredient.items().map(ItemStack::new).toList())
                     if (!stack.isEmpty()) candidates.add(new KeyAmount(
                             new ItemStackKey(stack.copyWithCount(1)), Math.max(1, stack.getCount())));
-                if (!candidates.isEmpty()) result.add(new ResourceIngredient(slot, candidates, ingredient));
+                if (!candidates.isEmpty()) result.add(new ResourceIngredient(
+                        slot, candidates, ingredient, VANILLA_INPUT_GROUP));
                 slot++;
             }
 
@@ -154,7 +162,8 @@ public final class RecipeResourceResolver
                     if (candidates.isEmpty()) continue;
                     seen.add(input);
                     if (canonicalSignatures.contains(signature(candidates))) continue;
-                    result.add(new ResourceIngredient(slot++, candidates, ingredient));
+                    result.add(new ResourceIngredient(slot++, candidates, ingredient,
+                            CountedInputReflection.inputGroup(methodName)));
                     continue;
                 }
 
@@ -172,7 +181,8 @@ public final class RecipeResourceResolver
                 if (candidates.isEmpty()) continue;
                 seen.add(input);
                 if (canonicalSignatures.contains(signature(List.copyOf(candidates.values())))) continue;
-                result.add(new ResourceIngredient(slot++, List.copyOf(candidates.values()), null));
+                result.add(new ResourceIngredient(slot++, List.copyOf(candidates.values()), null,
+                        CountedInputReflection.inputGroup(methodName)));
             }
         }
         return List.copyOf(result);
@@ -206,11 +216,13 @@ public final class RecipeResourceResolver
         catch (ReflectiveOperationException | RuntimeException ignored) { return null; }
     }
 
-    public record ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient)
+    public record ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient,
+                                     String inputGroup)
     {
         public ResourceIngredient
         {
-            if (slot < 0 || candidates == null || candidates.isEmpty())
+            if (slot < 0 || candidates == null || candidates.isEmpty()
+                    || inputGroup == null || inputGroup.isBlank())
                 throw new IllegalArgumentException("invalid resource ingredient");
             candidates = List.copyOf(candidates);
         }

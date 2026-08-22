@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -49,6 +50,14 @@ final class CountedInputReflection
             "offerings", "getOfferings");
 
     private CountedInputReflection() {}
+
+    /** Stable, protocol-safe name for the logical input section exposed by an accessor. */
+    static String inputGroup(String methodName)
+    {
+        String value = methodName.startsWith("get") && methodName.length() > 3
+                ? Character.toLowerCase(methodName.charAt(3)) + methodName.substring(4) : methodName;
+        return value.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
+    }
 
     static List<?> flatten(Object value)
     {

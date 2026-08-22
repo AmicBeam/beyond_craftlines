@@ -50,6 +50,8 @@ public final class CraftlinesNetwork {
         client(PlanningSnapshotPayload.class, PlanningSnapshotPayload.STREAM_CODEC, PlanningSnapshotPayload::handle);
         client(PlannerPreferencesPayload.class, PlannerPreferencesPayload.STREAM_CODEC, PlannerPreferencesPayload::handle);
         client(BindingVisualsPayload.class, BindingVisualsPayload.STREAM_CODEC, BindingVisualsPayload::handle);
+        client(BindMachineFeedbackPayload.class, BindMachineFeedbackPayload.STREAM_CODEC,
+                BindMachineFeedbackPayload::handle);
         client(JeiNetworkAvailabilityPayload.class, JeiNetworkAvailabilityPayload.STREAM_CODEC,
                 JeiNetworkAvailabilityPayload::handle);
     }

@@ -133,11 +133,13 @@ def prepareVersionResources = tasks.register('prepareVersionResources', Sync) {
                 .replace('/recipe/', '/recipes/')
                 .replace('/loot_table/', '/loot_tables/')
     }
-    filter { line -> line
-            .replace('"id": "beyond_craftlines:', '"item": "beyond_craftlines:')
-            .replace('"c:ingots/iron"', '"forge:ingots/iron"')
-            .replace('"c:dusts/redstone"', '"forge:dusts/redstone"')
-            .replace('"c:chests/wooden"', '"forge:chests/wooden"')
+    filesMatching('data/**/*.json') {
+        filter { line -> line
+                .replace('"id": "beyond_craftlines:', '"item": "beyond_craftlines:')
+                .replace('"c:ingots/iron"', '"forge:ingots/iron"')
+                .replace('"c:dusts/redstone"', '"forge:dusts/redstone"')
+                .replace('"c:chests/wooden"', '"forge:chests/wooden"')
+        }
     }
 }
 tasks.named('prepareVersionResources') {

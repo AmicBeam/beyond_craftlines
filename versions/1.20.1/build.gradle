@@ -40,6 +40,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('ResourceLocation.fromNamespaceAndPath(', 'new ResourceLocation(')
             .replace('ResourceLocation.parse(', 'new ResourceLocation(')
             .replace('net.minecraft.resources.new ResourceLocation(', 'new net.minecraft.resources.ResourceLocation(')
+            .replace('BeyondCraftlines.MOD_ID, "widget/crafting_status"',
+                    'BeyondCraftlines.MOD_ID, "textures/gui/sprites/widget/crafting_status.png"')
             .replace('ItemStack.isSameItemSameComponents(', 'ItemStack.isSameItemSameTags(')
             .replace('IStackKey.STREAM_CODEC', 'com.amicbeam.beyondcraftlines.compat.ForgePayloadCodecs.STACK_KEY')
             .replace('UUIDUtil.STREAM_CODEC', 'com.amicbeam.beyondcraftlines.compat.ForgePayloadCodecs.UUID')

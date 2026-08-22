@@ -85,7 +85,10 @@ public final class CraftlinesClientEvents
         { ClientBindingVisuals.render(event); }
 
         @SubscribeEvent public static void recipesUpdated(RecipesUpdatedEvent event)
-        { com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache(); }
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
+            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
+        }
 
         @SubscribeEvent public static void addStatusButton(ScreenEvent.Init.Post event)
         {

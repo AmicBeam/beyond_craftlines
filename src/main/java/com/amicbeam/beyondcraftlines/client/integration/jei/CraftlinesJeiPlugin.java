@@ -161,10 +161,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         @Override
         public boolean onPress(IJeiUserInput input)
         {
-            if (!isOrderButtonAvailable()) return false;
-            if (!input.isSimulate())
-                PacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                        target, recipe.toString(), recipeType.toString()));
+            // JEI first simulates input routing and then performs the click. Visibility and activity are
+            // already refreshed every tick; re-running the asynchronous network check here can make the
+            // real click lose a race with its own availability response on Forge 1.20.1.
+            if (!input.isSimulate()) PacketDistributor.sendToServer(new OpenOrderMenuPayload(
+                    target, recipe.toString(), recipeType.toString()));
             return true;
         }
 

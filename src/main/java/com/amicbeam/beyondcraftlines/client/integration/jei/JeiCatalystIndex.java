@@ -17,11 +17,13 @@ public final class JeiCatalystIndex
 {
     private static volatile Map<ResourceLocation, Set<ResourceLocation>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<ResourceLocation, Component> TITLES_BY_TYPE = Map.of();
+    private static volatile IJeiRuntime runtime;
 
     private JeiCatalystIndex() {}
 
     public static void rebuild(IJeiRuntime runtime)
     {
+        JeiCatalystIndex.runtime = runtime;
         Map<ResourceLocation, LinkedHashSet<ResourceLocation>> building = new HashMap<>();
         Map<ResourceLocation, Component> titles = new HashMap<>();
         var manager = runtime.getRecipeManager();
@@ -40,10 +42,23 @@ public final class JeiCatalystIndex
         TITLES_BY_TYPE = Map.copyOf(titles);
     }
 
+    public static void refresh()
+    {
+        IJeiRuntime current = runtime;
+        if (current != null) rebuild(current);
+    }
+
     public static Set<ResourceLocation> recipeTypesFor(ItemStack catalyst)
     {
         if (catalyst.isEmpty()) return Set.of();
-        return TYPES_BY_CATALYST.getOrDefault(BuiltInRegistries.ITEM.getKey(catalyst.getItem()), Set.of());
+        ResourceLocation item = BuiltInRegistries.ITEM.getKey(catalyst.getItem());
+        Set<ResourceLocation> types = TYPES_BY_CATALYST.get(item);
+        if (types != null) return types;
+
+        // A recipe reload can complete after JEI first publishes its runtime. Rebuild once at the
+        // point of use so machine binding and provisioner scans do not remain stuck with that stale snapshot.
+        refresh();
+        return TYPES_BY_CATALYST.getOrDefault(item, Set.of());
     }
 
     public static Optional<Component> recipeTypeTitle(ResourceLocation type)
@@ -53,6 +68,7 @@ public final class JeiCatalystIndex
 
     public static void clear()
     {
+        runtime = null;
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
     }

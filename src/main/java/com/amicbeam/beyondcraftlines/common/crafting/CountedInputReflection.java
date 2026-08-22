@@ -31,6 +31,7 @@ final class CountedInputReflection
             "middleInput", "getMiddleInput",
             "primaryInput", "getPrimaryInput", "primaryInputs", "getPrimaryInputs",
             "main", "getMain", "mainInput", "getMainInput",
+            "activationItem", "getActivationItem",
             "extraInput", "getExtraInput", "extraInputs", "getExtraInputs",
             "secondaryInput", "getSecondaryInput", "secondaryInputs", "getSecondaryInputs",
             "itemInput", "getItemInput", "itemInputs", "getItemInputs",

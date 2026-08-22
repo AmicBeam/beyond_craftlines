@@ -109,6 +109,13 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void discoversGoetyRitualActivationItem()
+    {
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("activationItem"));
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getActivationItem"));
+    }
+
+    @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
         assertFalse(CountedInputReflection.INPUT_METHODS.stream()

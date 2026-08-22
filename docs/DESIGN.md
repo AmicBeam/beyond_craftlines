@@ -16,7 +16,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 | 支持矩阵 | `1.20.1` / Forge 47 / Java 17；`1.21.1` / NeoForge 21.1 / Java 21；`26.1.2` / NeoForge 26.1.2 / Java 25 |
 | 必需依赖 | 各版本对应的 Beyond Dimensions 与 JEI 构建，具体版本见各自 `gradle.properties` |
 | 可选显示联动 | Jade |
-| 当前版本 | `0.1.1` |
+| 当前版本 | `0.1.2` |
 
 本模组不再包含构象捕获、测试维、沙盒试产、试产报告、稳态产线、图纸复制或相关命令。这些内容不属于当前 JAR。
 
@@ -392,9 +392,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 产物分别位于：
 
 ```text
-versions/1.20.1/build/libs/beyond_craftlines-0.1.1+1.20.1.jar
-build/libs/beyond_craftlines-0.1.1+1.21.1.jar
-versions/26.1.2/build/libs/beyond_craftlines-0.1.1+26.1.2.jar
+versions/1.20.1/build/libs/beyond_craftlines-0.1.2+1.20.1.jar
+build/libs/beyond_craftlines-0.1.2+1.21.1.jar
+versions/26.1.2/build/libs/beyond_craftlines-0.1.2+26.1.2.jar
 ```
 
 当前纯单元测试覆盖：

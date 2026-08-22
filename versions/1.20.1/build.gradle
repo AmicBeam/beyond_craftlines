@@ -113,6 +113,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('.setOverlay(', '.overlayCoords(')
             .replace('.setLight(', '.uv2(')
             .replace('.setNormal(pose,', '.normal(pose.normal(),')
+            .replace('.normal(pose.normal(), normalX, normalY, normalZ);',
+                    '.normal(pose.normal(), normalX, normalY, normalZ).endVertex();')
             .replace('location.id().equals(PROVISIONER)', 'new ResourceLocation(location.getNamespace(), location.getPath()).equals(PROVISIONER)')
             .replace('location.variant()', 'location.getVariant()')
             .replace('(RegistryFriendlyByteBuf) data', 'new RegistryFriendlyByteBuf(data)')

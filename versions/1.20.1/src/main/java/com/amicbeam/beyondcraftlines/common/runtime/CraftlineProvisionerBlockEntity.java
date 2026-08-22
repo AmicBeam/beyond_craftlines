@@ -105,5 +105,9 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
         targetItemIcon = ItemStack.of(tag.getCompound("target_item_icon"));
         if (targetItemIcon.isEmpty() && targetBlockIcon != null) targetItemIcon = new ItemStack(BuiltInRegistries.BLOCK.get(targetBlockIcon));
         requestModelDataUpdate();
+        if (level != null && level.isClientSide()) {
+            BlockState state = getBlockState();
+            level.sendBlockUpdated(worldPosition, state, state, Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
+        }
     }
 }

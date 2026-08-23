@@ -14,6 +14,10 @@ public final class RecipeManagerCompat {
                 .sorted(java.util.Comparator.comparing(value -> value.id().toString())).toList();
     }
 
+    public static List<RecipeHolder<?>> unordered(RecipeManager manager) {
+        return manager.getRecipes().stream().map(RecipeManagerCompat::holder).toList();
+    }
+
     public static java.util.Optional<RecipeHolder<?>> byKey(RecipeManager manager, ResourceLocation id) {
         return manager.byKey(id).map(recipe -> new RecipeHolder<>(id, recipe));
     }

@@ -27,7 +27,7 @@ public final class RecipePlanningService
 
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
-        return VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager -> manager.getOrderedRecipes().stream()
+        return VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager -> manager.getRecipes().stream()
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> !RecipeOutputResolver.outputs(
                         holder.value(), level.registryAccess()).isEmpty())

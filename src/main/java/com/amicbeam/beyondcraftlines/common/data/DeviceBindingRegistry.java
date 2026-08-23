@@ -65,7 +65,7 @@ public final class DeviceBindingRegistry
         ResourceLocation blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (!DeviceType.isBindableMachine(blockId.toString()) || level.getBlockEntity(position) == null)
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
-        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+        Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         var resolved = JeiRecipeFamilyRegistry.resolve(jeiTypes, loadedFamilies);
         if (resolved.isEmpty()) return BindAttempt.failure(BindFailure.UNSUPPORTED_RECIPE_TYPE);
@@ -140,7 +140,7 @@ public final class DeviceBindingRegistry
         if (!blockId.equals(existing.lastBlockId()) || !BoundMachineAutomation.isAutomatable(level, position))
             return false;
 
-        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+        Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
         if ((!selectedTypes.isEmpty() && resolved.isEmpty())
@@ -173,7 +173,7 @@ public final class DeviceBindingRegistry
             data.removeForProvisioner(level.dimension(), position);
             return true;
         }
-        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+        Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
         if (resolved.isEmpty() || resolved.jeiTypes().size() != selectedTypes.size()) return false;
@@ -308,7 +308,8 @@ public final class DeviceBindingRegistry
     public static Map<ResourceLocation, Set<String>> inputGroupsByJeiType(ServerLevel level,
                                                                           Set<ResourceLocation> jeiTypes)
     {
-        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+        var recipes = level.getRecipeManager().getRecipes();
+        Set<String> loadedFamilies = recipes.stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         LinkedHashMap<ResourceLocation, Set<String>> familiesByType = new LinkedHashMap<>();
         Set<String> relevantFamilies = new HashSet<>();
@@ -319,7 +320,7 @@ public final class DeviceBindingRegistry
             relevantFamilies.addAll(families);
         }
         Map<String, Set<String>> byFamily = new HashMap<>();
-        level.getRecipeManager().getOrderedRecipes().forEach(holder -> {
+        recipes.forEach(holder -> {
             String family = RecipePlanningService.family(holder);
             if (!relevantFamilies.contains(family)) return;
             Set<String> groups = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
@@ -340,7 +341,7 @@ public final class DeviceBindingRegistry
     public static Map<ResourceLocation, Set<String>> selectedGroupsByJeiType(
             ServerLevel level, Set<ResourceLocation> jeiTypes, Map<String, Set<String>> stored)
     {
-        Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+        Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
         LinkedHashMap<ResourceLocation, Set<String>> result = new LinkedHashMap<>();
         for (ResourceLocation type : jeiTypes)

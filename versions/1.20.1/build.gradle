@@ -55,6 +55,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace(', net.minecraft.world.item.Item.TooltipContext.of(minecraft.level)', '')
             .replace('manager.getOrderedRecipes()', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.ordered(manager)')
             .replace('level.getRecipeManager().getOrderedRecipes()', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.ordered(level.getRecipeManager())')
+            .replace('manager.getRecipes()', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.unordered(manager)')
+            .replace('level.getRecipeManager().getRecipes()', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.unordered(level.getRecipeManager())')
             .replace('level.getRecipeManager().byKey(', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.byKey(level.getRecipeManager(), ')
             .replace('.getFirst()', '.get(0)')
             .replace('node.children.getLast()', 'node.children.get(node.children.size() - 1)')

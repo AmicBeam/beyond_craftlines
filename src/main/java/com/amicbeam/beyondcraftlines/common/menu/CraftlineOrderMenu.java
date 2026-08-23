@@ -56,7 +56,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             this.recipeIndex = RECIPE_INDEX_CACHE
                     .computeIfAbsent(level.getRecipeManager(), ignored -> new LinkedHashMap<>())
                     .computeIfAbsent(this.availableFamilies, ignored -> new RecipeIndex(
-                            level.getRecipeManager().getOrderedRecipes().stream()
+                            level.getRecipeManager().getRecipes().stream()
                                     .sorted(java.util.Comparator.comparing(holder -> holder.id().toString())).toList(), level,
                             this.availableFamilies));
         }

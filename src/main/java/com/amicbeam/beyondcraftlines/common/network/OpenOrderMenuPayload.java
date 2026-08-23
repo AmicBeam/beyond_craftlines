@@ -58,24 +58,44 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
             var level = player.level();
-            var candidates = requestedRecipe == null
+            var candidates = (requestedRecipe == null
                     ? level.getRecipeManager().getOrderedRecipes().stream()
-                    : level.getRecipeManager().byKey(requestedRecipe).stream();
-            var recipe = candidates
-                    .filter(RecipePlanningService::supported)
-                    .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
-                            || availableFamilies.contains(RecipePlanningService.family(holder)))
-                    .filter(holder -> RecipeOutputResolver.outputs(holder.value(), level.registryAccess())
-                            .stream().anyMatch(output -> target.isSame(output.key())))
-                    .findFirst().orElse(null);
+                    : level.getRecipeManager().byKey(requestedRecipe).stream()).toList();
+            if (candidates.isEmpty())
+            {
+                reject(player, payload, "not_loaded", "error.beyond_craftlines.order_recipe_not_loaded",
+                        payload.recipeId());
+                return;
+            }
+            var supported = candidates.stream().filter(RecipePlanningService::supported).toList();
+            if (supported.isEmpty())
+            {
+                reject(player, payload, "unsupported_structure",
+                        "error.beyond_craftlines.order_recipe_unsupported_structure", payload.recipeId());
+                return;
+            }
+            var familyAvailable = supported.stream().filter(holder -> {
+                String family = RecipePlanningService.family(holder);
+                return "crafting".equals(family) || availableFamilies.contains(family);
+            }).toList();
+            if (familyAvailable.isEmpty())
+            {
+                String family = RecipePlanningService.family(supported.getFirst());
+                reject(player, payload, "family_unavailable",
+                        "error.beyond_craftlines.order_recipe_family_unavailable", family);
+                return;
+            }
+            var recipe = familyAvailable.stream().filter(holder -> RecipeOutputResolver
+                    .outputs(holder.value(), level.registryAccess()).stream()
+                    .anyMatch(output -> target.isSame(output.key()))).findFirst().orElse(null);
             // The JEI category id is presentation metadata, not an execution capability. A single
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be
             // inferred generically. The recipe id, actual server family, network binding and selected
             // output above are the authoritative checks.
             if (recipe == null)
             {
-                player.displayClientMessage(Component.translatable(
-                        "error.beyond_craftlines.invalid_order_recipe"), false);
+                reject(player, payload, "output_mismatch",
+                        "error.beyond_craftlines.order_recipe_output_mismatch", payload.recipeId());
                 return;
             }
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
@@ -88,6 +108,16 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);
                     });
         });
+    }
+
+    private static void reject(ServerPlayer player, OpenOrderMenuPayload payload, String gate,
+                               String translation, Object detail)
+    {
+        org.slf4j.LoggerFactory.getLogger(BeyondCraftlines.MOD_ID).warn(
+                "Rejected JEI order at gate {}: recipe={}, jeiType={}, targetType={}", gate,
+                payload.recipeId(), payload.jeiRecipeType(),
+                payload.target() == null ? "null" : payload.target().getTypeId());
+        player.displayClientMessage(Component.translatable(translation, detail), false);
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

@@ -16,7 +16,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 | 支持矩阵 | `1.20.1` / Forge 47 / Java 17；`1.21.1` / NeoForge 21.1 / Java 21；`26.1.2` / NeoForge 26.1.2 / Java 25 |
 | 必需依赖 | 各版本对应的 Beyond Dimensions 与 JEI 构建，具体版本见各自 `gradle.properties` |
 | 可选显示联动 | Jade |
-| 当前版本 | `0.1.3` |
+| 当前版本 | `0.1.4` |
 
 本模组不再包含构象捕获、测试维、沙盒试产、试产报告、稳态产线、图纸复制或相关命令。这些内容不属于当前 JAR。
 
@@ -128,7 +128,7 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络联结器
 - 存在非空物品产出；
 - `crafting` 配方，或其配方族在当前网络具有可用执行端点。
 
-可见配方按配方 ID 排序并按 `RecipeManager` 弱引用缓存；数据包同步和客户端配方更新时清空缓存。
+可见配方按配方 ID 排序并按 `RecipeManager` 弱引用缓存；数据包同步和客户端配方更新时清空缓存。JEI 下单优先使用展示配方对象或配方持有者自身的稳定 ID，分类提供的展示/书签 ID 仅作后备；服务端分别诊断配方未同步、输入结构不支持、配方族不可用和产物不匹配，避免用同一句错误掩盖不同兼容问题。
 
 ### 5.2 配方族
 
@@ -399,9 +399,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 产物分别位于：
 
 ```text
-versions/1.20.1/build/libs/beyond_craftlines-0.1.3+1.20.1.jar
-build/libs/beyond_craftlines-0.1.3+1.21.1.jar
-versions/26.1.2/build/libs/beyond_craftlines-0.1.3+26.1.2.jar
+versions/1.20.1/build/libs/beyond_craftlines-0.1.4+1.20.1.jar
+build/libs/beyond_craftlines-0.1.4+1.21.1.jar
+versions/26.1.2/build/libs/beyond_craftlines-0.1.4+26.1.2.jar
 ```
 
 当前纯单元测试覆盖：

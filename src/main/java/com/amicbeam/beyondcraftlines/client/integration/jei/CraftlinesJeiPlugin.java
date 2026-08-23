@@ -132,7 +132,29 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     private static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)
     {
-        return layout.getRecipeCategory().getRegistryName(layout.getRecipe());
+        Object displayedRecipe = layout.getRecipe();
+        ResourceLocation intrinsic = intrinsicRecipeId(displayedRecipe);
+        return intrinsic != null ? intrinsic : layout.getRecipeCategory().getRegistryName(layout.getRecipe());
+    }
+
+    /**
+     * JEI categories may assign a presentation or bookmark id that is not the id used by the
+     * server RecipeManager. Prefer an identity carried by the displayed recipe/holder itself and
+     * keep the category id only as a fallback for JEI-native recipes.
+     */
+    private static @Nullable ResourceLocation intrinsicRecipeId(Object recipe)
+    {
+        if (recipe == null) return null;
+        for (String accessor : java.util.List.of("id", "getId"))
+            try
+            {
+                var method = recipe.getClass().getMethod(accessor);
+                if (method.getParameterCount() != 0) continue;
+                Object value = method.invoke(recipe);
+                if (value instanceof ResourceLocation id) return id;
+            }
+            catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+        return null;
     }
 
     private static boolean hasDimensionsNetContext()

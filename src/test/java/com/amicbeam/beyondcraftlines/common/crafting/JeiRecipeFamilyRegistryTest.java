@@ -35,6 +35,23 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
+    void createBasinPackingCategoryMapsToCompactingRecipeType()
+    {
+        var result = JeiRecipeFamilyMappings.resolve(
+                Set.of("create:mixing", "create:packing", "create:basin"),
+                Set.of("create:mixing", "create:compacting"));
+        assertEquals(Set.of("create:mixing", "create:packing"), result.jeiTypes());
+        assertEquals(Set.of("create:mixing", "create:compacting"), result.families());
+    }
+
+    @Test
+    void createPackingCategoryIsRejectedWithoutCompactingRecipeType()
+    {
+        assertTrue(JeiRecipeFamilyMappings.resolve(
+                Set.of("create:packing"), Set.of("create:mixing")).isEmpty());
+    }
+
+    @Test
     void mekanismMachineCategoriesMapToServerProcessTypes()
     {
         var result = JeiRecipeFamilyMappings.resolve(

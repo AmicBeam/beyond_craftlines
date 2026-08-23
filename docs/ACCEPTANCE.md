@@ -4,7 +4,7 @@
 `create:basin` 催化剂通常会被 JEI 同时登记到以下配方类型：
 
 - `create:mixing`：搅拌；
-- `create:compacting`：压块。
+- `create:packing`：压块，对应服务端 `create:compacting` 配方族。
 
 界面显示文本会随机器模组/JEI 语言包变化，验收时以 JEI 当前登记结果为准。三个支持版本
 都必须执行本验收；若对应版本提供 Create 工作盆，则预期至少出现“搅拌”和“压块”两项，
@@ -64,7 +64,7 @@
 
 - GUI 中出现工作盆经 JEI 识别得到的候选类型；
 - Create 6.0.9 标准环境中至少包含“搅拌”和“压块”，对应 UID 分别为
-  `create:mixing` 和 `create:compacting`；
+  `create:mixing` 和 `create:packing`；后者必须解析为服务端 `create:compacting` 配方族；
 - 新出现的候选项默认未启用，扫描动作本身不会自动让供给器承接这些配方；
 - 除已扫描候选外，不能创建或填写其他类型。
 
@@ -98,7 +98,7 @@
 - 再次打开 GUI 后，“搅拌”保持勾选，“压块”保持未勾选；
 - Jade 只显示已启用的“搅拌”，不显示仅作为候选存在的“压块”；
 - Craftlines 将该供给器视为 `create:mixing` 的可用供给端点；
-- Craftlines 不会将该供给器视为 `create:compacting` 的可用供给端点。
+- Craftlines 不会将该供给器视为 JEI `create:packing`（服务端 `create:compacting`）的可用供给端点。
 
 ## 6. 手动确认多个配方类型
 
@@ -111,7 +111,8 @@
 
 - 两个选项均保持勾选；
 - Jade 同时显示“搅拌”和“压块”；
-- 供给器可同时作为 `create:mixing` 和 `create:compacting` 的供给端点。
+- 供给器可同时作为 JEI `create:mixing` 和 `create:packing` 的供给端点，后者承接
+  `create:compacting` 配方族。
 
 ## 6.1 多材料组筛选
 

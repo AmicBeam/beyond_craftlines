@@ -14,6 +14,11 @@ public final class JeiRecipeFamilyMappings
         {
             case "minecraft:furnace" -> "smelting";
             case "minecraft:campfire" -> "campfire_cooking";
+            // Create calls its compacting JEI category "packing", while the recipes are backed
+            // by the create:compacting server RecipeType. The Basin is a catalyst for both this
+            // category and create:mixing, so omitting the alias silently drops compacting when a
+            // Basin is scanned.
+            case "create:packing" -> "create:compacting";
             case "mekanism:crusher" -> "mekanism:crushing";
             case "mekanism:enrichment_chamber" -> "mekanism:enriching";
             case "mekanism:energized_smelter" -> "mekanism:smelting";

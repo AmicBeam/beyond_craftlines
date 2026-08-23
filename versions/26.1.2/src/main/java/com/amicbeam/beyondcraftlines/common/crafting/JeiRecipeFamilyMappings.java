@@ -40,6 +40,9 @@ public final class JeiRecipeFamilyMappings
             // Mekanism exposes the two rotary directions as separate JEI categories,
             // while both are backed by the same server-side RecipeType.
             case "mekanism:condensentrating", "mekanism:decondensentrating" -> "mekanism:rotary";
+            // Ars Nouveau names the JEI category after its apparatus while the
+            // corresponding server recipe type is named after the process.
+            case "ars_nouveau:enchantment_apparatus" -> "ars_nouveau:enchantment";
             default -> jeiType.startsWith("minecraft:")
                     ? jeiType.substring("minecraft:".length()) : jeiType;
         };

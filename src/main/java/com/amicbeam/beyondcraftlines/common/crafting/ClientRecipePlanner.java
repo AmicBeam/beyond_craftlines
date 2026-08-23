@@ -29,7 +29,7 @@ public final class ClientRecipePlanner
 {
     /** Wall-clock window shared by the preferred and fallback candidate searches. */
     public static final long SEARCH_TIME_LIMIT_NANOS = 3_000_000_000L;
-    private static final Map<RecipeManager, Map<CatalogKey, Catalog>> CATALOG_CACHE =
+    private static final Map<RecipeManager, Map<ResourceLocation, List<Recipe>>> CATALOG_CACHE =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private ClientRecipePlanner() {}
 
@@ -42,13 +42,11 @@ public final class ClientRecipePlanner
 
     public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders)
     {
-        CatalogKey key = new CatalogKey(holders.stream().map(RecipeHolder::id).toList());
         synchronized (CATALOG_CACHE)
         {
-            Map<CatalogKey, Catalog> catalogs = CATALOG_CACHE.computeIfAbsent(
+            Map<ResourceLocation, List<Recipe>> recipes = CATALOG_CACHE.computeIfAbsent(
                     level.getRecipeManager(), ignored -> new HashMap<>());
-            Catalog cached = catalogs.get(key);
-            return new CatalogBuilder(level, holders, key, cached);
+            return new CatalogBuilder(level, holders, recipes);
         }
     }
 
@@ -349,25 +347,37 @@ public final class ClientRecipePlanner
     }
 
     public record Catalog(List<Recipe> recipes) { public Catalog { recipes = List.copyOf(recipes); } }
-    private record CatalogKey(List<ResourceLocation> recipes)
-    { private CatalogKey { recipes = List.copyOf(recipes); } }
 
     public static final class CatalogBuilder
     {
         private final Level level;
+        private final List<RecipeHolder<?>> allHolders;
         private final List<RecipeHolder<?>> holders;
-        private final CatalogKey key;
-        private final List<Recipe> recipes = new ArrayList<>();
+        private final Map<ResourceLocation, List<Recipe>> captures = new HashMap<>();
+        private final int total;
         private int next;
+        private int completed;
         private Catalog catalog;
 
-        private CatalogBuilder(Level level, List<RecipeHolder<?>> holders, CatalogKey key, Catalog cached)
+        private CatalogBuilder(Level level, List<RecipeHolder<?>> holders,
+                               Map<ResourceLocation, List<Recipe>> cached)
         {
             this.level = level;
-            this.holders = List.copyOf(holders);
-            this.key = key;
-            this.catalog = cached;
-            if (cached != null) next = holders.size();
+            this.allHolders = List.copyOf(holders);
+            this.total = holders.size();
+            List<RecipeHolder<?>> missing = new ArrayList<>();
+            for (RecipeHolder<?> holder : holders)
+            {
+                List<Recipe> captured = cached.get(holder.id());
+                if (captured == null) missing.add(holder);
+                else
+                {
+                    captures.put(holder.id(), captured);
+                    completed++;
+                }
+            }
+            this.holders = List.copyOf(missing);
+            if (this.holders.isEmpty()) finishCatalog();
         }
 
         public void advance(int recipeBudget)
@@ -382,23 +392,32 @@ public final class ClientRecipePlanner
             long started = System.nanoTime();
             while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
             {
-                recipes.addAll(captureRecipes(level, holders.get(next++)));
-                processed++;
-            }
-            if (next == holders.size())
-            {
-                catalog = new Catalog(recipes);
+                RecipeHolder<?> holder = holders.get(next++);
+                List<Recipe> captured = List.copyOf(captureRecipes(level, holder));
+                captures.put(holder.id(), captured);
                 synchronized (CATALOG_CACHE)
                 {
                     CATALOG_CACHE.computeIfAbsent(level.getRecipeManager(), ignored -> new HashMap<>())
-                            .put(key, catalog);
+                            .putIfAbsent(holder.id(), captured);
                 }
+                completed++;
+                processed++;
             }
+            if (next == holders.size())
+                finishCatalog();
+        }
+
+        private void finishCatalog()
+        {
+            List<Recipe> ordered = new ArrayList<>();
+            for (RecipeHolder<?> holder : allHolders)
+                ordered.addAll(captures.getOrDefault(holder.id(), List.of()));
+            catalog = new Catalog(ordered);
         }
 
         public boolean complete() { return catalog != null; }
-        public int completedRecipes() { return next; }
-        public int totalRecipes() { return holders.size(); }
+        public int completedRecipes() { return completed; }
+        public int totalRecipes() { return total; }
         public Catalog catalog()
         {
             if (catalog == null) throw new IllegalStateException("recipe catalog is still building");

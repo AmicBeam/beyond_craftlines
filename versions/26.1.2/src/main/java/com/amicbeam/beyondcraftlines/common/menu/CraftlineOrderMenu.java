@@ -16,6 +16,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import net.minecraft.server.level.ServerLevel;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -27,7 +28,7 @@ import java.util.WeakHashMap;
 
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
-    private static final Map<Object, Map<Set<String>, RecipeIndex>> RECIPE_INDEX_CACHE = new WeakHashMap<>();
+    private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private final Player player;
     private final int networkId;
     private final IStackKey<?> initialTarget;
@@ -52,14 +53,13 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialRecipe = initialRecipe;
         this.availableFamilies = Set.copyOf(availableFamilies);
         var level = player.level();
-        Object source = level.isClientSide() ? RecipeCatalog.class : level;
+        Object source = level instanceof ServerLevel serverLevel ? serverLevel.recipeAccess() : RecipeCatalog.class;
         List<RecipeHolder<?>> candidates = RecipeCatalog.forLevel(level).stream()
                 .sorted(java.util.Comparator.comparing(holder -> holder.id().identifier().toString())).toList();
         synchronized (RECIPE_INDEX_CACHE)
         {
-            this.recipeIndex = RECIPE_INDEX_CACHE.computeIfAbsent(source, ignored -> new LinkedHashMap<>())
-                    .computeIfAbsent(this.availableFamilies, ignored ->
-                            new RecipeIndex(candidates, level, this.availableFamilies));
+            this.recipeIndex = RECIPE_INDEX_CACHE.computeIfAbsent(source, ignored ->
+                    new RecipeIndex(candidates, level));
         }
         this.initialRecipeHolder = candidates.stream()
                 .filter(holder -> holder.id().identifier().equals(initialRecipe)).findFirst().orElse(null);
@@ -73,35 +73,43 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public RecipeHolder<?> initialRecipeHolder() { return initialRecipeHolder; }
     public Set<String> availableFamilies() { return availableFamilies; }
     public List<RecipeHolder<?>> recipes()
-    { ensureRecipeIndexForServer(); return List.copyOf(recipeIndex.recipes); }
+    { ensureRecipeIndexForServer(); return available(recipeIndex.recipes()); }
     public RecipeHolder<?> recipeForOutput(Identifier output)
-    { ensureRecipeIndexForServer(); return recipeIndex.recipeByOutput.get(output); }
+    { return recipesForOutput(output).stream().findFirst().orElse(null); }
     public List<RecipeHolder<?>> recipesForOutput(Identifier output)
-    { ensureRecipeIndexForServer(); return recipeIndex.recipesByOutput.getOrDefault(output, List.of()); }
+    { ensureRecipeIndexForServer(); return available(recipeIndex.recipesForOutput(output)); }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
         ensureRecipeIndexForServer();
-        for (var entry : recipeIndex.recipesByResourceOutput.entrySet())
-            if (output.isSame(entry.getKey())) return entry.getValue();
-        return List.of();
+        return available(recipeIndex.recipesForResourceOutput(output));
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public RecipeHolder<?> recipe(Identifier id)
-    { ensureRecipeIndexForServer(); return recipeIndex.recipesById.get(id); }
+    {
+        ensureRecipeIndexForServer();
+        RecipeHolder<?> holder = recipeIndex.recipe(id);
+        return holder != null && available(holder) ? holder : null;
+    }
     public Identifier itemOutputForToken(String token)
-    { ensureRecipeIndexForServer(); return recipeIndex.itemOutputsByToken.get(token); }
+    { ensureRecipeIndexForServer(); return recipeIndex.itemOutputForToken(token); }
     public boolean recipeProduces(Identifier recipe, String token)
     {
         ensureRecipeIndexForServer();
-        return recipeIndex.outputTokensByRecipe.getOrDefault(recipe, Set.of()).contains(token);
+        return recipe(recipe) != null && recipeIndex.recipeProduces(recipe, token);
     }
+
+    private List<RecipeHolder<?>> available(List<RecipeHolder<?>> holders)
+    { return holders.stream().filter(this::available).toList(); }
+
+    private boolean available(RecipeHolder<?> holder)
+    { return RecipeIndexVisibility.includes(RecipePlanningService.family(holder), availableFamilies); }
 
     public void advanceRecipeIndex(int recipeBudget, long timeBudgetNanos)
     { recipeIndex.advance(recipeBudget, timeBudgetNanos); }
     public boolean recipeIndexComplete() { return recipeIndex.complete(); }
-    public int indexedRecipeCandidates() { return recipeIndex.next; }
-    public int totalRecipeCandidates() { return recipeIndex.candidates.size(); }
+    public int indexedRecipeCandidates() { return recipeIndex.completedCandidates(); }
+    public int totalRecipeCandidates() { return recipeIndex.totalCandidates(); }
 
     @Override public void broadcastChanges()
     {
@@ -125,7 +133,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     {
         private final List<RecipeHolder<?>> candidates;
         private final net.minecraft.world.level.Level level;
-        private final Set<String> availableFamilies;
         private final List<RecipeHolder<?>> recipes = new ArrayList<>();
         private final Map<Identifier, RecipeHolder<?>> recipesById = new LinkedHashMap<>();
         private final Map<String, Identifier> itemOutputsByToken = new LinkedHashMap<>();
@@ -135,15 +142,13 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         private final Map<IStackKey<?>, List<RecipeHolder<?>>> recipesByResourceOutput = new LinkedHashMap<>();
         private int next;
 
-        private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level,
-                            Set<String> availableFamilies)
+        private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level)
         {
             this.candidates = List.copyOf(candidates);
             this.level = level;
-            this.availableFamilies = availableFamilies;
         }
 
-        private void advance(int recipeBudget, long timeBudgetNanos)
+        private synchronized void advance(int recipeBudget, long timeBudgetNanos)
         {
             if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
             int end = (int) Math.min(candidates.size(), (long) next + recipeBudget);
@@ -153,9 +158,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
             {
                 RecipeHolder<?> holder = candidates.get(next++);
-                String family = RecipePlanningService.family(holder);
-                if (RecipePlanningService.supported(holder)
-                        && ("crafting".equals(family) || availableFamilies.contains(family))) add(holder);
+                if (RecipePlanningService.supported(holder)) add(holder);
                 processed++;
             }
         }
@@ -184,7 +187,22 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             }
         }
 
-        private boolean complete() { return next >= candidates.size(); }
+        private synchronized List<RecipeHolder<?>> recipes() { return List.copyOf(recipes); }
+        private synchronized List<RecipeHolder<?>> recipesForOutput(Identifier output)
+        { return List.copyOf(recipesByOutput.getOrDefault(output, List.of())); }
+        private synchronized List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
+        {
+            for (var entry : recipesByResourceOutput.entrySet())
+                if (output.isSame(entry.getKey())) return List.copyOf(entry.getValue());
+            return List.of();
+        }
+        private synchronized RecipeHolder<?> recipe(Identifier id) { return recipesById.get(id); }
+        private synchronized Identifier itemOutputForToken(String token) { return itemOutputsByToken.get(token); }
+        private synchronized boolean recipeProduces(Identifier recipe, String token)
+        { return outputTokensByRecipe.getOrDefault(recipe, Set.of()).contains(token); }
+        private synchronized int completedCandidates() { return next; }
+        private int totalCandidates() { return candidates.size(); }
+        private synchronized boolean complete() { return next >= candidates.size(); }
     }
 
     public boolean canAccessNetwork(Player player)

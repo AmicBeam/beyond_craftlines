@@ -67,19 +67,22 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             LinkedHashSet<ResourceLocation> requested = new LinkedHashSet<>(binding.jeiRecipeTypes());
             payload.jeiRecipeTypes().stream().limit(32).map(ResourceLocation::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(requested::add);
-            Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
+            Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
                     .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
             var resolved = JeiRecipeFamilyRegistry.resolve(requested, loadedFamilies);
             Set<ResourceLocation> candidates = resolved.jeiTypes();
             if (candidates.isEmpty()) return;
             Set<ResourceLocation> selected = binding.jeiRecipeTypes().stream()
                     .filter(candidates::contains).collect(java.util.stream.Collectors.toUnmodifiableSet());
+            Map<ResourceLocation, Set<String>> availableGroups =
+                    com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry
+                            .inputGroupsByJeiType(level, candidates);
 
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new ProvisionerConfigMenu(id, inventory, position, candidates, selected),
+                    new ProvisionerConfigMenu(id, inventory, position, candidates, selected, availableGroups),
                     Component.translatable("menu.beyond_craftlines.bound_machine")), buffer ->
                     ProvisionerConfigMenu.writeOptions(buffer, position, candidates, selected,
-                            Map.of(), Map.of(), true));
+                            availableGroups, Map.of(), true));
         });
     }
 

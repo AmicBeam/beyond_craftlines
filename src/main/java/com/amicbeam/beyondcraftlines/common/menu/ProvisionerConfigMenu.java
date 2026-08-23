@@ -59,8 +59,13 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                  Set<ResourceLocation> candidates, Set<ResourceLocation> selected)
+    { this(id, inventory, position, candidates, selected, Map.of()); }
+
+    public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
+                                 Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
+                                 Map<ResourceLocation, Set<String>> availableGroups)
     {
-        this(id, inventory, position, candidates, selected, Map.of(), Map.of(),
+        this(id, inventory, position, candidates, selected, availableGroups, Map.of(),
                 new SimpleContainerData(1), true);
     }
 

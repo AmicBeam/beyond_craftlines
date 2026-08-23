@@ -162,6 +162,7 @@
   "gui.beyond_craftlines.material_leftover_amount": "Expected leftover %s",
   "gui.beyond_craftlines.summary_extraction": "This order will take from network",
   "tooltip.beyond_craftlines.node_need": "Required this order: %s",
+  "tooltip.beyond_craftlines.node_reusable": "Reusable ingredient (not consumed)",
   "tooltip.beyond_craftlines.node_produced": "Planned output: %s (%s operations)",
   "tooltip.beyond_craftlines.node_network": "Network stock: %s",
   "tooltip.beyond_craftlines.stock_satisfied": "Satisfied by network stock; branch not expanded",

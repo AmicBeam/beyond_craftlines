@@ -162,6 +162,7 @@
   "gui.beyond_craftlines.material_leftover_amount": "预计剩余 %s",
   "gui.beyond_craftlines.summary_extraction": "本单将从网络取用",
   "tooltip.beyond_craftlines.node_need": "本次需要：%s",
+  "tooltip.beyond_craftlines.node_reusable": "可复用原料（不会消耗）",
   "tooltip.beyond_craftlines.node_produced": "计划产出：%s（%s 次加工）",
   "tooltip.beyond_craftlines.node_network": "网络库存：%s",
   "tooltip.beyond_craftlines.stock_satisfied": "网络库存充足，不再展开",

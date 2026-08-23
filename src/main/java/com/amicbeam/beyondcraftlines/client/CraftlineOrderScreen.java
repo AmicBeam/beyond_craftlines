@@ -578,8 +578,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             lines.add(localizedRecipeType(node.recipe));
         }
-        lines.add(Component.translatable("tooltip.beyond_craftlines.node_need", node.needed)
-                .withStyle(ChatFormatting.AQUA));
+        if (node.reusableInput) lines.add(Component.translatable(
+                "tooltip.beyond_craftlines.node_reusable").withStyle(ChatFormatting.AQUA));
+        else lines.add(Component.translatable(
+                "tooltip.beyond_craftlines.node_need", node.needed).withStyle(ChatFormatting.AQUA));
         if (node.produced > 0) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.node_produced", node.produced, node.crafts)
                 .withStyle(ChatFormatting.GRAY));
@@ -711,7 +713,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (node.parentRecipe != null && node.parentSlots.stream().anyMatch(slot -> defaultIngredients.containsKey(
                 new IngredientSlotKey(node.parentRecipe, slot))))
             graphics.fill(x + 22, y + 22, x + 26, y + 26, 0xFFB78CFF);
-        node.key.getRender().renderAmount(graphics, node.needed, iconX, iconY);
+        if (!node.reusableInput) node.key.getRender().renderAmount(graphics, node.needed, iconX, iconY);
         if (node.ingredientChoices.size() > 1) renderCandidateBadge(graphics, x + 2, y + 2);
     }
 
@@ -805,7 +807,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var ingredient = selectedInput.ingredient();
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
-            long totalAmount = currentSlot < reusable.length && reusable[currentSlot]
+            boolean reusableInput = currentSlot < reusable.length && reusable[currentSlot];
+            long totalAmount = reusableInput
                     ? selectedResource.amount()
                     : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
                             selectedResource.amount(), recipeCrafts);
@@ -815,10 +818,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     : null;
             if (merged != null)
             {
-                merged.add(currentSlot, totalAmount, ingredient);
+                merged.add(currentSlot, totalAmount, ingredient, reusableInput);
                 continue;
             }
-            inputs.add(new TreeInput(inputKey, totalAmount, currentSlot, ingredient));
+            inputs.add(new TreeInput(inputKey, totalAmount, currentSlot, ingredient, reusableInput));
         }
         for (TreeInput inputGroup : inputs)
         {
@@ -841,6 +844,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 child = buildTree(inputKey, ItemStack.EMPTY, null, childRecipe,
                         recipe.id(), firstSlot.slot(), depth + 1, inputGroup.amount, expanding, stock);
             }
+            child.reusableInput = inputGroup.reusableOnly;
             child.setIngredientChoices(firstSlot.ingredient());
             for (int i = 1; i < inputGroup.slots.size(); i++)
             {
@@ -1021,6 +1025,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static void mergeDisplayedTotals(GraphNode target, GraphNode source)
     {
+        target.reusableInput &= source.reusableInput;
         long outputPerCraft = target.crafts > 0 ? Math.max(1, target.produced / target.crafts)
                 : source.crafts > 0 ? Math.max(1, source.produced / source.crafts) : 1;
         target.needed = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
@@ -1930,6 +1935,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         private boolean collapsed;
         private boolean stockSatisfied;
         private boolean partiallySatisfied;
+        private boolean reusableInput;
         private long stockUsed;
         private GraphNode jumpTarget;
         private long needed;
@@ -1982,21 +1988,26 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         private final IStackKey<?> key;
         private long amount;
+        private boolean reusableOnly;
         private final List<TreeInputSlot> slots = new ArrayList<>();
 
         private TreeInput(IStackKey<?> key, long amount, int slot,
-                          com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
+                          com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient,
+                          boolean reusable)
         {
             this.key = key;
             this.amount = Math.max(1, amount);
+            this.reusableOnly = reusable;
             slots.add(new TreeInputSlot(slot, ingredient));
         }
 
         private void add(int slot, long added,
-                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
+                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient,
+                         boolean reusable)
         {
             long positive = Math.max(1, added);
             amount = amount > Long.MAX_VALUE - positive ? Long.MAX_VALUE : amount + positive;
+            reusableOnly &= reusable;
             slots.add(new TreeInputSlot(slot, ingredient));
         }
     }

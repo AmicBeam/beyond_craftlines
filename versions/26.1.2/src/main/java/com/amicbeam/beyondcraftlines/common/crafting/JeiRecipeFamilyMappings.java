@@ -42,7 +42,6 @@ public final class JeiRecipeFamilyMappings
             case "mekanism:condensentrating", "mekanism:decondensentrating" -> "mekanism:rotary";
             case "ars_nouveau:glyph_recipe" -> "ars_nouveau:glyph";
             case "ars_nouveau:enchantment_apparatus" -> "ars_nouveau:enchantment";
-            case "ars_nouveau:imbuement_chamber" -> "ars_nouveau:imbuement";
             default -> jeiType.startsWith("minecraft:")
                     ? jeiType.substring("minecraft:".length()) : jeiType;
         };

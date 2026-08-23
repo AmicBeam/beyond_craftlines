@@ -57,14 +57,14 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
-    void arsNouveauLegacyCategoriesAndBlockFallbackMapToServerTypes()
+    void arsNouveauJeiCategoriesMapToTheirServerRecipeTypes()
     {
         var result = JeiRecipeFamilyMappings.resolve(
-                Set.of("ars_nouveau:glyph_recipe", "ars_nouveau:enchantment_apparatus",
-                        "ars_nouveau:imbuement_chamber"),
-                Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment", "ars_nouveau:imbuement"));
-        assertEquals(Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment", "ars_nouveau:imbuement"),
-                result.families());
+                Set.of("ars_nouveau:glyph_recipe", "ars_nouveau:enchantment_apparatus"),
+                Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment"));
+        assertEquals(Set.of("ars_nouveau:glyph_recipe", "ars_nouveau:enchantment_apparatus"),
+                result.jeiTypes());
+        assertEquals(Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment"), result.families());
     }
 
     @Test

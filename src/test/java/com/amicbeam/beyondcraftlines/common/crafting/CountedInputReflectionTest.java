@@ -163,6 +163,7 @@ final class CountedInputReflectionTest
 
         var spirits = CountedInputReflection.flatten(
                 RecipeReflection.readPublicMember(recipe, "spirits"));
+        assertEquals(recipe.spirits, spirits);
         assertEquals(List.of(modernShard),
                 CountedInputReflection.representationValues(spirits.get(0)));
         assertEquals(List.of(legacyShard),
@@ -236,10 +237,8 @@ final class CountedInputReflectionTest
         public java.util.stream.Stream<Object> getFluids()
         { return java.util.stream.Stream.of(ingredient); }
     }
-    public static final class ModernSpiritProvider
+    public record ModernSpiritProvider(Object shard)
     {
-        private final Object shard;
-        private ModernSpiritProvider(Object shard) { this.shard = shard; }
         public java.util.stream.Stream<Object> getItems()
         { return java.util.stream.Stream.of(shard); }
     }

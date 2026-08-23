@@ -78,11 +78,13 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 return;
             }
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new CraftlineOrderMenu(id, inventory, networkId, target, recipe.id().identifier(), availableFamilies),
+                    new CraftlineOrderMenu(id, inventory, networkId, target, recipe.id().identifier(),
+                            requestedRecipe != null, availableFamilies),
                     Component.translatable("menu.beyond_craftlines.order")), buffer -> {
                         buffer.writeVarInt(networkId);
                         IStackKey.STREAM_CODEC.encode(buffer, target);
                         buffer.writeUtf(recipe.id().identifier().toString());
+                        buffer.writeBoolean(requestedRecipe != null);
                         buffer.writeVarInt(availableFamilies.size());
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);
                     });

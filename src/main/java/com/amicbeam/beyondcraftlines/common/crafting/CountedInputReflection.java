@@ -101,7 +101,7 @@ final class CountedInputReflection
         return List.of();
     }
 
-    private static boolean hasRepresentationMethod(Object target)
+    static boolean hasRepresentationMethod(Object target)
     { return REPRESENTATION_METHODS.stream().anyMatch(method -> hasNoArgMethod(target, method)); }
 
     /** Mirrors Mekanism's recipe-viewer total for chemicals consumed once per processing tick. */

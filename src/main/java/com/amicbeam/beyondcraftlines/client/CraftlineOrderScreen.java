@@ -245,8 +245,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (minecraft.level == null) return;
         selected = menu.recipes().stream().filter(holder -> holder.id().equals(menu.initialRecipe())).filter(holder ->
                 menu.recipeProduces(holder.id(), menu.targetToken())).findFirst().orElse(null);
-        if (selected != null && menu.initialTarget() instanceof ItemStackKey itemKey)
-            recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
+        if (selected != null)
+        {
+            if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
+                recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
+            else if (!menu.initialRecipePinned())
+                selected = selectedResourceRecipe(menu.initialTarget(), selected);
+        }
         rebuildTree();
         requestNetworkAmount();
     }

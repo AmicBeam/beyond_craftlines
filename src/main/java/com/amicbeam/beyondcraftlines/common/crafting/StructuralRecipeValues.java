@@ -79,6 +79,15 @@ final class StructuralRecipeValues
                 flatten(Array.get(value, i), result, containers, budget, depth + 1);
             return;
         }
+        // A representation provider is already a semantic recipe-input leaf. In particular,
+        // Malum 1.21's SpiritIngredient is a record whose getItems() exposes the actual spirit
+        // shard stack. Expanding that record into its holder and numeric count first discards
+        // the only representation that Beyond Dimensions can convert into a resource key.
+        if (CountedInputReflection.hasRepresentationMethod(value))
+        {
+            result.add(value);
+            return;
+        }
         // Capability recipe APIs commonly wrap the actual stack/ingredient in a Content
         // object alongside chance metadata. Depending on the mod version this wrapper may
         // be a record, a normal class with a public field, or a bean with getContent().

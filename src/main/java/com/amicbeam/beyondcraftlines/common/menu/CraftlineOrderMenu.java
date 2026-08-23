@@ -31,6 +31,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private final int networkId;
     private final IStackKey<?> initialTarget;
     private final ResourceLocation initialRecipe;
+    private final boolean initialRecipePinned;
     private final Set<String> availableFamilies;
     private final RecipeIndex recipeIndex;
     private final RecipeHolder<?> initialRecipeHolder;
@@ -38,17 +39,19 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
         this(id, inventory, data.readVarInt(), IStackKey.STREAM_CODEC.decode((RegistryFriendlyByteBuf) data),
-                ResourceLocation.parse(data.readUtf()), readFamilies(data));
+                ResourceLocation.parse(data.readUtf()), data.readBoolean(), readFamilies(data));
     }
 
     public CraftlineOrderMenu(int id, Inventory inventory, int networkId, IStackKey<?> initialTarget,
-                              ResourceLocation initialRecipe, Set<String> availableFamilies)
+                              ResourceLocation initialRecipe, boolean initialRecipePinned,
+                              Set<String> availableFamilies)
     {
         super(CraftlinesMenus.ORDER.get(), id);
         this.player = inventory.player;
         this.networkId = networkId;
         this.initialTarget = initialTarget;
         this.initialRecipe = initialRecipe;
+        this.initialRecipePinned = initialRecipePinned;
         this.availableFamilies = Set.copyOf(availableFamilies);
         var level = player.level();
         synchronized (RECIPE_INDEX_CACHE)
@@ -65,6 +68,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public String targetToken()
     { return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(initialTarget); }
     public ResourceLocation initialRecipe() { return initialRecipe; }
+    public boolean initialRecipePinned() { return initialRecipePinned; }
     public RecipeHolder<?> initialRecipeHolder() { return initialRecipeHolder; }
     public Set<String> availableFamilies() { return availableFamilies; }
     public List<RecipeHolder<?>> recipes()

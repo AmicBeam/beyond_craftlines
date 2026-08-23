@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -40,5 +41,15 @@ final class PlanningDependencyBatcherTest
                 new PlanningDependencyBatcher.Entry<>("tool", PlanningDependencyBatcher.inputAmount(true, 1, crafts)),
                 new PlanningDependencyBatcher.Entry<>("tool", PlanningDependencyBatcher.inputAmount(true, 1, crafts)));
         assertEquals(2L, PlanningDependencyBatcher.aggregate(slots).get("tool"));
+    }
+
+    @Test
+    void repeatedReusableNodesOnlyRequireTheLargestSharedAmount()
+    {
+        var requirements = new LinkedHashMap<String, Long>();
+        assertEquals(1L, PlanningDependencyBatcher.additionalReusableAmount(requirements, "stone", 1));
+        assertEquals(0L, PlanningDependencyBatcher.additionalReusableAmount(requirements, "stone", 1));
+        assertEquals(2L, PlanningDependencyBatcher.additionalReusableAmount(requirements, "stone", 3));
+        assertEquals(3L, requirements.get("stone"));
     }
 }

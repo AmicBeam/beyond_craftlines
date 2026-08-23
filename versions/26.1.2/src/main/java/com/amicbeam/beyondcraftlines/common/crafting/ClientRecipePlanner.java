@@ -108,8 +108,8 @@ public final class ClientRecipePlanner
         for (Recipe recipe : catalog.recipes())
             byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
         byOutput.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
-        State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(), 0,
-                new LinkedHashMap<>(), new LinkedHashMap<>());
+        State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(),
+                new LinkedHashMap<>(), 0, new LinkedHashMap<>(), new LinkedHashMap<>());
         state.stock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes);
         resolve(target, requested,
@@ -278,6 +278,7 @@ public final class ClientRecipePlanner
                                         List<Candidate> variant)
     {
         LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
         long crafts = SaturatingLongMath.ceilDiv(remainder, recipe.outputCount());
         for (int i = 0; i < variant.size(); i++)
         {
@@ -292,11 +293,20 @@ public final class ClientRecipePlanner
             }
             long inputAmount = slot.reusable() ? candidate.count()
                     : SaturatingLongMath.multiply(crafts, candidate.count());
-            inputs.merge(candidate.key(), inputAmount, SaturatingLongMath::add);
+            (slot.reusable() ? reusableInputs : inputs)
+                    .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
             resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
                     manualIngredients, depth + 1, maxDepth, budget);
+        for (var input : reusableInputs.entrySet())
+        {
+            long additional = PlanningDependencyBatcher.additionalReusableAmount(
+                    state.reusableRequirements, input.getKey(), input.getValue());
+            if (additional > 0)
+                resolve(input.getKey(), additional, byOutput, visiting, state, manualRecipes,
+                        manualIngredients, depth + 1, maxDepth, budget);
+        }
         state.steps++;
         long produced = SaturatingLongMath.multiply(recipe.outputCount(), crafts);
         if (produced > remainder) state.stock.merge(output, produced - remainder, SaturatingLongMath::add);
@@ -421,18 +431,23 @@ public final class ClientRecipePlanner
     {
         private Map<IStackKey<?>, Long> stock;
         private Map<IStackKey<?>, Long> missing;
+        private Map<IStackKey<?>, Long> reusableRequirements;
         private int steps;
         private Map<String, Identifier> recipes;
         private Map<IngredientKey, Identifier> ingredients;
-        private State(Map<IStackKey<?>, Long> stock, Map<IStackKey<?>, Long> missing, int steps,
+        private State(Map<IStackKey<?>, Long> stock, Map<IStackKey<?>, Long> missing,
+                      Map<IStackKey<?>, Long> reusableRequirements, int steps,
                       Map<String, Identifier> recipes,
                       Map<IngredientKey, Identifier> ingredients)
-        { this.stock = stock; this.missing = missing; this.steps = steps; this.recipes = recipes; this.ingredients = ingredients; }
+        { this.stock = stock; this.missing = missing; this.reusableRequirements = reusableRequirements;
+            this.steps = steps; this.recipes = recipes; this.ingredients = ingredients; }
         private State copy()
-        { return new State(new LinkedHashMap<>(stock), new LinkedHashMap<>(missing), steps,
+        { return new State(new LinkedHashMap<>(stock), new LinkedHashMap<>(missing),
+                new LinkedHashMap<>(reusableRequirements), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients)); }
         private void replaceWith(State state)
-        { stock = state.stock; missing = state.missing; steps = state.steps; recipes = state.recipes; ingredients = state.ingredients; }
+        { stock = state.stock; missing = state.missing; reusableRequirements = state.reusableRequirements;
+            steps = state.steps; recipes = state.recipes; ingredients = state.ingredients; }
     }
 
     private static Identifier itemId(IStackKey<?> key)

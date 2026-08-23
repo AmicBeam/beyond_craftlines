@@ -24,6 +24,17 @@ final class PlanningDependencyBatcher
         return reusable ? amountPerCraft : SaturatingLongMath.multiply(crafts, amountPerCraft);
     }
 
+    /** Returns only the extra amount needed to raise a recipe tree's shared reusable requirement. */
+    static <K> long additionalReusableAmount(Map<K, Long> requirements, K key, long amount)
+    {
+        if (requirements == null || key == null || amount < 1)
+            throw new IllegalArgumentException("invalid reusable planning dependency");
+        long previous = requirements.getOrDefault(key, 0L);
+        if (amount <= previous) return 0;
+        requirements.put(key, amount);
+        return amount - previous;
+    }
+
     record Entry<K>(K key, long amount)
     {
         Entry

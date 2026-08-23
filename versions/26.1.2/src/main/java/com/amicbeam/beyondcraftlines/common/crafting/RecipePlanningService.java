@@ -141,7 +141,7 @@ public final class RecipePlanningService
                 byOutput.computeIfAbsent(output.key(), ignored -> new ArrayList<>()).add(holder);
         }
         PlanningState state = new PlanningState(stock, new ArrayList<>(), new LinkedHashMap<>(),
-                new LinkedHashMap<>());
+                new LinkedHashMap<>(), new LinkedHashMap<>());
         int maxDepth = CraftlinesConfig.MAX_PLANNING_DEPTH.get();
         resolve(level, target, amount, null, byOutput, new HashSet<>(), state, overrides, mode, 0, maxDepth,
                 new PlanningBudget(CraftlinesConfig.MAX_PLANNING_NODES.get(),
@@ -318,6 +318,7 @@ public final class RecipePlanningService
         long crafts = SaturatingLongMath.ceilDiv(remainder, perCraft);
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
+        List<PlanningDependencyBatcher.Entry<IStackKey<?>>> reusableDependencyInputs = new ArrayList<>();
         Map<IStackKey<?>, Ingredient> dependencyIngredients = new LinkedHashMap<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
                 RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
@@ -335,13 +336,23 @@ public final class RecipePlanningService
             long inputAmount = PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
-            dependencyInputs.add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
+            (reusable ? reusableDependencyInputs : dependencyInputs)
+                    .add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
             dependencyIngredients.putIfAbsent(choice.key(), ingredient.itemIngredient());
         }
         for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
             resolve(level, dependency.getKey(), dependency.getValue(),
                     dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
                     overrides, mode, depth + 1, maxDepth, budget);
+        for (var dependency : PlanningDependencyBatcher.aggregate(reusableDependencyInputs).entrySet())
+        {
+            long additional = PlanningDependencyBatcher.additionalReusableAmount(
+                    state.reusableRequirements, dependency.getKey(), dependency.getValue());
+            if (additional > 0)
+                resolve(level, dependency.getKey(), additional,
+                        dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
+                        overrides, mode, depth + 1, maxDepth, budget);
+        }
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id().identifier(), family(holder), outputKey,
@@ -432,19 +443,22 @@ public final class RecipePlanningService
         private List<RecipePlan.Step> steps;
         private Map<IStackKey<?>, Long> missing;
         private Map<IStackKey<?>, Long> usedStock;
+        private Map<IStackKey<?>, Long> reusableRequirements;
 
         private PlanningState(MatchingStock<IStackKey<?>, Identifier> stock, List<RecipePlan.Step> steps,
-                              Map<IStackKey<?>, Long> missing, Map<IStackKey<?>, Long> usedStock)
+                              Map<IStackKey<?>, Long> missing, Map<IStackKey<?>, Long> usedStock,
+                              Map<IStackKey<?>, Long> reusableRequirements)
         {
             this.stock = stock;
             this.steps = steps;
             this.missing = missing;
             this.usedStock = usedStock;
+            this.reusableRequirements = reusableRequirements;
         }
 
         private PlanningState copy()
         { return new PlanningState(stock.copy(), new ArrayList<>(steps), new LinkedHashMap<>(missing),
-                new LinkedHashMap<>(usedStock)); }
+                new LinkedHashMap<>(usedStock), new LinkedHashMap<>(reusableRequirements)); }
 
         private void replaceWith(PlanningState selected)
         {
@@ -452,6 +466,7 @@ public final class RecipePlanningService
             steps = selected.steps;
             missing = selected.missing;
             usedStock = selected.usedStock;
+            reusableRequirements = selected.reusableRequirements;
         }
     }
 

@@ -484,7 +484,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void renderTree(GuiGraphics graphics, int mouseX, int mouseY)
     {
-        if (treeRoot == null || minecraft.level == null) return;
+        if (minecraft.level == null) return;
+        if (treeRoot == null)
+        {
+            if (!loadingStatus.isBlank())
+            {
+                graphics.drawString(font, font.plainSubstrByWidth(
+                                loadingStatus, treeRight() - treeLeft() - 10),
+                        treeLeft() + 5, treeBottom() - 24, BD_CYAN, false);
+                renderLoadingProgress(graphics);
+            }
+            return;
+        }
         List<GraphNode> nodes = treeNodes;
 
         int contentBottom = treeContentBottom();

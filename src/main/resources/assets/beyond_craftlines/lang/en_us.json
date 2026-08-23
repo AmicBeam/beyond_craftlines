@@ -87,6 +87,8 @@
   "gui.beyond_craftlines.order_message.provisioner_waiting_earlier": "Provisioner is waiting for an earlier output",
   "gui.beyond_craftlines.order_message.matching_provisioner_inputs": "Waiting for matching provisioner inputs",
   "gui.beyond_craftlines.order_message.provisioner_group_unassigned": "No provisioner accepts input group %s",
+  "gui.beyond_craftlines.order_message.matching_machine_inputs": "Waiting for matching grouped machine inputs",
+  "gui.beyond_craftlines.order_message.input_group_unassigned": "No machine or provisioner accepts input group %s",
   "gui.beyond_craftlines.order_message.provisioner_no_room": "Provisioner has no room for %s",
   "gui.beyond_craftlines.order_message.waiting_resource": "Waiting for %s",
   "gui.beyond_craftlines.order_message.provisioner_delivery_rolled_back": "Provisioner delivery was rolled back",

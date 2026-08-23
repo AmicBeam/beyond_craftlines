@@ -41,12 +41,27 @@ public record BindingRecord(
     public boolean acceptsInputGroup(String family, String group)
     {
         Set<String> accepted = provisionerInputGroups.get(family);
+        if (accepted == null && deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE)
+            return recipeFamilies.contains(family);
         return accepted != null && (accepted.contains(ALL_INPUT_GROUPS) || accepted.contains(group));
     }
 
     public boolean acceptsAnyInputGroup(String family)
     {
         Set<String> accepted = provisionerInputGroups.get(family);
+        if (accepted == null && deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE)
+            return recipeFamilies.contains(family);
         return accepted != null && !accepted.isEmpty();
+    }
+
+    public int inputGroupRoutingPriority(String family, String group)
+    {
+        Set<String> accepted = provisionerInputGroups.get(family);
+        if (accepted == null && deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE)
+            accepted = Set.of(ALL_INPUT_GROUPS);
+        return accepted == null
+                ? com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection.REJECTED_PRIORITY
+                : com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection
+                .routingPriority(accepted, group);
     }
 }

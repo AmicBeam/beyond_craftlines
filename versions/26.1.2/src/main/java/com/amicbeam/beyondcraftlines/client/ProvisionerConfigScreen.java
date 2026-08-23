@@ -97,7 +97,6 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void toggleGroup(int row, int groupIndex)
     {
-        if (menu.isBoundMachineConfiguration()) return;
         int index = page * ROWS + row;
         if (index >= candidates.size()) return;
         Identifier type = candidates.get(index);
@@ -142,13 +141,11 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                 groupButton.visible = selected.contains(type) && groupCount > 1 && groupIndex < groupCount;
                 if (!groupButton.visible) continue;
                 String group = groups.get(groupIndex);
-                groupButton.active = !menu.isBoundMachineConfiguration();
+                groupButton.active = true;
                 groupButton.setX(leftPos + 18 + groupIndex * (groupWidth + 3));
                 groupButton.setY(topPos + 64 + row * 40);
                 groupButton.setWidth(groupWidth);
-                groupButton.setMessage(menu.isBoundMachineConfiguration()
-                        ? Component.literal("• ").append(groupTitle(group))
-                        : Component.literal(chosen.contains(group) ? "[✓] " : "[ ] ")
+                groupButton.setMessage(Component.literal(chosen.contains(group) ? "[✓] " : "[ ] ")
                         .append(groupTitle(group)));
             }
         }

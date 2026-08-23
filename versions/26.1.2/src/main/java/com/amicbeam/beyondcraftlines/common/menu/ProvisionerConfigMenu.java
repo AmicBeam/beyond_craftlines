@@ -69,6 +69,15 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                 new SimpleContainerData(1), true);
     }
 
+    public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
+                                 Set<Identifier> candidates, Set<Identifier> selected,
+                                 Map<Identifier, Set<String>> availableGroups,
+                                 Map<Identifier, Set<String>> selectedGroups)
+    {
+        this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
+                new SimpleContainerData(1), true);
+    }
+
     private ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                   Set<Identifier> candidates, Set<Identifier> selected,
                                   Map<Identifier, Set<String>> availableGroups,

@@ -16,7 +16,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 | 支持矩阵 | `1.20.1` / Forge 47 / Java 17；`1.21.1` / NeoForge 21.1 / Java 21；`26.1.2` / NeoForge 26.1.2 / Java 25 |
 | 必需依赖 | 各版本对应的 Beyond Dimensions 与 JEI 构建，具体版本见各自 `gradle.properties` |
 | 可选显示联动 | Jade |
-| 当前版本 | `0.1.3` |
+| 当前版本 | `0.1.4` |
 
 本模组不再包含构象捕获、测试维、沙盒试产、试产报告、稳态产线、图纸复制或相关命令。这些内容不属于当前 JAR。
 
@@ -257,6 +257,8 @@ Ingredient 有多个候选时按以下顺序选择默认值：
 
 - 网络联结器右击原版或第三方机器：绑定；
 - 潜行右击已绑定机器：解绑；
+- 手持联结器左击已绑定机器：勾选配方类型及该机器负责的材料组；空材料组选择表示通配；
+- 同一步骤的不同材料组可同时分配给多台直接绑定机器和供给器。显式材料组优先于通配端点；同优先级同时存在时直接机器优先，同组的多台直接机器会一起预留以容纳单槽基座等分布式输入；
 - 只有目标网络管理员可以解绑；
 - 方块被破坏时移除关联记录；
 - 加载后会校验维度、方块 ID、网络和能力，防止坐标处更换方块后沿用旧绑定。
@@ -399,9 +401,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 产物分别位于：
 
 ```text
-versions/1.20.1/build/libs/beyond_craftlines-0.1.3+1.20.1.jar
-build/libs/beyond_craftlines-0.1.3+1.21.1.jar
-versions/26.1.2/build/libs/beyond_craftlines-0.1.3+26.1.2.jar
+versions/1.20.1/build/libs/beyond_craftlines-0.1.4+1.20.1.jar
+build/libs/beyond_craftlines-0.1.4+1.21.1.jar
+versions/26.1.2/build/libs/beyond_craftlines-0.1.4+26.1.2.jar
 ```
 
 当前纯单元测试覆盖：

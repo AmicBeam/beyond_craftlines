@@ -77,12 +77,16 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             Map<ResourceLocation, Set<String>> availableGroups =
                     com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry
                             .inputGroupsByJeiType(level, candidates);
+            Map<ResourceLocation, Set<String>> selectedGroups =
+                    com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry
+                            .selectedGroupsByJeiType(level, candidates, binding.provisionerInputGroups());
 
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new ProvisionerConfigMenu(id, inventory, position, candidates, selected, availableGroups),
+                    new ProvisionerConfigMenu(id, inventory, position, candidates, selected,
+                            availableGroups, selectedGroups),
                     Component.translatable("menu.beyond_craftlines.bound_machine")), buffer ->
                     ProvisionerConfigMenu.writeOptions(buffer, position, candidates, selected,
-                            availableGroups, Map.of(), true));
+                            availableGroups, selectedGroups, true));
         });
     }
 

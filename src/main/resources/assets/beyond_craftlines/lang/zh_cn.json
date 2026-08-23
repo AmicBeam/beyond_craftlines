@@ -87,6 +87,8 @@
   "gui.beyond_craftlines.order_message.provisioner_waiting_earlier": "供给器正在等待更早的产物",
   "gui.beyond_craftlines.order_message.matching_provisioner_inputs": "正在等待匹配的供给器原料",
   "gui.beyond_craftlines.order_message.provisioner_group_unassigned": "材料组 %s 尚未分配供给器",
+  "gui.beyond_craftlines.order_message.matching_machine_inputs": "正在等待匹配的分组机器原料",
+  "gui.beyond_craftlines.order_message.input_group_unassigned": "材料组 %s 尚未分配机器或供给器",
   "gui.beyond_craftlines.order_message.provisioner_no_room": "供给器没有空间容纳 %s",
   "gui.beyond_craftlines.order_message.waiting_resource": "正在等待 %s",
   "gui.beyond_craftlines.order_message.provisioner_delivery_rolled_back": "供给器投料已回滚",

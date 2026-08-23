@@ -71,8 +71,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                 selectedGroups.computeIfAbsent(type, ignored -> new LinkedHashSet<>()).add(group);
             }
             boolean configured = !invalidGroups && (menu.isBoundMachineConfiguration()
-                    ? selectedGroups.isEmpty()
-                    && DeviceBindingRegistry.configureBoundMachine(player, position, selected)
+                    ? DeviceBindingRegistry.configureBoundMachine(player, position, selected, selectedGroups)
                     : DeviceBindingRegistry.configureProvisioner(player, position, selected, selectedGroups));
             String messageKey = menu.isBoundMachineConfiguration()
                     ? configured ? "message.beyond_craftlines.bound_machine_configured"

@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiPredicate;
+import java.util.function.IntConsumer;
 
 /** Baseline, one-slot alternatives, and uniform alternatives for repeated equivalent slots. */
 public final class SingleSubstitutionVariants
@@ -15,6 +16,10 @@ public final class SingleSubstitutionVariants
     }
 
     public static <T> List<List<T>> from(List<List<T>> options, BiPredicate<T, T> equivalent)
+    { return from(options, equivalent, ignored -> {}); }
+
+    public static <T> List<List<T>> from(List<List<T>> options, BiPredicate<T, T> equivalent,
+                                         IntConsumer generationGuard)
     {
         List<T> baseline = new ArrayList<>(options.size());
         for (List<T> slot : options)
@@ -24,6 +29,7 @@ public final class SingleSubstitutionVariants
         }
         java.util.LinkedHashSet<List<T>> variants = new java.util.LinkedHashSet<>();
         variants.add(List.copyOf(baseline));
+        generationGuard.accept(variants.size());
         for (int slot = 0; slot < options.size(); slot++)
         {
             for (int candidate = 1; candidate < options.get(slot).size(); candidate++)
@@ -31,6 +37,7 @@ public final class SingleSubstitutionVariants
                 List<T> variant = new ArrayList<>(baseline);
                 variant.set(slot, options.get(slot).get(candidate));
                 variants.add(List.copyOf(variant));
+                generationGuard.accept(variants.size());
             }
         }
         // Fences and sticks repeat the same tag ingredient in several slots. Changing only one
@@ -49,6 +56,7 @@ public final class SingleSubstitutionVariants
                 List<T> variant = new ArrayList<>(baseline);
                 for (int slot : equivalentSlots) variant.set(slot, options.get(slot).get(candidate));
                 variants.add(List.copyOf(variant));
+                generationGuard.accept(variants.size());
             }
         }
         return List.copyOf(variants);

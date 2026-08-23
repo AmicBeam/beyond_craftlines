@@ -53,4 +53,13 @@ final class SingleSubstitutionVariantsTest
         assertThrows(IllegalArgumentException.class,
                 () -> SingleSubstitutionVariants.from(List.of(List.of("iron"), List.of())));
     }
+
+    @Test
+    void generationCannotAllocatePastTheServerPlanningBudget()
+    {
+        PlanningBudget budget = new PlanningBudget(3, Long.MAX_VALUE);
+        assertThrows(IllegalStateException.class, () -> SingleSubstitutionVariants.from(
+                List.of(List.of("a", "b", "c", "d", "e")), java.util.Objects::equals,
+                budget::checkGeneratedVariants));
+    }
 }

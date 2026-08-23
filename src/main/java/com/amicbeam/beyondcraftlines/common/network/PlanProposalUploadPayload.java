@@ -113,21 +113,11 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
                 menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides, plan));
-        RecipePlan theoretical;
-        try
-        {
-            theoretical = RecipePlanningService.plan(player.serverLevel(), target, header.count(),
-                    Map.of(), menu.availableFamilies(), overrides);
-        }
-        catch (IllegalStateException exception)
-        {
-            // The empty-stock plan is used only for explanatory material totals.
-            // It deliberately expands dependencies that the real, stock-aware plan can stop at,
-            // so a large tag/recipe graph must not invalidate an otherwise valid order.
-            if (!"recipe tree is too complex; planning budget exceeded".equals(exception.getMessage()))
-                throw exception;
-            theoretical = plan;
-        }
+        // Explanatory totals must follow the proposal the server just validated. Resources whose
+        // recipes were not selected (usually because network stock satisfied them) are terminal
+        // raw materials; searching beyond them can explode into an unrelated modpack recipe graph.
+        RecipePlan theoretical = RecipePlanningService.planSelectedChain(player.serverLevel(), target,
+                header.count(), menu.availableFamilies(), overrides);
         for (PlanPreviewPayload page : PlanPreviewPayload.from(payload.nonce(), plan, theoretical,
                 player.serverLevel()))
             PacketDistributor.sendToPlayer(player, page);

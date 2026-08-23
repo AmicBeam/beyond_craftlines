@@ -29,4 +29,13 @@ final class SaturatingLongMathTest
         assertEquals(order, SaturatingLongMath.multiply(order, 1));
         assertEquals(order, SaturatingLongMath.ceilDiv(order, 1));
     }
+
+    @Test
+    void eightNineInputCompressionLevelsUseOneLongMultiplicationPerLevel()
+    {
+        long rawMaterial = 1;
+        for (int level = 0; level < 8; level++)
+            rawMaterial = SaturatingLongMath.multiply(rawMaterial, 9);
+        assertEquals(43_046_721L, rawMaterial);
+    }
 }

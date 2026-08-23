@@ -91,6 +91,16 @@ public final class RecipePlanningService
                 availableFamilies, overrides, ResolutionMode.FIXED);
     }
 
+    /** Expands only recipes explicitly selected by the client and treats every unselected resource as a leaf. */
+    public static RecipePlan planSelectedChain(ServerLevel level, IStackKey<?> target, long amount,
+                                               Set<String> availableFamilies,
+                                               RecipeResolutionOverrides overrides)
+    {
+        return plan(level, target, amount,
+                new MatchingStock<>(IStackKey::getTypeId, Map.of()),
+                availableFamilies, overrides, ResolutionMode.SELECTED_CHAIN);
+    }
+
     public static RecipePlan plan(ServerLevel level, Identifier target, long amount,
                                   Map<Identifier, Long> suppliedStock, Set<String> availableFamilies,
                                   RecipeResolutionOverrides overrides)
@@ -160,6 +170,11 @@ public final class RecipePlanningService
                 (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
         long remainder = needed - used;
         if (remainder == 0) return;
+        if (mode == ResolutionMode.SELECTED_CHAIN && overrides.recipeFor(resource) == null)
+        {
+            state.missing.merge(resource, remainder, SaturatingLongMath::add);
+            return;
+        }
         if (depth >= maxDepth)
         {
             state.missing.merge(resource, remainder, SaturatingLongMath::add);
@@ -267,7 +282,8 @@ public final class RecipePlanningService
         PlanningState best = null;
         String bestSelectionKey = null;
         for (List<KeyAmount> variant : SingleSubstitutionVariants.from(
-                options, (left, right) -> left.key().isSameTypeSameComponents(right.key())))
+                options, (left, right) -> left.key().isSameTypeSameComponents(right.key()),
+                budget::checkGeneratedVariants))
         {
             if (mode == ResolutionMode.SEARCH) budget.enterBranch();
             PlanningState branch = state.copy();
@@ -301,6 +317,8 @@ public final class RecipePlanningService
         long perCraft = Math.max(1, result.amount());
         long crafts = SaturatingLongMath.ceilDiv(remainder, perCraft);
         List<RecipePlan.Material> inputs = new ArrayList<>();
+        List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
+        Map<IStackKey<?>, Ingredient> dependencyIngredients = new LinkedHashMap<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
                 RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
         List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
@@ -314,13 +332,16 @@ public final class RecipePlanningService
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = variant.get(i);
             boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
-            long inputAmount = reusable ? choice.amount()
-                    : SaturatingLongMath.multiply(crafts, choice.amount());
+            long inputAmount = PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
-            resolve(level, choice.key(), inputAmount, ingredient.itemIngredient(), byOutput,
-                    visiting, state, overrides, mode, depth + 1, maxDepth, budget);
+            dependencyInputs.add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
+            dependencyIngredients.putIfAbsent(choice.key(), ingredient.itemIngredient());
         }
+        for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
+            resolve(level, dependency.getKey(), dependency.getValue(),
+                    dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
+                    overrides, mode, depth + 1, maxDepth, budget);
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id().identifier(), family(holder), outputKey,
@@ -354,7 +375,7 @@ public final class RecipePlanningService
             throw new IllegalArgumentException("selected ingredient is invalid for " + recipe
                     + " slot " + slot + ": " + selected);
         }
-        if (mode == ResolutionMode.FIXED && ingredient.candidates().stream()
+        if (mode != ResolutionMode.SEARCH && ingredient.candidates().stream()
                 .anyMatch(choice -> choice.key() instanceof ItemStackKey))
             throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
@@ -370,7 +391,8 @@ public final class RecipePlanningService
         return List.copyOf(unique.values());
     }
 
-    private enum ResolutionMode { SEARCH, FIXED }
+    private enum ResolutionMode { SEARCH, FIXED, SELECTED_CHAIN }
+
 
     private static final class CyclicRecipePathException extends RuntimeException
     {

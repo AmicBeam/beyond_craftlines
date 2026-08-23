@@ -27,6 +27,12 @@ final class PlanningBudget
         if (System.nanoTime() - startedNanos > maxNanos) exceeded();
     }
 
+    void checkGeneratedVariants(int variants)
+    {
+        if (variants > maxNodes) exceeded();
+        checkTime();
+    }
+
     private static void exceeded()
     {
             throw new IllegalStateException("recipe tree is too complex; planning budget exceeded");

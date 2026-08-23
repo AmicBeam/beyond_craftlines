@@ -145,6 +145,15 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void readsArsNouveauStylePublicAccessorsWithPrivateFields()
+    {
+        var recipe = new PublicAccessorInputRecipe();
+        assertEquals("reagent", RecipeReflection.readPublicMember(recipe, "reagent"));
+        assertEquals(List.of("pedestal"), RecipeReflection.readPublicMember(recipe, "pedestalItems"));
+        assertNull(RecipeReflection.readPublicMember(recipe, "result"));
+    }
+
+    @Test
     void cachedPublicMemberLookupPreservesMethodBeforeFieldSemantics()
     {
         var recipe = new PublicMethodAndFieldRecipe();
@@ -208,6 +217,15 @@ final class CountedInputReflectionTest
         public final String reagent = "reagent";
         public final String input = "input";
         public final List<String> pedestalItems = List.of("pedestal");
+    }
+
+    private static final class PublicAccessorInputRecipe
+    {
+        private final String reagent = "reagent";
+        private final List<String> pedestalItems = List.of("pedestal");
+        private final String result = "result";
+        public String reagent() { return reagent; }
+        public List<String> pedestalItems() { return pedestalItems; }
     }
 
     private static final class PublicMethodAndFieldRecipe

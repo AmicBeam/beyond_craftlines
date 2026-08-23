@@ -3,35 +3,17 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /** Safe structural access to public third-party recipe members. */
 final class RecipeReflection
 {
-    private static final ClassValue<PublicMembers> PUBLIC_MEMBERS = new ClassValue<>()
+    private static final ClassValue<ConcurrentMap<String, PublicMember>> PUBLIC_MEMBERS = new ClassValue<>()
     {
         @Override
-        protected PublicMembers computeValue(Class<?> type)
-        {
-            LinkedHashMap<String, Method> methods = new LinkedHashMap<>();
-            try
-            {
-                for (Method method : type.getMethods())
-                    if (method.getParameterCount() == 0 && !Modifier.isStatic(method.getModifiers()))
-                        methods.putIfAbsent(method.getName(), method);
-            }
-            catch (RuntimeException | LinkageError ignored) {}
-            LinkedHashMap<String, Field> fields = new LinkedHashMap<>();
-            try
-            {
-                for (Field field : type.getFields())
-                    if (!Modifier.isStatic(field.getModifiers()))
-                        fields.putIfAbsent(field.getName(), field);
-            }
-            catch (RuntimeException | LinkageError ignored) {}
-            return new PublicMembers(Map.copyOf(methods), Map.copyOf(fields));
-        }
+        protected ConcurrentMap<String, PublicMember> computeValue(Class<?> type)
+        { return new ConcurrentHashMap<>(); }
     };
 
     private RecipeReflection() {}
@@ -39,11 +21,15 @@ final class RecipeReflection
     static Object readPublicMember(Object target, String name)
     {
         if (target == null || name == null || name.isBlank()) return null;
-        PublicMembers members;
+        PublicMember member;
         try
-        { members = PUBLIC_MEMBERS.get(target.getClass()); }
+        {
+            Class<?> type = target.getClass();
+            member = PUBLIC_MEMBERS.get(type).computeIfAbsent(name,
+                    candidate -> findPublicMember(type, candidate));
+        }
         catch (RuntimeException | LinkageError ignored) { return null; }
-        Method method = members.methods().get(name);
+        Method method = member.method();
         if (method != null)
         {
             try
@@ -52,7 +38,7 @@ final class RecipeReflection
             }
             catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
         }
-        Field field = members.fields().get(name);
+        Field field = member.field();
         if (field != null)
         {
             try
@@ -64,5 +50,24 @@ final class RecipeReflection
         return null;
     }
 
-    private record PublicMembers(Map<String, Method> methods, Map<String, Field> fields) {}
+    private static PublicMember findPublicMember(Class<?> type, String name)
+    {
+        Method method = null;
+        try
+        {
+            Method candidate = type.getMethod(name);
+            if (!Modifier.isStatic(candidate.getModifiers())) method = candidate;
+        }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+        Field field = null;
+        try
+        {
+            Field candidate = type.getField(name);
+            if (!Modifier.isStatic(candidate.getModifiers())) field = candidate;
+        }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+        return new PublicMember(method, field);
+    }
+
+    private record PublicMember(Method method, Field field) {}
 }

@@ -35,4 +35,8 @@ final class InputGroupRouteLogic
         return sorted.stream().filter(value -> value.priority() == first.priority()
                 && value.kind() == Kind.DIRECT_MACHINE).toList();
     }
+
+    /** A different resource planned for the same machine may be committed first and retried next tick. */
+    static boolean canContinuePartialRound(long offered, long present, boolean deferredByResourceConflict)
+    { return offered > 0 || present > 0 || deferredByResourceConflict; }
 }

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class InputGroupRouteLogicTest
 {
@@ -31,6 +33,19 @@ final class InputGroupRouteLogicTest
         assertEquals(List.of("pedestal-pipe-buffer"), selected(List.of(
                 direct("legacy-wildcard", ProvisionerInputGroupSelection.WILDCARD_PRIORITY),
                 provisioner("pedestal-pipe-buffer", ProvisionerInputGroupSelection.EXPLICIT_PRIORITY))));
+    }
+
+    @Test
+    void oneAltarCanReceiveInputAndSpiritsInSuccessiveRounds()
+    {
+        assertTrue(InputGroupRouteLogic.canContinuePartialRound(1, 0, false),
+                "the first input group is dispatched now");
+        assertTrue(InputGroupRouteLogic.canContinuePartialRound(0, 0, true),
+                "spirits blocked by the first planned resource are retried next tick");
+        assertTrue(InputGroupRouteLogic.canContinuePartialRound(0, 1, false),
+                "an input already present in the altar satisfies this round");
+        assertFalse(InputGroupRouteLogic.canContinuePartialRound(0, 0, false),
+                "a genuinely unwritable input still freezes the round");
     }
 
     private static InputGroupRouteLogic.Candidate<String> direct(String id, int priority)

@@ -1175,6 +1175,7 @@ public final class RecipeOrderService
             List<RecipePlan.Material> materials, List<InputChunk> selected)
     {
         List<RoutedInputChunk> result = new ArrayList<>();
+        List<InputChunk> deferredByResourceConflict = new ArrayList<>();
         Map<MachineKey, PlannedInput> planned = new java.util.HashMap<>();
         for (InputChunk chunk : selected)
         {
@@ -1186,7 +1187,11 @@ public final class RecipeOrderService
                 if (level == null) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
                 PlannedInput previous = planned.get(key);
-                if (previous != null && !previous.key().isSame(chunk.key())) continue;
+                if (previous != null && !previous.key().isSame(chunk.key()))
+                {
+                    deferredByResourceConflict.add(chunk);
+                    continue;
+                }
                 long capacity = BoundMachineAutomation.insertCapacity(
                         level, machine.position(), chunk.key(), remaining);
                 long alreadyPlanned = previous == null ? 0 : previous.amount();
@@ -1206,16 +1211,17 @@ public final class RecipeOrderService
                     .filter(chunk -> material.inputGroup().equals(chunk.inputGroup())
                             && material.key().isSame(chunk.key()))
                     .mapToLong(InputChunk::amount).reduce(0, SaturatingLongMath::add);
-            if (offered > 0) continue;
             long present = 0;
-            for (RecipeOrderJob.MachineLocation machine : machines)
+            if (offered <= 0) for (RecipeOrderJob.MachineLocation machine : machines)
             {
                 if (!machine.inputGroup().isBlank() && !machine.inputGroup().equals(material.inputGroup())) continue;
                 ServerLevel level = server.getLevel(machine.dimension());
                 if (level != null) present = Math.max(present, BoundMachineAutomation.countPresent(
                         level, machine.position(), material.key()));
             }
-            if (present <= 0) return List.of();
+            boolean deferred = deferredByResourceConflict.stream().anyMatch(chunk ->
+                    material.inputGroup().equals(chunk.inputGroup()) && material.key().isSame(chunk.key()));
+            if (!InputGroupRouteLogic.canContinuePartialRound(offered, present, deferred)) return List.of();
         }
         return List.copyOf(result);
     }

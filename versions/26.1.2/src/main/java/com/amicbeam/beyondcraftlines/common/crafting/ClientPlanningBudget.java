@@ -4,10 +4,9 @@ import java.util.function.LongSupplier;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Soft optimization budget plus hard cancellation for off-thread client proposal search. */
+/** Candidate-search budget plus hard cancellation for off-thread client proposal search. */
 final class ClientPlanningBudget
 {
-    private static final long DEFAULT_NANOS = 2_000_000_000L;
     private final int max;
     private final long deadline;
     private final LongSupplier nanoTime;
@@ -16,7 +15,7 @@ final class ClientPlanningBudget
     private boolean exhausted;
 
     ClientPlanningBudget(int max)
-    { this(max, DEFAULT_NANOS, System::nanoTime); }
+    { this(max, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, System::nanoTime); }
 
     ClientPlanningBudget(int max, long maxNanos, LongSupplier nanoTime)
     {

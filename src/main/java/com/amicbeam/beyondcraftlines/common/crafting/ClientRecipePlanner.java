@@ -27,6 +27,8 @@ import java.util.WeakHashMap;
  */
 public final class ClientRecipePlanner
 {
+    /** Wall-clock window shared by the preferred and fallback candidate searches. */
+    public static final long SEARCH_TIME_LIMIT_NANOS = 3_000_000_000L;
     private static final Map<RecipeManager, Map<CatalogKey, Catalog>> CATALOG_CACHE =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private ClientRecipePlanner() {}
@@ -104,7 +106,18 @@ public final class ClientRecipePlanner
                                 Map<IngredientKey, ResourceLocation> manualIngredients,
                                 int maxDepth, int maxNodes)
     {
-        if (requested < 1 || maxDepth < 1 || maxNodes < 1) throw new IllegalArgumentException("invalid client plan");
+        return plan(catalog, suppliedStock, target, requested, manualRecipes, manualIngredients,
+                maxDepth, maxNodes, SEARCH_TIME_LIMIT_NANOS);
+    }
+
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
+                                IStackKey<?> target, long requested,
+                                Map<String, ResourceLocation> manualRecipes,
+                                Map<IngredientKey, ResourceLocation> manualIngredients,
+                                int maxDepth, int maxNodes, long maxSearchNanos)
+    {
+        if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
+            throw new IllegalArgumentException("invalid client plan");
         Map<IStackKey<?>, List<Recipe>> byOutput = new LinkedHashMap<>();
         for (Recipe recipe : catalog.recipes())
             byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
@@ -112,7 +125,7 @@ public final class ClientRecipePlanner
         State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), 0, new LinkedHashMap<>(), new LinkedHashMap<>());
         state.stock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
-        ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes);
+        ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
                 0, maxDepth, budget);
@@ -180,9 +193,7 @@ public final class ClientRecipePlanner
             Recipe bestRecipe = null;
             for (Recipe recipe : candidates)
             {
-                // An incomplete candidate is not a usable result. Keep searching for feasibility
-                // even after the soft optimization budget is exhausted.
-                if (best != null && missingAmount(best.missing) == 0 && !budget.canOptimize()) break;
+                if (!PlanningBranches.shouldTryCandidate(best != null, budget)) break;
                 State branch = state.copy();
                 ResourceLocation previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
@@ -252,7 +263,7 @@ public final class ClientRecipePlanner
         String bestKey = null;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if (best != null && missingAmount(best.missing) == 0 && !budget.canOptimize()) break;
+            if (!PlanningBranches.shouldTryCandidate(best != null, budget)) break;
             State branch = state.copy();
             if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
                     manualIngredients, depth, maxDepth, budget, variant)) continue;

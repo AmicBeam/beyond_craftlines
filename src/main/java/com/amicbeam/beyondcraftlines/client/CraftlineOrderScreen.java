@@ -1609,15 +1609,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         planningTask = PLANNING_EXECUTOR.submit(() -> {
             ClientRecipePlanner.Proposal proposal = null;
             RuntimeException failure = null;
+            long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
-                    stock, target, count, recipes, ingredients, maxDepth, maxNodes); }
+                    stock, target, count, recipes, ingredients, maxDepth, maxNodes,
+                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
             catch (RuntimeException exception) { failure = exception; }
-            if (hasDefaults && (proposal == null || !proposal.craftable()))
+            long fallbackSearchNanos = searchDeadline - System.nanoTime();
+            if (hasDefaults && fallbackSearchNanos > 0 && (proposal == null || !proposal.craftable()))
             {
                 try
                 {
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
-                            stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes);
+                            stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
+                            fallbackSearchNanos);
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
                         proposal = fallback;

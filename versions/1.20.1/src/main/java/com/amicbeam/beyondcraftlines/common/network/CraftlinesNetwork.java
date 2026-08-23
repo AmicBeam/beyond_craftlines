@@ -17,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "11";
+    private static final String PROTOCOL = "12";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -41,6 +41,8 @@ public final class CraftlinesNetwork {
         server(CancelOrderPayload.class, CancelOrderPayload.STREAM_CODEC, CancelOrderPayload::handle);
         server(BindMachinePayload.class, BindMachinePayload.STREAM_CODEC, BindMachinePayload::handle);
         server(ConfigureProvisionerPayload.class, ConfigureProvisionerPayload.STREAM_CODEC, ConfigureProvisionerPayload::handle);
+        server(ReturnProvisionerContentPayload.class, ReturnProvisionerContentPayload.STREAM_CODEC,
+                ReturnProvisionerContentPayload::handle);
         server(RequestBindingVisualsPayload.class, RequestBindingVisualsPayload.STREAM_CODEC, RequestBindingVisualsPayload::handle);
         server(RequestJeiNetworkAvailabilityPayload.class, RequestJeiNetworkAvailabilityPayload.STREAM_CODEC,
                 RequestJeiNetworkAvailabilityPayload::handle);

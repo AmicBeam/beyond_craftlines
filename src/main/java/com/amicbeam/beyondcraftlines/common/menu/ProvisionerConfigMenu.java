@@ -8,6 +8,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.Comparator;
@@ -23,20 +25,38 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private final Set<ResourceLocation> selected;
     private final Map<ResourceLocation, Set<String>> availableGroups;
     private final Map<ResourceLocation, Set<String>> selectedGroups;
+    private final ContainerData provisionerData;
 
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
-        this(id, inventory, readOptions(data));
+        this(id, inventory, readOptions(data), new SimpleContainerData(1));
     }
 
-    private ProvisionerConfigMenu(int id, Inventory inventory, Options options)
+    private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
     { this(id, inventory, options.position(), options.candidates(), options.selected(),
-            options.availableGroups(), options.selectedGroups()); }
+            options.availableGroups(), options.selectedGroups(), provisionerData); }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                  Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
                                  Map<ResourceLocation, Set<String>> availableGroups,
-                                 Map<ResourceLocation, Set<String>> selectedGroups)
+                                 Map<ResourceLocation, Set<String>> selectedGroups,
+                                 CraftlineProvisionerBlockEntity provisioner)
+    {
+        this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
+                new ContainerData()
+                {
+                    @Override public int get(int index)
+                    { return index == 0 && !provisioner.isEmpty() ? 1 : 0; }
+                    @Override public void set(int index, int value) {}
+                    @Override public int getCount() { return 1; }
+                });
+    }
+
+    private ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
+                                  Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
+                                  Map<ResourceLocation, Set<String>> availableGroups,
+                                  Map<ResourceLocation, Set<String>> selectedGroups,
+                                  ContainerData provisionerData)
     {
         super(CraftlinesMenus.PROVISIONER.get(), id);
         this.position = position.immutable();
@@ -44,6 +64,8 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         this.selected = Set.copyOf(selected);
         this.availableGroups = copyGroups(availableGroups);
         this.selectedGroups = copyGroups(selectedGroups);
+        this.provisionerData = provisionerData;
+        addDataSlots(provisionerData);
     }
 
     public BlockPos position() { return position; }
@@ -51,6 +73,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     public Set<ResourceLocation> selected() { return selected; }
     public Map<ResourceLocation, Set<String>> availableGroups() { return availableGroups; }
     public Map<ResourceLocation, Set<String>> selectedGroups() { return selectedGroups; }
+    public boolean hasResources() { return provisionerData.get(0) != 0; }
 
     public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
                                     Set<ResourceLocation> candidates, Set<ResourceLocation> selected,

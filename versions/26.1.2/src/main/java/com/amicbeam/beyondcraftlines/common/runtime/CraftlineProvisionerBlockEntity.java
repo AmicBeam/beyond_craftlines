@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
+import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.api.util.CapCtx;
@@ -52,6 +53,21 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public boolean isEmpty() { return storage.isEmpty(); }
     public Set<Identifier> recipeCandidates() { return Set.copyOf(recipeCandidates); }
     public ItemStack targetItemIcon() { return targetItemIcon; }
+
+    /** Moves every staged resource accepted by the target network and keeps any rejected remainder. */
+    public void returnContentTo(UnifiedStorage networkStorage)
+    {
+        if (networkStorage == null || storage.isEmpty()) return;
+        for (KeyAmount stack : List.copyOf(storage.getStorage()))
+        {
+            if (stack.isEmpty()) continue;
+            KeyAmount taken = storage.extract(stack.key(), stack.amount(), false, false);
+            if (taken.isEmpty()) continue;
+            KeyAmount remainder = networkStorage.insert(taken.key(), taken.amount(), false);
+            if (!remainder.isEmpty())
+                storage.insertFromOrder(remainder.key(), remainder.amount(), false);
+        }
+    }
 
     /** Drops every staged BD resource in the same lossless container used by BD machines. */
     public void dropContent()

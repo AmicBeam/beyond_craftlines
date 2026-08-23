@@ -46,7 +46,7 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
                     BindingSavedData.get(serverPlayer.getServer()).inputGroupsForProvisioner(level.dimension(), pos));
             serverPlayer.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                     new ProvisionerConfigMenu(id, inventory, pos, candidates, configured,
-                            availableGroups, selectedGroups),
+                            availableGroups, selectedGroups, be),
                     Component.translatable("menu.beyond_craftlines.provisioner")), buffer -> {
                         ProvisionerConfigMenu.writeOptions(buffer, pos, candidates, configured,
                                 availableGroups, selectedGroups);

@@ -1,1 +1,6 @@
-{"replace":false,"values":["beyond_craftlines:schematic_anchor","beyond_craftlines:schematic_executor","beyond_craftlines:schematic_duplicator","beyond_craftlines:craftline_provisioner"]}
+{
+  "replace": false,
+  "values": [
+    "beyond_craftlines:craftline_provisioner"
+  ]
+}

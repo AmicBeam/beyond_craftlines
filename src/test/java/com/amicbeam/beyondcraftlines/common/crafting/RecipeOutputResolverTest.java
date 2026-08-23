@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -41,6 +42,13 @@ final class RecipeOutputResolverTest
     {
         assertEquals(List.of("imbued_gem", "apparatus_result"),
                 RecipeOutputResolver.reflectiveOutputValues(new PublicFieldOutputRecipe()));
+    }
+
+    @Test
+    void unwrapsCapabilityOutputMapsAndContentRecords()
+    {
+        assertEquals(List.of("assembled_machine"),
+                RecipeOutputResolver.reflectiveOutputValues(new CapabilityMapRecipe()));
     }
 
     @Test
@@ -113,6 +121,12 @@ final class RecipeOutputResolverTest
         public final String result = "apparatus_result";
     }
 
+    private static final class CapabilityMapRecipe
+    {
+        public final Map<String, List<CapabilityContent>> outputs = Map.of(
+                "item", List.of(new CapabilityContent("assembled_machine", 10_000, 10_000)));
+    }
+
     private static final class BoxedStack
     {
         private final String stack;
@@ -121,4 +135,5 @@ final class RecipeOutputResolverTest
     }
 
     private record SplitOutput(String left, String right) {}
+    private record CapabilityContent(Object content, int chance, int maxChance) {}
 }

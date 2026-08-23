@@ -33,6 +33,12 @@ public final class RecipeOutputResolver
         {
             KeyAmount converted = RecipeResourceResolver.fromStack(output);
             if (converted != null && !converted.isEmpty()) add(result, converted);
+            if (converted == null)
+                for (Object representation : CountedInputReflection.representationValues(output))
+                {
+                    KeyAmount represented = RecipeResourceResolver.fromStack(representation);
+                    if (represented != null && !represented.isEmpty()) add(result, represented);
+                }
         }
         return List.copyOf(result.values());
     }
@@ -60,32 +66,20 @@ public final class RecipeOutputResolver
     private static List<?> flatten(Object value)
     {
         if (value == null) return List.of();
-        if (value instanceof Iterable<?> iterable)
+        List<Object> result = new ArrayList<>();
+        for (Object leaf : StructuralRecipeValues.flatten(value))
         {
-            List<Object> result = new ArrayList<>();
-            iterable.forEach(element -> result.addAll(flatten(element)));
-            return result;
+            Object current = leaf;
+            java.util.Set<Object> wrappers = java.util.Collections.newSetFromMap(
+                    new java.util.IdentityHashMap<>());
+            for (int depth = 0; depth < 8 && current != null && wrappers.add(current); depth++)
+            {
+                Object containedStack = RecipeReflection.readPublicMember(current, "getChemicalStack");
+                if (containedStack == null || containedStack == current) break;
+                current = containedStack;
+            }
+            if (current != null) result.addAll(StructuralRecipeValues.flatten(current));
         }
-        if (value.getClass().isArray())
-        {
-            int length = java.lang.reflect.Array.getLength(value);
-            List<Object> result = new ArrayList<>(length);
-            for (int i = 0; i < length; i++)
-                result.addAll(flatten(java.lang.reflect.Array.get(value, i)));
-            return result;
-        }
-        if (value.getClass().isRecord())
-        {
-            List<Object> result = new ArrayList<>();
-            for (java.lang.reflect.RecordComponent component : value.getClass().getRecordComponents())
-                result.addAll(flatten(RecipeReflection.readPublicMember(value, component.getName())));
-            return result;
-        }
-        // Some recipe APIs wrap a concrete resource stack so that one output slot can
-        // carry multiple chemical kinds. Keep this generic and unwrap the stack-shaped
-        // container instead of linking to the owning mod's wrapper class.
-        Object containedStack = RecipeReflection.readPublicMember(value, "getChemicalStack");
-        if (containedStack != null && containedStack != value) return flatten(containedStack);
-        return List.of(value);
+        return List.copyOf(result);
     }
 }

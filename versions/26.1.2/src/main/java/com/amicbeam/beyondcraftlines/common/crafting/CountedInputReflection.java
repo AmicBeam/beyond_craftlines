@@ -1,13 +1,10 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
-import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 
 /** Structural reflection for third-party counted item inputs, kept free of mod-specific classes. */
@@ -18,7 +15,8 @@ final class CountedInputReflection
             "getMatchingFluidStacks", "matchingFluidStacks",
             "getMatchingStacks", "matchingStacks",
             "getFluids", "fluids", "getFluidStacks", "fluidStacks",
-            "getStacks", "stacks", "getInputStacks", "inputStacks");
+            "getStacks", "stacks", "getInputStacks", "inputStacks",
+            "getItems", "items");
     private static final long MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER = 200;
     private static final Set<String> CHEMICAL_INPUT_METHODS = Set.of(
             "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
@@ -61,42 +59,7 @@ final class CountedInputReflection
     }
 
     static List<?> flatten(Object value)
-    {
-        List<Object> result = new ArrayList<>();
-        flatten(value, result, Collections.newSetFromMap(new IdentityHashMap<>()));
-        return result;
-    }
-
-    private static void flatten(Object value, List<Object> result, Set<Object> containers)
-    {
-        if (value == null) return;
-        if (value instanceof Optional<?> optional)
-        {
-            optional.ifPresent(element -> flatten(element, result, containers));
-            return;
-        }
-        if (value instanceof Iterable<?> iterable)
-        {
-            if (!containers.add(value)) return;
-            iterable.forEach(element -> flatten(element, result, containers));
-            return;
-        }
-        if (value instanceof java.util.stream.BaseStream<?, ?> stream)
-        {
-            if (!containers.add(value)) return;
-            try { stream.iterator().forEachRemaining(element -> flatten(element, result, containers)); }
-            finally { stream.close(); }
-            return;
-        }
-        if (value.getClass().isArray())
-        {
-            if (!containers.add(value)) return;
-            int length = Array.getLength(value);
-            for (int i = 0; i < length; i++) flatten(Array.get(value, i), result, containers);
-            return;
-        }
-        result.add(value);
-    }
+    { return StructuralRecipeValues.flatten(value); }
 
     static Value read(Object input)
     {

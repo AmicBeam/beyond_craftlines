@@ -4,6 +4,7 @@ import mekanism.test.PerTickChemicalRecipe;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,6 +51,21 @@ final class CountedInputReflectionTest
         assertEquals(List.of(first, second, third), CountedInputReflection.flatten(
                 List.of(Optional.of(first), new Object[] { List.of(second), third })));
         assertEquals(List.of(), CountedInputReflection.flatten(Optional.empty()));
+    }
+
+    @Test
+    void unwrapsCapabilityMapsAndContentRecordsWithoutLeakingMetadata()
+    {
+        Object item = new Object();
+        Object fluid = new Object();
+        Map<String, List<CapabilityContent>> contents = Map.of(
+                "item", List.of(new CapabilityContent(item, 10_000, 10_000)),
+                "fluid", List.of(new CapabilityContent(fluid, 5_000, 10_000)));
+
+        var flattened = CountedInputReflection.flatten(contents);
+        assertEquals(2, flattened.size());
+        assertTrue(flattened.contains(item));
+        assertTrue(flattened.contains(fluid));
     }
 
     @Test
@@ -167,6 +183,7 @@ final class CountedInputReflectionTest
     }
 
     private record RecordStyleInput(Object ingredient, int count) {}
+    private record CapabilityContent(Object content, int chance, int maxChance) {}
     private record LongCountInput(Object ingredient, long count) {}
     private record RepresentationProvider(Object ingredient, long count)
     {

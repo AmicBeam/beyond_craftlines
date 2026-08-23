@@ -68,10 +68,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     .filter(holder -> RecipeOutputResolver.outputs(holder.value(), level.registryAccess())
                             .stream().anyMatch(output -> target.isSame(output.key())))
                     .findFirst().orElse(null);
-            String family = recipe == null ? "" : RecipePlanningService.family(recipe);
-            if (recipe == null || requestedType != null && !"crafting".equals(family)
-                    && !DeviceBindingRegistry.supportsJeiType(player.getServer(), networkId,
-                    requestedType, family))
+            // The JEI category id is presentation metadata, not an execution capability. A single
+            // server RecipeType may be split across multiple JEI subcategories whose ids cannot be
+            // inferred generically. The recipe id, actual server family, network binding and selected
+            // output above are the authoritative checks.
+            if (recipe == null)
             {
                 player.displayClientMessage(Component.translatable(
                         "error.beyond_craftlines.invalid_order_recipe"), false);

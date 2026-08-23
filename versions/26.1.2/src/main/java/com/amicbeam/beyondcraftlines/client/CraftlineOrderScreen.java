@@ -360,12 +360,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         target.getRender().render(graphics, target, x, topPos + 36);
         String name = font.plainSubstrByWidth(target.getRender().getDisplayName(target).getString(), width - 22);
         graphics.text(font, name, x + 22, topPos + 39, 0x253545, false);
-        graphics.text(font, font.plainSubstrByWidth(target.getTypeId().toString(), width),
-                x, topPos + 56, 0x687784, false);
         Component owned = networkAmount < 0
                 ? Component.translatable("gui.beyond_craftlines.network_owned_loading")
                 : Component.translatable("gui.beyond_craftlines.network_owned", networkAmount);
-        graphics.text(font, font.plainSubstrByWidth(owned.getString(), width), x, topPos + 66, 0x00609D, false);
+        graphics.text(font, font.plainSubstrByWidth(owned.getString(), width), x, topPos + 56, 0x00609D, false);
         graphics.text(font, Component.translatable("gui.beyond_craftlines.amount"), x, topPos + 75, 0x465564, false);
     }
 

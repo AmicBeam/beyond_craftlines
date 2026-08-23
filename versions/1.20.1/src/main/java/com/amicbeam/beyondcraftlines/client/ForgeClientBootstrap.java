@@ -4,8 +4,10 @@ import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.client.tooltip.ClientRecipePreviewTooltip;
 import com.amicbeam.beyondcraftlines.client.tooltip.RecipePreviewTooltip;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.MenuScreens;
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.ModelEvent;
 import net.minecraftforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -22,6 +24,7 @@ public final class ForgeClientBootstrap {
                 CraftlinesClientEvents::showBindFeedback;
         modBus.addListener(ForgeClientBootstrap::setup);
         modBus.addListener(ForgeClientBootstrap::registerTooltipComponents);
+        modBus.addListener(ForgeClientBootstrap::registerRenderers);
         modBus.addListener(ForgeClientBootstrap::modifyModels);
         modBus.addListener(ForgeClientBootstrap::configReloaded);
     }
@@ -35,6 +38,10 @@ public final class ForgeClientBootstrap {
     }
     private static void registerTooltipComponents(RegisterClientTooltipComponentFactoriesEvent event) {
         event.register(RecipePreviewTooltip.class, ClientRecipePreviewTooltip::new);
+    }
+    private static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+        event.registerBlockEntityRenderer(CraftlinesBlockEntities.CRAFTLINE_PROVISIONER.get(),
+                ProvisionerFallbackLabelRenderer::new);
     }
     private static void modifyModels(ModelEvent.ModifyBakingResult event) { ProvisionerMaterialModel.install(event); }
     private static void configReloaded(ModConfigEvent.Reloading event) {

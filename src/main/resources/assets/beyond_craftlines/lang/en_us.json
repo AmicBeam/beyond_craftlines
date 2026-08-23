@@ -27,7 +27,7 @@
   "error.beyond_craftlines.provisioner_config_failed": "Save failed. Only types scanned with a Network Linker can be selected, and network manager permission is required.",
   "error.beyond_craftlines.provisioner_selection_failed": "Cannot select this provisioner; ensure it is bound to your current managed network.",
   "menu.beyond_craftlines.provisioner": "Craftline Provisioner",
-  "gui.beyond_craftlines.provisioner.choose": "Select recipe types (saved automatically)",
+  "gui.beyond_craftlines.provisioner.choose": "Select recipe types (no subgroup selected means all)",
   "gui.beyond_craftlines.provisioner.group.ingredients": "Ingredients",
   "gui.beyond_craftlines.provisioner.group.activation_item": "Activation item",
   "gui.beyond_craftlines.provisioner.group.offerings": "Offerings",

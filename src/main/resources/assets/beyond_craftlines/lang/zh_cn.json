@@ -27,7 +27,7 @@
   "error.beyond_craftlines.provisioner_config_failed": "保存失败：只能选择用网络联结器扫描得到的类型，且需要当前网络的管理权限。",
   "error.beyond_craftlines.provisioner_selection_failed": "无法选择此供给器：请确认它已绑定到你管理的当前网络。",
   "menu.beyond_craftlines.provisioner": "合成链供给器",
-  "gui.beyond_craftlines.provisioner.choose": "选择承接的配方类型（自动保存）",
+  "gui.beyond_craftlines.provisioner.choose": "选择承接的配方类型（未选子标签则全部支持）",
   "gui.beyond_craftlines.provisioner.group.ingredients": "材料",
   "gui.beyond_craftlines.provisioner.group.activation_item": "激活物品",
   "gui.beyond_craftlines.provisioner.group.offerings": "供品",

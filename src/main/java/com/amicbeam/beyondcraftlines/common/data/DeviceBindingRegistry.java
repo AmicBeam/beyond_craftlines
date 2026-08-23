@@ -283,9 +283,18 @@ public final class DeviceBindingRegistry
     {
         Set<String> loadedFamilies = level.getRecipeManager().getOrderedRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        LinkedHashMap<ResourceLocation, Set<String>> familiesByType = new LinkedHashMap<>();
+        Set<String> relevantFamilies = new HashSet<>();
+        for (ResourceLocation type : jeiTypes)
+        {
+            Set<String> families = JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families();
+            familiesByType.put(type, families);
+            relevantFamilies.addAll(families);
+        }
         Map<String, Set<String>> byFamily = new HashMap<>();
         level.getRecipeManager().getOrderedRecipes().forEach(holder -> {
             String family = RecipePlanningService.family(holder);
+            if (!relevantFamilies.contains(family)) return;
             Set<String> groups = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .inputGroups(holder.value());
             byFamily.merge(family, groups, DeviceBindingRegistry::mergeInputGroups);
@@ -294,7 +303,7 @@ public final class DeviceBindingRegistry
         for (ResourceLocation type : jeiTypes)
         {
             Set<String> groups = new HashSet<>();
-            JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families()
+            familiesByType.getOrDefault(type, Set.of())
                     .forEach(family -> groups.addAll(byFamily.getOrDefault(family, Set.of())));
             result.put(type, Set.copyOf(groups));
         }

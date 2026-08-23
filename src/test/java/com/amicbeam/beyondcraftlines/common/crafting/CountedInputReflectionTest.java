@@ -129,6 +129,17 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void cachedPublicMemberLookupPreservesMethodBeforeFieldSemantics()
+    {
+        var recipe = new PublicMethodAndFieldRecipe();
+        assertEquals("method", RecipeReflection.readPublicMember(recipe, "input"));
+        assertEquals("method", RecipeReflection.readPublicMember(recipe, "input"));
+        assertEquals("field fallback", RecipeReflection.readPublicMember(recipe, "fallback"));
+        assertNull(RecipeReflection.readPublicMember(recipe, "staticInput"));
+        assertNull(RecipeReflection.readPublicMember(recipe, "missing"));
+    }
+
+    @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
         assertFalse(CountedInputReflection.INPUT_METHODS.stream()
@@ -180,6 +191,15 @@ final class CountedInputReflectionTest
         public final String reagent = "reagent";
         public final String input = "input";
         public final List<String> pedestalItems = List.of("pedestal");
+    }
+
+    private static final class PublicMethodAndFieldRecipe
+    {
+        public static final String staticInput = "static";
+        public final String input = "field";
+        public final String fallback = "field fallback";
+        public String input() { return "method"; }
+        public String fallback() { throw new IllegalStateException("expected test failure"); }
     }
 
     private static final class BeanStyleInput

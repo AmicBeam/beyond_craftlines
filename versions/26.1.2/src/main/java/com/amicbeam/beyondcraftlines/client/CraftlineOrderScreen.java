@@ -658,7 +658,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ? BuiltInRegistries.ITEM.getKey(itemKey.getSource()) : null;
         if (rootItem != null) rootRecipe = selectedRecipe(rootItem, selected);
         treeRoot = buildTree(rootKey, rootStack, rootItem, rootRecipe,
-                null, -1, 0, amountValue(), new HashSet<>(), new TreeStock(planningResources));
+                null, -1, 0, amountValue(), false, new HashSet<>(), new TreeStock(planningResources));
         if (CraftlinesConfig.COLLAPSE_DUPLICATE_TREE_RESOURCES.get())
             applyDuplicateTreeReferences(treeRoot, true);
         layout(treeRoot, new int[]{0});
@@ -729,18 +729,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     }
 
     private GraphNode buildTree(ItemStack stack, RecipeHolder<?> recipe, Identifier parentRecipe,
-                                int parentSlot, int depth, long fallbackNeeded,
+                                int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
                                 Set<String> expanding, TreeStock stock)
     {
         Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         ItemStackKey resourceKey = new ItemStackKey(stack.copyWithCount(1));
         return buildTree(resourceKey, stack.copyWithCount(1), itemId, recipe,
-                parentRecipe, parentSlot, depth, fallbackNeeded, expanding, stock);
+                parentRecipe, parentSlot, depth, fallbackNeeded, reusableInput, expanding, stock);
     }
 
     private GraphNode buildTree(IStackKey<?> resourceKey, ItemStack stack, Identifier itemId,
                                 RecipeHolder<?> recipe, Identifier parentRecipe,
-                                int parentSlot, int depth, long fallbackNeeded, Set<String> expanding,
+                                int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
+                                Set<String> expanding,
                                 TreeStock stock)
     {
         String expansionKey = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
@@ -750,16 +751,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         // must not consume stock. Every non-cyclic occurrence keeps its local demand; repeated
         // resources are aggregated only after the complete tree has been built.
         long needed = Math.max(1, fallbackNeeded);
+        long effectiveNeeded = reusableInput && depth > 0
+                ? stock.additionalReusableRequirement(resourceKey, needed) : needed;
         // Whether this node is covered by inventory must come from the same snapshot allocator
         // used for the whole visible tree. The server's extraction total can be lower than the
         // demand when another branch produces an equivalent intermediate; treating that as the
         // node's available stock incorrectly expands a fully stocked node as partially crafted.
-        long stockUsed = cyclic || depth <= 0 ? 0 : stock.consume(resourceKey, needed);
-        long unresolved = needed - stockUsed;
+        long stockUsed = cyclic || depth <= 0 || effectiveNeeded == 0
+                ? 0 : stock.consume(resourceKey, effectiveNeeded);
+        long unresolved = effectiveNeeded - stockUsed;
         boolean stockSatisfied = depth > 0 && unresolved == 0;
         GraphNode node = new GraphNode(resourceKey, stack.copyWithCount(1), itemId,
                 stockSatisfied ? null : recipe, parentRecipe, parentSlot, depth, needed,
                 0, 0);
+        node.reusableInput = reusableInput;
         node.collapsed = itemId != null && depth > 0 && collapsedNodes.contains(itemId);
         node.stockSatisfied = stockSatisfied;
         node.stockUsed = stockUsed;
@@ -804,8 +809,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var ingredient = selectedInput.ingredient();
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
-            boolean reusableInput = currentSlot < reusable.length && reusable[currentSlot];
-            long totalAmount = reusableInput
+            boolean reusableSlot = currentSlot < reusable.length && reusable[currentSlot];
+            long totalAmount = reusableSlot
                     ? selectedResource.amount()
                     : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
                             selectedResource.amount(), recipeCrafts);
@@ -815,10 +820,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     : null;
             if (merged != null)
             {
-                merged.add(currentSlot, totalAmount, ingredient, reusableInput);
+                merged.add(currentSlot, totalAmount, ingredient, reusableSlot);
                 continue;
             }
-            inputs.add(new TreeInput(inputKey, totalAmount, currentSlot, ingredient, reusableInput));
+            inputs.add(new TreeInput(inputKey, totalAmount, currentSlot, ingredient, reusableSlot));
         }
         for (TreeInput inputGroup : inputs)
         {
@@ -832,16 +837,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 Identifier inputId = BuiltInRegistries.ITEM.getKey(input.getItem());
                 RecipeHolder<?> childRecipe = selectedRecipe(inputId, menu.recipeForOutput(inputId));
                 child = buildTree(input, childRecipe, recipe.id().identifier(), firstSlot.slot(), depth + 1,
-                        inputGroup.amount, expanding, stock);
+                        inputGroup.amount, inputGroup.reusableOnly, expanding, stock);
             }
             else
             {
                 RecipeHolder<?> childRecipe = selectedResourceRecipe(
                         inputKey, menu.recipeForResourceOutput(inputKey));
                 child = buildTree(inputKey, ItemStack.EMPTY, null, childRecipe,
-                        recipe.id().identifier(), firstSlot.slot(), depth + 1, inputGroup.amount, expanding, stock);
+                        recipe.id().identifier(), firstSlot.slot(), depth + 1, inputGroup.amount,
+                        inputGroup.reusableOnly, expanding, stock);
             }
-            child.reusableInput = inputGroup.reusableOnly;
             child.setIngredientChoices(firstSlot.ingredient());
             for (int i = 1; i < inputGroup.slots.size(); i++)
             {
@@ -1021,7 +1026,27 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static void mergeDisplayedTotals(GraphNode target, GraphNode source)
     {
-        target.reusableInput &= source.reusableInput;
+        boolean reusable = target.reusableInput && source.reusableInput;
+        target.reusableInput = reusable;
+        if (reusable)
+        {
+            long outputPerCraft = target.crafts > 0 ? Math.max(1, target.produced / target.crafts)
+                    : source.crafts > 0 ? Math.max(1, source.produced / source.crafts) : 1;
+            target.needed = Math.max(target.needed, source.needed);
+            target.stockUsed = Math.min(target.needed,
+                    com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
+                            target.stockUsed, source.stockUsed));
+            long unresolved = target.needed - target.stockUsed;
+            boolean craftable = target.recipe != null || source.recipe != null;
+            target.crafts = unresolved == 0 || !craftable ? 0
+                    : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.ceilDiv(
+                            unresolved, outputPerCraft);
+            target.produced = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
+                    target.crafts, outputPerCraft);
+            target.stockSatisfied = target.depth > 0 && unresolved == 0;
+            target.partiallySatisfied = target.stockUsed > 0 && target.stockUsed < target.needed;
+            return;
+        }
         long outputPerCraft = target.crafts > 0 ? Math.max(1, target.produced / target.crafts)
                 : source.crafts > 0 ? Math.max(1, source.produced / source.crafts) : 1;
         target.needed = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
@@ -2016,9 +2041,25 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private static final class TreeStock
     {
         private final LinkedHashMap<IStackKey<?>, Long> remaining = new LinkedHashMap<>();
+        private final LinkedHashMap<IStackKey<?>, Long> reusableRequirements = new LinkedHashMap<>();
 
         private TreeStock(Map<IStackKey<?>, Long> source)
         { source.forEach((key, amount) -> remaining.put(key, Math.max(0, amount))); }
+
+        private long additionalReusableRequirement(IStackKey<?> requested, long amount)
+        {
+            long positive = Math.max(1, amount);
+            for (var entry : reusableRequirements.entrySet())
+            {
+                if (!requested.isSame(entry.getKey())) continue;
+                long previous = entry.getValue();
+                if (positive <= previous) return 0;
+                entry.setValue(positive);
+                return positive - previous;
+            }
+            reusableRequirements.put(requested, positive);
+            return positive;
+        }
 
         private long consume(IStackKey<?> requested, long amount)
         {

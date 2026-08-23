@@ -693,6 +693,30 @@ public final class RecipeOrderService
                     network.getUnifiedStorage(), step, machine.position(), wait.outputKey());
         }
 
+        // Another automation may extract the primary output before this tick sees it in the
+        // bound machine. Count that network delta as this batch's output just like provisioner
+        // and native-furnace orders do. This is required for rituals whose whitelist pipes move
+        // the altar result directly back into the dimension network.
+        long currentNetwork = networkAmount(job.networkId(), wait.outputKey());
+        ExternalOrderLogic.NetworkCredit networkCredit = ExternalOrderLogic.creditNetworkOutput(
+                wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
+        long newlyCredited = Math.max(0, networkCredit.collected() - wait.collected());
+        if (newlyCredited > 0 && job.nextStep() + 1 < job.stepCount())
+        {
+            List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
+                    wait.outputKey(), newlyCredited, wait.networkBaselineStacks());
+            long capturedAmount = 0;
+            for (KeyAmount value : captured)
+                capturedAmount = SaturatingLongMath.add(capturedAmount, value.amount());
+            job = addReserved(job, captured.stream().map(value ->
+                    new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
+            long afterCapture = networkAmount(job.networkId(), wait.outputKey());
+            networkCredit = new ExternalOrderLogic.NetworkCredit(
+                    ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterCapture),
+                    wait.collected() + capturedAmount);
+        }
+        wait = wait.withProgress(networkCredit.observed(), networkCredit.collected());
+
         long current = 0;
         for (RecipeOrderJob.MachineLocation machine : outputLocations)
         {
@@ -735,6 +759,10 @@ public final class RecipeOrderService
             }
             job = addReserved(job, produced);
             wait = wait.withCollected(wait.collected() + inserted);
+            long afterInsert = networkAmount(job.networkId(), wait.outputKey());
+            long afterObserved = ExternalOrderLogic.availableMachineOutput(
+                    wait.networkBaseline(), afterInsert);
+            wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved), wait.collected());
         }
         if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
         return job.awaitExternal(wait, encode("machine_processing", wait.collected(), wait.amount()));

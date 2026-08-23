@@ -45,4 +45,19 @@ final class ExternalOrderLogicTest
         assertEquals(10, second.observed());
         assertEquals(8, second.collected());
     }
+
+    @Test
+    void boundRitualCompletesWhenWhitelistReturnsOutputStraightToNetwork()
+    {
+        // The altar is already empty when Craftlines ticks because an external whitelist pipe
+        // moved the result into the network. Completion must therefore come from the network delta.
+        assertEquals(0, ExternalOrderLogic.availableMachineOutput(0, 0));
+        var returned = ExternalOrderLogic.creditNetworkOutput(12, 13, 0, 0, 1);
+        assertEquals(1, returned.observed());
+        assertEquals(1, returned.collected());
+
+        // Re-reading the same network state must not complete another craft.
+        assertEquals(returned, ExternalOrderLogic.creditNetworkOutput(
+                12, 13, returned.observed(), returned.collected(), 2));
+    }
 }

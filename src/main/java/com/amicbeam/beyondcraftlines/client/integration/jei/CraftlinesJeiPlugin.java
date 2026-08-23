@@ -35,7 +35,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "jei_plugin");
     private static volatile IJeiRuntime runtime;
-    private static volatile boolean hasPrimaryNetwork;
+    private static volatile NetworkAvailability networkAvailability = NetworkAvailability.UNKNOWN;
     private static volatile long nextNetworkCheckNanos;
 
     @Override
@@ -70,8 +70,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)
     {
         runtime = jeiRuntime;
-        JeiNetworkAvailabilityPayload.clientReceiver = available -> hasPrimaryNetwork = available;
+        JeiNetworkAvailabilityPayload.clientReceiver = available -> networkAvailability = available
+                ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
+        networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
+        requestNetworkAvailability();
         JeiCatalystIndex.rebuild(jeiRuntime);
     }
 
@@ -79,8 +82,21 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public void onRuntimeUnavailable()
     {
         runtime = null;
-        hasPrimaryNetwork = false;
+        networkAvailability = NetworkAvailability.UNKNOWN;
         JeiCatalystIndex.clear();
+    }
+
+    public static void onLoggingIn()
+    {
+        networkAvailability = NetworkAvailability.UNKNOWN;
+        nextNetworkCheckNanos = 0L;
+        Minecraft.getInstance().execute(CraftlinesJeiPlugin::requestNetworkAvailability);
+    }
+
+    public static void onLoggingOut()
+    {
+        networkAvailability = NetworkAvailability.UNKNOWN;
+        nextNetworkCheckNanos = 0L;
     }
 
     public static boolean showRecipesFor(ItemStack stack)
@@ -125,18 +141,25 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return player != null && player.containerMenu instanceof DimensionsNetMenu;
     }
 
-    private static boolean isOrderButtonAvailable()
+    private static NetworkAvailability orderButtonAvailability()
     {
-        if (hasDimensionsNetContext()) return true;
+        if (hasDimensionsNetContext()) return NetworkAvailability.AVAILABLE;
         if (!CraftlinesConfig.SHOW_JEI_ORDER_BUTTON_EVERYWHERE.get()
-                || Minecraft.getInstance().player == null) return false;
+                || Minecraft.getInstance().player == null) return NetworkAvailability.UNAVAILABLE;
+        requestNetworkAvailability();
+        return networkAvailability;
+    }
+
+    private static void requestNetworkAvailability()
+    {
+        if (runtime == null || !CraftlinesConfig.SHOW_JEI_ORDER_BUTTON_EVERYWHERE.get()
+                || Minecraft.getInstance().player == null) return;
         long now = System.nanoTime();
         if (now >= nextNetworkCheckNanos)
         {
             nextNetworkCheckNanos = now + 2_000_000_000L;
             PacketDistributor.sendToServer(new RequestJeiNetworkAvailabilityPayload());
         }
-        return hasPrimaryNetwork;
     }
 
     private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe,
@@ -153,9 +176,9 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         @Override
         public void updateState(IButtonState state)
         {
-            boolean visible = isOrderButtonAvailable();
-            state.setVisible(visible);
-            state.setActive(visible);
+            NetworkAvailability availability = orderButtonAvailability();
+            state.setVisible(availability != NetworkAvailability.UNAVAILABLE);
+            state.setActive(availability == NetworkAvailability.AVAILABLE);
         }
 
         @Override
@@ -174,6 +197,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         {
             tooltip.add(Component.translatable("gui.beyond_craftlines.order_from_jei"));
         }
+    }
+
+    private enum NetworkAvailability
+    {
+        UNKNOWN,
+        AVAILABLE,
+        UNAVAILABLE
     }
 
     private record ScaledDrawable(IDrawable delegate, int width, int height) implements IDrawable

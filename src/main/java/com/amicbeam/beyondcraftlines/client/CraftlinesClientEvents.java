@@ -84,10 +84,16 @@ public final class CraftlinesClientEvents
     public static final class GameBus
     {
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
-        { ClientBindingVisuals.onLoggingIn(event); }
+        {
+            ClientBindingVisuals.onLoggingIn(event);
+            com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingIn();
+        }
 
         @SubscribeEvent public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event)
-        { ClientBindingVisuals.onLoggingOut(event); }
+        {
+            ClientBindingVisuals.onLoggingOut(event);
+            com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingOut();
+        }
 
         @SubscribeEvent public static void render(RenderLevelStageEvent event)
         { ClientBindingVisuals.render(event); }

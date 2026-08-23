@@ -24,7 +24,6 @@ final class CountedInputReflection
 
     static final List<String> INPUT_METHODS = List.of(
             "input", "getInput", "inputs", "getInputs",
-            "reagent", "getReagent", "pedestalItems", "getPedestalItems",
             "inputA", "getInputA", "inputB", "getInputB", "inputC", "getInputC",
             "inputOne", "getInputOne", "inputTwo", "getInputTwo", "inputThree", "getInputThree",
             "leftInput", "getLeftInput", "rightInput", "getRightInput",

@@ -38,9 +38,9 @@ final class RecipeOutputResolverTest
     }
 
     @Test
-    void readsArsNouveauStylePublicOutputFields()
+    void readsGenericPublicOutputFields()
     {
-        assertEquals(List.of("imbued_gem", "apparatus_result"),
+        assertEquals(List.of("processed_item", "machine_result"),
                 RecipeOutputResolver.reflectiveOutputValues(new PublicFieldOutputRecipe()));
     }
 
@@ -117,8 +117,8 @@ final class RecipeOutputResolverTest
 
     private static final class PublicFieldOutputRecipe
     {
-        public final String output = "imbued_gem";
-        public final String result = "apparatus_result";
+        public final String output = "processed_item";
+        public final String result = "machine_result";
     }
 
     private static final class CapabilityMapRecipe

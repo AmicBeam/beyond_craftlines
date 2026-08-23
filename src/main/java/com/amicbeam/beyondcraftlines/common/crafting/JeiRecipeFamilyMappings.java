@@ -47,9 +47,6 @@ public final class JeiRecipeFamilyMappings
             // while both are backed by the same server-side RecipeType.
             case "mekanism:condensentrating", "mekanism:decondensentrating" -> "mekanism:rotary";
 
-            // Ars Nouveau's JEI category ids differ from their server recipe type ids.
-            case "ars_nouveau:glyph_recipe" -> "ars_nouveau:glyph";
-            case "ars_nouveau:enchantment_apparatus" -> "ars_nouveau:enchantment";
             default -> jeiType.startsWith("minecraft:")
                     ? jeiType.substring("minecraft:".length()) : jeiType;
         };

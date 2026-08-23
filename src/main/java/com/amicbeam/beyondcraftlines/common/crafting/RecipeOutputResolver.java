@@ -17,8 +17,8 @@ public final class RecipeOutputResolver
             "getOutputDefinition", "getOutputDefinitions",
             "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",
             "outputs", "getOutputs",
-            // Ars Nouveau 1.20 and similar data-driven recipes expose a public result/output
-            // field while intentionally returning ItemStack.EMPTY from Recipe#getResultItem.
+            // Some data-driven recipes expose a public result/output member while
+            // intentionally returning ItemStack.EMPTY from Recipe#getResultItem.
             "output", "getOutput", "result", "getResult");
 
     private RecipeOutputResolver() {}

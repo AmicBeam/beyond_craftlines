@@ -57,17 +57,6 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
-    void arsNouveauJeiCategoriesMapToTheirServerRecipeTypes()
-    {
-        var result = JeiRecipeFamilyMappings.resolve(
-                Set.of("ars_nouveau:glyph_recipe", "ars_nouveau:enchantment_apparatus"),
-                Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment"));
-        assertEquals(Set.of("ars_nouveau:glyph_recipe", "ars_nouveau:enchantment_apparatus"),
-                result.jeiTypes());
-        assertEquals(Set.of("ars_nouveau:glyph", "ars_nouveau:enchantment"), result.families());
-    }
-
-    @Test
     void categoryIsRejectedWhenServerRecipeTypeIsNotLoaded()
     {
         assertTrue(JeiRecipeFamilyMappings.resolve(

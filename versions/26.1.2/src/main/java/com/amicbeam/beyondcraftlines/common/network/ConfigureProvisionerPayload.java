@@ -55,6 +55,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             LinkedHashSet<Identifier> selected = new LinkedHashSet<>();
             payload.selectedTypes().stream().limit(32).map(Identifier::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(selected::add);
+            if (!menu.candidates().containsAll(selected)) return;
             Map<Identifier, Set<String>> selectedGroups = new HashMap<>();
             boolean invalidGroups = false;
             for (String encoded : payload.selectedGroups().stream().limit(512).toList())
@@ -69,11 +70,16 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                 { invalidGroups = true; continue; }
                 selectedGroups.computeIfAbsent(type, ignored -> new LinkedHashSet<>()).add(group);
             }
-            boolean configured = !invalidGroups && DeviceBindingRegistry.configureProvisioner(
-                    player, position, selected, selectedGroups);
-            Component message = Component.translatable(configured
-                    ? "message.beyond_craftlines.provisioner_configured"
-                    : "error.beyond_craftlines.provisioner_config_failed");
+            boolean configured = !invalidGroups && (menu.isBoundMachineConfiguration()
+                    ? selectedGroups.isEmpty()
+                    && DeviceBindingRegistry.configureBoundMachine(player, position, selected)
+                    : DeviceBindingRegistry.configureProvisioner(player, position, selected, selectedGroups));
+            String messageKey = menu.isBoundMachineConfiguration()
+                    ? configured ? "message.beyond_craftlines.bound_machine_configured"
+                    : "error.beyond_craftlines.bound_machine_config_failed"
+                    : configured ? "message.beyond_craftlines.provisioner_configured"
+                    : "error.beyond_craftlines.provisioner_config_failed";
+            Component message = Component.translatable(messageKey);
             if (configured) player.sendOverlayMessage(message); else player.sendSystemMessage(message);
             if (configured) BindingVisualsPayload.broadcast(player.level());
         });

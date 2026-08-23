@@ -17,6 +17,9 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.LivingEntity;
 import java.util.function.Consumer;
 import java.util.function.BiFunction;
 
@@ -26,6 +29,11 @@ public final class NetworkLinkerItem extends Item
             (context, unbind) -> InteractionResult.SUCCESS;
 
     public NetworkLinkerItem(Properties properties) { super(properties.stacksTo(1)); }
+
+    @Override
+    public boolean canDestroyBlock(ItemStack stack, BlockState state, Level level,
+                                   BlockPos position, LivingEntity user)
+    { return !(user instanceof Player player && player.getAbilities().instabuild); }
 
     @Override public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display,
                                           Consumer<Component> tooltip, TooltipFlag flag)

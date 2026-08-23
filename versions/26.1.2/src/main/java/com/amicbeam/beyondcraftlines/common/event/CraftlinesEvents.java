@@ -1,6 +1,9 @@
 package com.amicbeam.beyondcraftlines.common.event;
 
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
+import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
+import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -27,6 +30,16 @@ public final class CraftlinesEvents
     {
         if (!event.getPlayer().level().isClientSide() && event.getPlayer().level().getServer() != null)
         {
+            var binding = BindingSavedData.get(event.getPlayer().level().getServer()).at(
+                    event.getPlayer().level().dimension(), event.getPos());
+            if (binding != null && binding.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                    && (event.getPlayer().getMainHandItem().is(CraftlinesItems.NETWORK_LINKER.get())
+                    || event.getPlayer().getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get())))
+            {
+                event.setCanceled(true);
+                return;
+            }
+            if (event.isCanceled()) return;
             DeviceBindingRegistry.removeAt(event.getPlayer().level().getServer(),
                     event.getPlayer().level().dimension(), event.getPos());
             BindingVisualsPayload.broadcast((net.minecraft.server.level.ServerLevel) event.getPlayer().level());

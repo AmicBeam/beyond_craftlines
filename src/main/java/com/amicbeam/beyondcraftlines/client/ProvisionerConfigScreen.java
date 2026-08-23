@@ -72,11 +72,12 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         next = addRenderableWidget(Button.builder(Component.literal(">"), ignored -> {
             if ((page + 1) * ROWS < candidates.size()) { page++; refresh(); }
         }).bounds(leftPos + 44, topPos + 207, 28, 18).build());
-        returnAll = addRenderableWidget(Button.builder(
-                Component.translatable("gui.beyond_craftlines.provisioner.return_all"), ignored -> {
-                    returnAll.active = false;
-                    PacketDistributor.sendToServer(new ReturnProvisionerContentPayload(menu.position().asLong()));
-                }).bounds(leftPos + imageWidth - 132, topPos + 207, 120, 18).build());
+        if (!menu.isBoundMachineConfiguration())
+            returnAll = addRenderableWidget(Button.builder(
+                    Component.translatable("gui.beyond_craftlines.provisioner.return_all"), ignored -> {
+                        returnAll.active = false;
+                        PacketDistributor.sendToServer(new ReturnProvisionerContentPayload(menu.position().asLong()));
+                    }).bounds(leftPos + imageWidth - 132, topPos + 207, 120, 18).build());
         refresh();
     }
 
@@ -149,7 +150,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         }
         previous.active = page > 0;
         next.active = (page + 1) * ROWS < candidates.size();
-        returnAll.active = menu.hasResources();
+        if (returnAll != null) returnAll.active = menu.hasResources();
     }
 
     @Override protected void containerTick()

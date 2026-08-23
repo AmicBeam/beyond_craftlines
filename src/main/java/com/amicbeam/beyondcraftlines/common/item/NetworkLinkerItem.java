@@ -17,6 +17,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.List;
@@ -26,6 +28,10 @@ import java.util.Set;
 public final class NetworkLinkerItem extends Item
 {
     public NetworkLinkerItem(Properties properties) { super(properties.stacksTo(1)); }
+
+    @Override
+    public boolean canAttackBlock(BlockState state, Level level, BlockPos position, Player player)
+    { return !player.isCreative(); }
 
     @Override public void appendHoverText(ItemStack stack, TooltipContext context,
                                           List<Component> tooltip, TooltipFlag flag)

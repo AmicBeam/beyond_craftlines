@@ -4,6 +4,8 @@ import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
+import com.amicbeam.beyondcraftlines.common.network.OpenBoundMachineConfigPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderStatusMenuPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
 import com.amicbeam.beyondcraftlines.client.tooltip.ClientRecipePreviewTooltip;
@@ -29,7 +31,12 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.lwjgl.glfw.GLFW;
 
 public final class CraftlinesClientEvents
@@ -102,6 +109,26 @@ public final class CraftlinesClientEvents
         {
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
+        }
+
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public static void openBoundMachineConfig(InputEvent.InteractionKeyMappingTriggered event)
+        {
+            if (!event.isAttack()) return;
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.player == null || minecraft.level == null
+                    || !(minecraft.hitResult instanceof BlockHitResult hit)
+                    || hit.getType() != HitResult.Type.BLOCK
+                    || (!minecraft.player.getMainHandItem().is(CraftlinesItems.NETWORK_LINKER.get())
+                    && !minecraft.player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
+            var state = minecraft.level.getBlockState(hit.getBlockPos());
+            var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            var types = new java.util.LinkedHashSet<>(
+                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                            .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
+            types.add(blockId);
+            PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types));
+            event.setCanceled(true);
         }
 
         @SubscribeEvent public static void addStatusButton(ScreenEvent.Init.Post event)

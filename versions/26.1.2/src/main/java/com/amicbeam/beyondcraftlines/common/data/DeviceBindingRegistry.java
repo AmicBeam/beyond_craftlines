@@ -123,6 +123,33 @@ public final class DeviceBindingRegistry
         return configureProvisioner(player, level, position, provisioner, selectedTypes, selectedGroups);
     }
 
+    public static boolean configureBoundMachine(Player player, BlockPos position,
+                                                Set<Identifier> selectedTypes)
+    {
+        if (player.level().getServer() == null || !(player.level() instanceof ServerLevel level)
+                || !level.isLoaded(position)) return false;
+        BindingSavedData data = BindingSavedData.get(player.level().getServer());
+        BindingRecord existing = data.at(level.dimension(), position);
+        if (existing == null || existing.deviceType() != DeviceType.EXTERNAL_RECIPE_MACHINE) return false;
+        DimensionsNet network = DimensionsNet.getNetFromId(existing.networkId());
+        if (network == null || !network.isManager(player)) return false;
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock());
+        if (!blockId.equals(existing.lastBlockId()) || !BoundMachineAutomation.isAutomatable(level, position))
+            return false;
+
+        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
+                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
+        if ((!selectedTypes.isEmpty() && resolved.isEmpty())
+                || resolved.jeiTypes().size() != selectedTypes.size()) return false;
+        data.add(new BindingRecord(existing.id(), existing.owner(), existing.networkId(),
+                existing.dimension(), existing.position(), existing.deviceType(),
+                resolved.jeiTypes(), resolved.families(), Map.of(), existing.lastBlockId(),
+                existing.provisionerDimension(), existing.provisionerPosition(), existing.nickname(),
+                existing.favorite(), existing.boundGameTime()));
+        return true;
+    }
+
     private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
                                                 CraftlineProvisionerBlockEntity provisioner,
                                                 Set<Identifier> selectedTypes)

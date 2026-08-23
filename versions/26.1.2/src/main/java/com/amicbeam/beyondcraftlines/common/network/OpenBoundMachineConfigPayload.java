@@ -1,0 +1,87 @@
+package com.amicbeam.beyondcraftlines.common.network;
+
+import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
+import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
+import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
+import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
+import com.amicbeam.beyondcraftlines.common.runtime.BoundMachineAutomation;
+import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleMenuProvider;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public record OpenBoundMachineConfigPayload(long targetPosition, List<String> jeiRecipeTypes)
+        implements CustomPacketPayload
+{
+    public static final Type<OpenBoundMachineConfigPayload> TYPE = new Type<>(
+            Identifier.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "open_bound_machine_config"));
+    public static final StreamCodec<ByteBuf, OpenBoundMachineConfigPayload> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.VAR_LONG, OpenBoundMachineConfigPayload::targetPosition,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(256), 32),
+            OpenBoundMachineConfigPayload::jeiRecipeTypes,
+            OpenBoundMachineConfigPayload::new);
+
+    public static OpenBoundMachineConfigPayload of(BlockPos target, Set<Identifier> types)
+    {
+        return new OpenBoundMachineConfigPayload(target.asLong(),
+                types.stream().map(Object::toString).sorted().limit(32).toList());
+    }
+
+    public static void handle(OpenBoundMachineConfigPayload payload, IPayloadContext context)
+    {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)
+                    || !(player.level() instanceof ServerLevel level)) return;
+            BlockPos position = BlockPos.of(payload.targetPosition());
+            if (!level.isLoaded(position) || player.blockPosition().distSqr(position) > 64
+                    || (!player.getMainHandItem().is(CraftlinesItems.NETWORK_LINKER.get())
+                    && !player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
+
+            var binding = BindingSavedData.get(level.getServer()).at(level.dimension(), position);
+            if (binding == null || binding.deviceType() != DeviceType.EXTERNAL_RECIPE_MACHINE
+                    || !BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock())
+                    .equals(binding.lastBlockId())
+                    || !BoundMachineAutomation.isAutomatable(level, position)) return;
+            DimensionsNet network = DimensionsNet.getNetFromId(binding.networkId());
+            if (network == null || !network.isManager(player)) return;
+
+            LinkedHashSet<Identifier> requested = new LinkedHashSet<>(binding.jeiRecipeTypes());
+            payload.jeiRecipeTypes().stream().limit(32).map(Identifier::tryParse)
+                    .filter(java.util.Objects::nonNull).forEach(requested::add);
+            Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
+                    .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+            var resolved = JeiRecipeFamilyRegistry.resolve(requested, loadedFamilies);
+            Set<Identifier> candidates = resolved.jeiTypes();
+            if (candidates.isEmpty()) return;
+            Set<Identifier> selected = binding.jeiRecipeTypes().stream()
+                    .filter(candidates::contains).collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+            player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
+                    new ProvisionerConfigMenu(id, inventory, position, candidates, selected),
+                    Component.translatable("menu.beyond_craftlines.bound_machine")), buffer ->
+                    ProvisionerConfigMenu.writeOptions(buffer, position, candidates, selected,
+                            Map.of(), Map.of(), true));
+        });
+    }
+
+    @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+}

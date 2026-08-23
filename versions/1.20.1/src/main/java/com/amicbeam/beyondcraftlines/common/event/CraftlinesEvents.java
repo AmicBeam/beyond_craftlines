@@ -2,6 +2,9 @@ package com.amicbeam.beyondcraftlines.common.event;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
+import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
+import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload;
 import com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService;
@@ -26,6 +29,15 @@ public final class CraftlinesEvents {
     @SubscribeEvent
     public static void onBlockBreak(BlockEvent.BreakEvent event) {
         if (!event.getPlayer().level().isClientSide() && event.getPlayer().getServer() != null) {
+            var binding = BindingSavedData.get(event.getPlayer().getServer()).at(
+                    event.getPlayer().level().dimension(), event.getPos());
+            if (binding != null && binding.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
+                    && (event.getPlayer().getMainHandItem().is(CraftlinesItems.NETWORK_LINKER.get())
+                    || event.getPlayer().getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) {
+                event.setCanceled(true);
+                return;
+            }
+            if (event.isCanceled()) return;
             DeviceBindingRegistry.removeAt(event.getPlayer().getServer(), event.getPlayer().level().dimension(), event.getPos());
             BindingVisualsPayload.broadcast((ServerLevel) event.getPlayer().level());
         }

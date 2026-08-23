@@ -4,6 +4,7 @@ import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 import net.minecraft.world.level.Level;
@@ -31,17 +32,30 @@ public final class RecipeOutputResolver
                 .forEach(item -> add(result,
                         new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount())));
         for (Object output : reflectiveOutputValues(recipe))
-        {
-            KeyAmount converted = RecipeResourceResolver.fromStack(output);
-            if (converted != null && !converted.isEmpty()) add(result, converted);
-            if (converted == null)
-                for (Object representation : CountedInputReflection.representationValues(output))
-                {
-                    KeyAmount represented = RecipeResourceResolver.fromStack(representation);
-                    if (represented != null && !represented.isEmpty()) add(result, represented);
-                }
-        }
+            addOutput(result, output);
         return List.copyOf(result.values());
+    }
+
+    private static void addOutput(LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)
+    {
+        if (output instanceof Ingredient ingredient)
+        {
+            ingredient.items().map(ItemStack::new).filter(stack -> !stack.isEmpty())
+                    .forEach(stack -> add(result, new KeyAmount(
+                            new ItemStackKey(stack.copyWithCount(1)), Math.max(1, stack.getCount()))));
+            return;
+        }
+        KeyAmount converted = RecipeResourceResolver.fromStack(output);
+        if (converted != null && !converted.isEmpty())
+        {
+            add(result, converted);
+            return;
+        }
+        for (Object representation : CountedInputReflection.representationValues(output))
+        {
+            KeyAmount represented = RecipeResourceResolver.fromStack(representation);
+            if (represented != null && !represented.isEmpty()) add(result, represented);
+        }
     }
 
     static List<Object> reflectiveOutputValues(Object recipe)

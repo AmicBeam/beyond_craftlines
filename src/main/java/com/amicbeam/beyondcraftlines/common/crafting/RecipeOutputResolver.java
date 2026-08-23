@@ -4,6 +4,7 @@ import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
 import java.util.ArrayList;
@@ -30,17 +31,33 @@ public final class RecipeOutputResolver
         ItemStack item = recipe.getResultItem(registries);
         if (!item.isEmpty()) add(result, new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount()));
         for (Object output : reflectiveOutputValues(recipe))
-        {
-            KeyAmount converted = RecipeResourceResolver.fromStack(output);
-            if (converted != null && !converted.isEmpty()) add(result, converted);
-            if (converted == null)
-                for (Object representation : CountedInputReflection.representationValues(output))
-                {
-                    KeyAmount represented = RecipeResourceResolver.fromStack(representation);
-                    if (represented != null && !represented.isEmpty()) add(result, represented);
-                }
-        }
+            addOutput(result, output);
         return List.copyOf(result.values());
+    }
+
+    private static void addOutput(LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)
+    {
+        // Forge remaps direct calls to Minecraft methods, but reflection by the development name
+        // "getItems" cannot see the obfuscated production name. Capability recipes such as GTCEu
+        // expose item outputs as SizedIngredient, so handle every Ingredient through the mapped API.
+        if (output instanceof Ingredient ingredient)
+        {
+            for (ItemStack stack : ingredient.getItems())
+                if (!stack.isEmpty()) add(result, new KeyAmount(
+                        new ItemStackKey(stack.copyWithCount(1)), Math.max(1, stack.getCount())));
+            return;
+        }
+        KeyAmount converted = RecipeResourceResolver.fromStack(output);
+        if (converted != null && !converted.isEmpty())
+        {
+            add(result, converted);
+            return;
+        }
+        for (Object representation : CountedInputReflection.representationValues(output))
+        {
+            KeyAmount represented = RecipeResourceResolver.fromStack(representation);
+            if (represented != null && !represented.isEmpty()) add(result, represented);
+        }
     }
 
     static List<Object> reflectiveOutputValues(Object recipe)

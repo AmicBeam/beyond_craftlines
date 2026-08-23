@@ -52,6 +52,13 @@ final class RecipeOutputResolverTest
     }
 
     @Test
+    void unwrapsCapabilityOutputMapsAndContentClasses()
+    {
+        assertEquals(List.of("assembled_machine"),
+                RecipeOutputResolver.reflectiveOutputValues(new ClassCapabilityMapRecipe()));
+    }
+
+    @Test
     void rotaryChemicalOutputSelectsOnlyTheFluidInputDirection()
     {
         assertEquals(List.of("getFluidInput"), RecipeResourceResolver.directionalInputMethods(
@@ -125,6 +132,20 @@ final class RecipeOutputResolverTest
     {
         public final Map<String, List<CapabilityContent>> outputs = Map.of(
                 "item", List.of(new CapabilityContent("assembled_machine", 10_000, 10_000)));
+    }
+
+    private static final class ClassCapabilityMapRecipe
+    {
+        public final Map<String, List<ClassCapabilityContent>> outputs = Map.of(
+                "item", List.of(new ClassCapabilityContent("assembled_machine")));
+    }
+
+    public static final class ClassCapabilityContent
+    {
+        public final Object content;
+        public final int chance = 10_000;
+        public final int maxChance = 10_000;
+        public ClassCapabilityContent(Object content) { this.content = content; }
     }
 
     private static final class BoxedStack

@@ -156,7 +156,8 @@ public final class RecipeResourceResolver
 
                 if (ingredientSource instanceof Ingredient ingredient)
                 {
-                    if (ingredient.isEmpty()) continue;
+                    // Custom ingredients may keep vanilla storage empty while overriding
+                    // getItems() with their real candidates. Trust those candidates directly.
                     List<KeyAmount> candidates = itemCandidates(ingredient, multiplier);
                     if (candidates.isEmpty()) continue;
                     seen.add(input);

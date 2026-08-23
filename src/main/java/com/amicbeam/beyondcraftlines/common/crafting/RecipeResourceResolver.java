@@ -158,7 +158,9 @@ public final class RecipeResourceResolver
 
                 if (ingredientSource instanceof Ingredient ingredient)
                 {
-                    if (ingredient.isEmpty()) continue;
+                    // Custom Forge ingredients may keep the vanilla Ingredient value array empty
+                    // while overriding getItems() with their real candidates (GTCEu's sized
+                    // ingredients are a prominent example). The actual candidates are authoritative.
                     List<KeyAmount> candidates = itemCandidates(ingredient, multiplier);
                     if (candidates.isEmpty()) continue;
                     seen.add(input);

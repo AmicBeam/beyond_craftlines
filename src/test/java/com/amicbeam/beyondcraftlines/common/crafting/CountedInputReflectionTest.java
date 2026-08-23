@@ -69,6 +69,21 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void unwrapsCapabilityContentClassesWithoutLeakingMetadata()
+    {
+        Object item = new Object();
+        Object fluid = new Object();
+        Map<String, List<ClassCapabilityContent>> contents = Map.of(
+                "item", List.of(new ClassCapabilityContent(item, 10_000, 10_000)),
+                "fluid", List.of(new ClassCapabilityContent(fluid, 5_000, 10_000)));
+
+        var flattened = CountedInputReflection.flatten(contents);
+        assertEquals(2, flattened.size());
+        assertTrue(flattened.contains(item));
+        assertTrue(flattened.contains(fluid));
+    }
+
+    @Test
     void safelyStopsOnSelfReferentialContainers()
     {
         List<Object> cyclic = new java.util.ArrayList<>();
@@ -173,6 +188,19 @@ final class CountedInputReflectionTest
 
     private record RecordStyleInput(Object ingredient, int count) {}
     private record CapabilityContent(Object content, int chance, int maxChance) {}
+    public static final class ClassCapabilityContent
+    {
+        public final Object content;
+        public final int chance;
+        public final int maxChance;
+
+        public ClassCapabilityContent(Object content, int chance, int maxChance)
+        {
+            this.content = content;
+            this.chance = chance;
+            this.maxChance = maxChance;
+        }
+    }
     private record LongCountInput(Object ingredient, long count) {}
     private record RepresentationProvider(Object ingredient, long count)
     {

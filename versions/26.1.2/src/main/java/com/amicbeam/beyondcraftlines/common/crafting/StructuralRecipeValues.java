@@ -79,17 +79,23 @@ final class StructuralRecipeValues
                 flatten(Array.get(value, i), result, containers, budget, depth + 1);
             return;
         }
+        // Capability recipe APIs commonly wrap the actual stack/ingredient in a Content
+        // object alongside chance metadata. Depending on the mod version this wrapper may
+        // be a record, a normal class with a public field, or a bean with getContent().
+        // Unwrap the semantic payload before considering generic record components so chance,
+        // maxChance and similar numbers can never become recipe resources.
+        Object content = RecipeReflection.readPublicMember(value, "content");
+        if (content == null) content = RecipeReflection.readPublicMember(value, "getContent");
+        if (content != null && content != value)
+        {
+            if (!containers.add(value)) return;
+            flatten(content, result, containers, budget, depth + 1);
+            return;
+        }
         if (value.getClass().isRecord())
         {
             if (!containers.add(value)) return;
             RecordComponent[] components = value.getClass().getRecordComponents();
-            for (RecordComponent component : components)
-                if ("content".equals(component.getName()))
-                {
-                    flatten(RecipeReflection.readPublicMember(value, component.getName()), result,
-                            containers, budget, depth + 1);
-                    return;
-                }
             for (RecordComponent component : components)
             {
                 if (budget.exhausted()) break;

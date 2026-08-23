@@ -45,6 +45,7 @@ final class CountedInputReflection
             "gasInput", "getGasInput", "gasInputs", "getGasInputs",
             "inputGas", "getInputGas", "inputGases", "getInputGases",
             "gasIngredient", "getGasIngredient", "gasIngredients", "getGasIngredients",
+            "spirits", "getSpirits",
             "offerings", "getOfferings");
 
     private CountedInputReflection() {}

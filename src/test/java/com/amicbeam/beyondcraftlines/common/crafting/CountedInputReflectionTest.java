@@ -149,6 +149,27 @@ final class CountedInputReflectionTest
     }
 
     @Test
+    void discoversMalumSpiritInputs()
+    {
+        Object modernShard = new Object();
+        Object legacyShard = new Object();
+        var recipe = new MalumLikeRecipe(List.of(
+                new ModernSpiritProvider(modernShard), new LegacySpiritProvider(legacyShard)));
+
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("spirits"));
+        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getSpirits"));
+        assertEquals("spirits", CountedInputReflection.inputGroup("spirits"));
+        assertEquals(recipe.spirits, RecipeReflection.readPublicMember(recipe, "spirits"));
+
+        var spirits = CountedInputReflection.flatten(
+                RecipeReflection.readPublicMember(recipe, "spirits"));
+        assertEquals(List.of(modernShard),
+                CountedInputReflection.representationValues(spirits.get(0)));
+        assertEquals(List.of(legacyShard),
+                CountedInputReflection.representationValues(spirits.get(1)));
+    }
+
+    @Test
     void cachedPublicMemberLookupPreservesMethodBeforeFieldSemantics()
     {
         var recipe = new PublicMethodAndFieldRecipe();
@@ -214,6 +235,24 @@ final class CountedInputReflectionTest
     {
         public java.util.stream.Stream<Object> getFluids()
         { return java.util.stream.Stream.of(ingredient); }
+    }
+    public static final class ModernSpiritProvider
+    {
+        private final Object shard;
+        private ModernSpiritProvider(Object shard) { this.shard = shard; }
+        public java.util.stream.Stream<Object> getItems()
+        { return java.util.stream.Stream.of(shard); }
+    }
+    public static final class LegacySpiritProvider
+    {
+        private final Object shard;
+        private LegacySpiritProvider(Object shard) { this.shard = shard; }
+        public List<Object> getStacks() { return List.of(shard); }
+    }
+    private static final class MalumLikeRecipe
+    {
+        public final List<Object> spirits;
+        private MalumLikeRecipe(List<Object> spirits) { this.spirits = spirits; }
     }
     private static final class UnrelatedPerTickRecipe
     {

@@ -297,8 +297,13 @@ public final class DeviceBindingRegistry
                 .filter(record -> record.recipeFamilies().contains(family))
                 .filter(record -> record.acceptsInputGroup(family, inputGroup))
                 .map(record -> validProvisionerTarget(server, record)).flatMap(Optional::stream)
-                .sorted(java.util.Comparator.comparing(target -> target.binding().dimension().identifier().toString()
-                        + "|" + target.binding().position().asLong())).toList();
+                .sorted(java.util.Comparator
+                        .comparingInt((ProvisionerTarget target) -> com.amicbeam.beyondcraftlines.common.crafting
+                                .ProvisionerInputGroupSelection.routingPriority(
+                                        target.binding().provisionerInputGroups().getOrDefault(family, Set.of()),
+                                        inputGroup))
+                        .thenComparing(target -> target.binding().dimension().identifier().toString()
+                                + "|" + target.binding().position().asLong())).toList();
     }
 
     public static Map<Identifier, Set<String>> inputGroupsByJeiType(ServerLevel level,

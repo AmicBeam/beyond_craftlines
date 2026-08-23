@@ -29,4 +29,16 @@ final class ProvisionerInputGroupSelectionTest
         assertEquals(Set.of(ProvisionerInputGroupSelection.ALL),
                 ProvisionerInputGroupSelection.accepted(Set.of("ingredients"), Set.of("ingredients")));
     }
+
+    @Test
+    void explicitGroupRoutingPrecedesWildcardFallback()
+    {
+        assertEquals(ProvisionerInputGroupSelection.EXPLICIT_PRIORITY,
+                ProvisionerInputGroupSelection.routingPriority(Set.of("activation_item"), "activation_item"));
+        assertEquals(ProvisionerInputGroupSelection.WILDCARD_PRIORITY,
+                ProvisionerInputGroupSelection.routingPriority(
+                        Set.of(ProvisionerInputGroupSelection.ALL), "activation_item"));
+        assertEquals(ProvisionerInputGroupSelection.REJECTED_PRIORITY,
+                ProvisionerInputGroupSelection.routingPriority(Set.of("ingredients"), "activation_item"));
+    }
 }

@@ -21,6 +21,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.util.TriState;
 import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.event.ModelEvent;
@@ -33,11 +34,14 @@ import org.joml.Vector3fc;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Adds each provisioner's target item icon directly to its chunk-baked block material. */
 public final class ProvisionerMaterialModel extends DelegateBlockStateModel
 {
     private static final float FACE_OFFSET = 0.0005F;
+    private static final Map<Item, Boolean> TEXT_FALLBACKS = new ConcurrentHashMap<>();
 
     private ProvisionerMaterialModel(BlockStateModel original)
     {
@@ -46,9 +50,18 @@ public final class ProvisionerMaterialModel extends DelegateBlockStateModel
 
     public static void install(ModelEvent.ModifyBakingResult event)
     {
+        TEXT_FALLBACKS.clear();
+        ProvisionerFallbackLabelRenderer.clearLayoutCache();
         event.getBakingResult().blockStateModels().replaceAll((state, model) ->
                 state.is(CraftlinesBlocks.CRAFTLINE_PROVISIONER.get())
                         ? new ProvisionerMaterialModel(model) : model);
+    }
+
+    /** Returns whether this item has no static quads and therefore needs the text overlay. */
+    public static boolean usesTextFallback(ItemStack icon)
+    {
+        if (icon.isEmpty()) return false;
+        return TEXT_FALLBACKS.computeIfAbsent(icon.getItem(), ignored -> captureItemQuads(icon).isEmpty());
     }
 
     @Override
@@ -95,11 +108,13 @@ public final class ProvisionerMaterialModel extends DelegateBlockStateModel
         ItemStack icon = targetIcon(level, pos);
         if (!CraftlinesConfig.SHOW_PROVISIONER_TARGET_MATERIAL.get() || icon.isEmpty()) return null;
 
-        CapturingItemState itemState = new CapturingItemState();
-        Minecraft.getInstance().getItemModelResolver().updateForTopItem(
-                itemState, icon, ItemDisplayContext.NONE, null, null, 42);
-        List<ColoredQuad> itemQuads = itemState.quads();
-        if (itemQuads.isEmpty()) return null;
+        List<ColoredQuad> itemQuads = captureItemQuads(icon);
+        if (itemQuads.isEmpty())
+        {
+            TEXT_FALLBACKS.put(icon.getItem(), true);
+            return null;
+        }
+        TEXT_FALLBACKS.put(icon.getItem(), false);
 
         IconBounds bounds = iconBounds(itemQuads);
         EnumMap<Direction, List<BakedQuad>> byFace = new EnumMap<>(Direction.class);
@@ -124,6 +139,14 @@ public final class ProvisionerMaterialModel extends DelegateBlockStateModel
             byFace.put(face, List.copyOf(transformed));
         }
         return new IconPart(byFace, delegate.particleMaterial(level, pos, state), flags);
+    }
+
+    private static List<ColoredQuad> captureItemQuads(ItemStack icon)
+    {
+        CapturingItemState itemState = new CapturingItemState();
+        Minecraft.getInstance().getItemModelResolver().updateForTopItem(
+                itemState, icon, ItemDisplayContext.NONE, null, null, 42);
+        return itemState.quads();
     }
 
     private static IconBounds iconBounds(List<ColoredQuad> quads)

@@ -15,6 +15,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.ChunkRenderTypeSet;
@@ -27,6 +28,8 @@ import org.joml.Vector3f;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Adds each provisioner's target item icon directly to its chunk-baked block material. */
 public final class ProvisionerMaterialModel extends BakedModelWrapper<BakedModel>
@@ -37,6 +40,7 @@ public final class ProvisionerMaterialModel extends BakedModelWrapper<BakedModel
     private static final RenderType ICON_RENDER_TYPE = RenderType.translucent();
     private static final ChunkRenderTypeSet ICON_LAYER = ChunkRenderTypeSet.of(ICON_RENDER_TYPE);
     private static final float FACE_OFFSET = 0.0005F;
+    private static final Map<Item, Boolean> TEXT_FALLBACKS = new ConcurrentHashMap<>();
 
     private ProvisionerMaterialModel(BakedModel original)
     {
@@ -45,8 +49,23 @@ public final class ProvisionerMaterialModel extends BakedModelWrapper<BakedModel
 
     public static void install(ModelEvent.ModifyBakingResult event)
     {
+        TEXT_FALLBACKS.clear();
+        ProvisionerFallbackLabelRenderer.clearLayoutCache();
         event.getModels().replaceAll((location, model) -> location.id().equals(PROVISIONER)
                 && !location.variant().equals("inventory") ? new ProvisionerMaterialModel(model) : model);
+    }
+
+    /** Returns whether this item has no static quads and therefore needs the text overlay. */
+    public static boolean usesTextFallback(ItemStack icon)
+    {
+        if (icon.isEmpty()) return false;
+        return TEXT_FALLBACKS.computeIfAbsent(icon.getItem(), ignored ->
+        {
+            Minecraft minecraft = Minecraft.getInstance();
+            BakedModel model = minecraft.getItemRenderer().getModel(icon, minecraft.level, null, 0);
+            return model.isCustomRenderer()
+                    || itemQuads(model, RandomSource.create(42L)).isEmpty();
+        });
     }
 
     @Override
@@ -69,9 +88,18 @@ public final class ProvisionerMaterialModel extends BakedModelWrapper<BakedModel
 
         Minecraft minecraft = Minecraft.getInstance();
         BakedModel itemModel = minecraft.getItemRenderer().getModel(icon, minecraft.level, null, 0);
-        if (itemModel.isCustomRenderer()) return base;
+        if (itemModel.isCustomRenderer())
+        {
+            TEXT_FALLBACKS.put(icon.getItem(), true);
+            return base;
+        }
         List<BakedQuad> itemQuads = itemQuads(itemModel, rand);
-        if (itemQuads.isEmpty()) return base;
+        if (itemQuads.isEmpty())
+        {
+            TEXT_FALLBACKS.put(icon.getItem(), true);
+            return base;
+        }
+        TEXT_FALLBACKS.put(icon.getItem(), false);
         IconBounds iconBounds = iconBounds(itemModel, itemQuads);
 
         ArrayList<BakedQuad> result = new ArrayList<>(base.size() + itemQuads.size() * 4);

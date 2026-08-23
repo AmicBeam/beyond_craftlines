@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.client;
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderStatusMenuPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
 import com.amicbeam.beyondcraftlines.client.tooltip.ClientRecipePreviewTooltip;
@@ -21,6 +22,7 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
@@ -49,6 +51,12 @@ public final class CraftlinesClientEvents
             event.register(CraftlinesMenus.ORDER.get(), CraftlineOrderScreen::new);
             event.register(CraftlinesMenus.STATUS.get(), CraftlineStatusScreen::new);
             event.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
+        }
+
+        @SubscribeEvent public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event)
+        {
+            event.registerBlockEntityRenderer(CraftlinesBlockEntities.CRAFTLINE_PROVISIONER.get(),
+                    ProvisionerFallbackLabelRenderer::new);
         }
 
         @SubscribeEvent public static void registerTooltipComponents(

@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -48,6 +49,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
+            var candidates = RecipeCatalog.forLevel(player.level()).stream()
+                    .filter(holder -> requestedRecipe == null || holder.id().identifier().equals(requestedRecipe))
+                    .toList();
+            if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
+                showRecipeDebug(player, payload, candidates);
             DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
                     ? DimensionsNet.getAllNetFromPlayer(player).stream()
                             .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
@@ -59,8 +65,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
-            var recipe = RecipeCatalog.forLevel(player.level()).stream()
-                    .filter(holder -> requestedRecipe == null || holder.id().identifier().equals(requestedRecipe))
+            var recipe = candidates.stream()
                     .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
                             || availableFamilies.contains(RecipePlanningService.family(holder)))
@@ -89,6 +94,20 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);
                     });
         });
+    }
+
+    private static void showRecipeDebug(ServerPlayer player, OpenOrderMenuPayload payload,
+                                        java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> candidates)
+    {
+        String families = candidates.stream().map(RecipePlanningService::family)
+                .filter(java.util.Objects::nonNull).filter(family -> !family.isBlank())
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(", "));
+        Component actual = families.isEmpty()
+                ? Component.translatable("message.beyond_craftlines.debug_recipe_type_not_found")
+                : Component.literal(families);
+        player.sendSystemMessage(Component.translatable(
+                "message.beyond_craftlines.debug_order_recipe", payload.recipeId(),
+                payload.jeiRecipeType(), actual));
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

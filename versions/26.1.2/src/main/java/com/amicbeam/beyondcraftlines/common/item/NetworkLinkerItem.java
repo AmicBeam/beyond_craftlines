@@ -48,10 +48,16 @@ public final class NetworkLinkerItem extends Item
         ItemStack stack = player.getItemInHand(usedHand);
         if (!level.isClientSide())
         {
-            boolean cleared = DeviceBindingRegistry.clearSelectedProvisionerRecipes(player);
-            player.sendSystemMessage(Component.translatable(cleared
-                    ? "message.beyond_craftlines.provisioner_recipes_cleared"
-                    : "error.beyond_craftlines.no_selected_provisioner_recipes"));
+            var result = DeviceBindingRegistry.useLinkerInAir(player);
+            String message = switch (result)
+            {
+                case RECIPES_CLEARED -> "message.beyond_craftlines.provisioner_recipes_cleared";
+                case CONNECTION_MODE_CLEARED -> "message.beyond_craftlines.provisioner_connection_mode_cleared";
+                case NOTHING -> "error.beyond_craftlines.no_selected_provisioner_recipes";
+            };
+            player.sendSystemMessage(Component.translatable(message));
+            com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload.sendTo(
+                    (net.minecraft.server.level.ServerPlayer) player);
         }
         return level.isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
     }
@@ -63,14 +69,18 @@ public final class NetworkLinkerItem extends Item
                 context.getLevel().getBlockState(context.getClickedPos()).getBlock());
         if (context.getLevel().getBlockState(context.getClickedPos()).is(CraftlinesBlocks.CRAFTLINE_PROVISIONER.get()))
         {
-            if (!context.getPlayer().isShiftKeyDown()) return InteractionResult.FAIL;
             if (!context.getLevel().isClientSide())
             {
-                boolean selected = DeviceBindingRegistry.selectProvisioner(
-                        context.getPlayer(), context.getClickedPos());
+                boolean connectionMode = !context.getPlayer().isShiftKeyDown();
+                boolean selected = connectionMode
+                        ? DeviceBindingRegistry.selectProvisionerConnections(context.getPlayer(), context.getClickedPos())
+                        : DeviceBindingRegistry.selectProvisioner(context.getPlayer(), context.getClickedPos());
                 context.getPlayer().sendSystemMessage(Component.translatable(selected
-                        ? "message.beyond_craftlines.provisioner_selected"
+                        ? connectionMode ? "message.beyond_craftlines.provisioner_connection_mode_selected"
+                        : "message.beyond_craftlines.provisioner_selected"
                         : "error.beyond_craftlines.provisioner_selection_failed"));
+                if (context.getPlayer() instanceof net.minecraft.server.level.ServerPlayer serverPlayer)
+                    com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload.sendTo(serverPlayer);
             }
             return context.getLevel().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.SUCCESS_SERVER;
         }

@@ -31,6 +31,7 @@ import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactori
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
+import net.neoforged.neoforge.client.event.RecipesReceivedEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
@@ -59,13 +60,9 @@ public final class CraftlinesClientEvents
                         context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
                 var types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .recipeTypesFor(catalyst);
-                if (!remove && types.isEmpty())
-                {
-                    player.sendSystemMessage(Component.translatable(
-                            "error.beyond_craftlines.machine_recipe_type_unknown"));
-                    return net.minecraft.world.InteractionResult.FAIL;
-                }
-                ClientPacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types, remove));
+                ClientPacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
+                        context.getClickedFace(),
+                        com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types), remove));
                 return net.minecraft.world.InteractionResult.SUCCESS;
             };
         }
@@ -119,6 +116,12 @@ public final class CraftlinesClientEvents
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingOut();
         }
 
+        @SubscribeEvent public static void recipesReceived(RecipesReceivedEvent event)
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
+            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
+        }
+
         @SubscribeEvent public static void render(RenderLevelStageEvent.AfterTranslucentParticles event)
         { ClientBindingVisuals.render(event); }
 
@@ -138,7 +141,8 @@ public final class CraftlinesClientEvents
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
             types.add(blockId);
-            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types));
+            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
+                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
             event.setCanceled(true);
         }
 

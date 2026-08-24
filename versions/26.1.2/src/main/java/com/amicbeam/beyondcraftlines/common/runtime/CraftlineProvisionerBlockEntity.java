@@ -1,5 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
 import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
@@ -13,12 +14,15 @@ import com.wintercogs.beyonddimensions.common.init.BDItems;
 import com.wintercogs.beyonddimensions.common.item.MatterCompressionBall;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
@@ -41,8 +45,11 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public static final ModelProperty<ItemStack> TARGET_ITEM_ICON = new ModelProperty<>(stack -> !stack.isEmpty());
     private final ProvisionerStorage storage = new ProvisionerStorage(this::setChanged);
     private final LinkedHashSet<Identifier> recipeCandidates = new LinkedHashSet<>();
+    private final List<WirelessConnection> wirelessConnections = new ArrayList<>();
     private Identifier targetBlockIcon;
     private ItemStack targetItemIcon = ItemStack.EMPTY;
+    private int connectionCursor;
+    private ProvisionerDeliveryStrategy deliveryStrategy = ProvisionerDeliveryStrategy.ROUND_ROBIN;
 
     public CraftlineProvisionerBlockEntity(BlockPos pos, BlockState state)
     {
@@ -53,6 +60,119 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public boolean isEmpty() { return storage.isEmpty(); }
     public Set<Identifier> recipeCandidates() { return Set.copyOf(recipeCandidates); }
     public ItemStack targetItemIcon() { return targetItemIcon; }
+    public List<WirelessConnection> wirelessConnections() { return List.copyOf(wirelessConnections); }
+    public int connectedDeviceCount() { return wirelessConnections.size(); }
+    public ProvisionerDeliveryStrategy deliveryStrategy() { return deliveryStrategy; }
+
+    public void setDeliveryStrategy(ProvisionerDeliveryStrategy strategy)
+    {
+        if (strategy == null || strategy == deliveryStrategy) return;
+        deliveryStrategy = strategy;
+        connectionCursor = 0;
+        syncChanged();
+    }
+
+    public ConnectionEdit toggleWirelessConnection(ResourceKey<net.minecraft.world.level.Level> dimension,
+                                                   BlockPos position, Direction face, Identifier blockId)
+    {
+        for (int i = 0; i < wirelessConnections.size(); i++)
+        {
+            WirelessConnection existing = wirelessConnections.get(i);
+            if (!existing.dimension().equals(dimension) || !existing.position().equals(position)) continue;
+            if (existing.face() == face)
+            {
+                wirelessConnections.remove(i);
+                connectionCursor = wirelessConnections.isEmpty() ? 0 : connectionCursor % wirelessConnections.size();
+                syncChanged();
+                return ConnectionEdit.REMOVED;
+            }
+            wirelessConnections.set(i, new WirelessConnection(dimension, position.immutable(), face, blockId));
+            syncChanged();
+            return ConnectionEdit.UPDATED;
+        }
+        if (wirelessConnections.size() >= CraftlinesConfig.MAX_PROVISIONER_CONNECTIONS.get())
+            return ConnectionEdit.LIMIT_REACHED;
+        wirelessConnections.add(new WirelessConnection(dimension, position.immutable(), face, blockId));
+        syncChanged();
+        return ConnectionEdit.ADDED;
+    }
+
+    public boolean clearWirelessConnections()
+    {
+        if (wirelessConnections.isEmpty()) return false;
+        wirelessConnections.clear();
+        connectionCursor = 0;
+        syncChanged();
+        return true;
+    }
+
+    public static void serverTick(net.minecraft.world.level.Level level, BlockPos position,
+                                  BlockState state, CraftlineProvisionerBlockEntity provisioner)
+    {
+        if (!(level instanceof ServerLevel) || provisioner.storage.isEmpty()
+                || provisioner.wirelessConnections.isEmpty()) return;
+        provisioner.dispatchWireless();
+    }
+
+    private void dispatchWireless()
+    {
+        if (!(level instanceof ServerLevel currentLevel) || wirelessConnections.isEmpty()) return;
+        int size = wirelessConnections.size();
+        for (KeyAmount staged : List.copyOf(storage.getStorage()))
+        {
+            if (staged.isEmpty()) continue;
+            long remaining = staged.amount();
+            for (int index : connectionOrder())
+            {
+                if (remaining <= 0) break;
+                WirelessConnection connection = wirelessConnections.get(index);
+                ServerLevel targetLevel = currentLevel.getServer().getLevel(connection.dimension());
+                if (targetLevel == null || !targetLevel.isLoaded(connection.position())
+                        || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
+                        .equals(connection.blockId())) continue;
+                long capacity = BoundMachineAutomation.insertCapacity(targetLevel, connection.position(),
+                        connection.face(), staged.key(), remaining);
+                if (capacity <= 0) continue;
+                KeyAmount taken = storage.extract(staged.key(), capacity, false, false);
+                if (taken.isEmpty()) continue;
+                long inserted = BoundMachineAutomation.insert(targetLevel, connection.position(),
+                        connection.face(), taken.key(), taken.amount());
+                if (inserted < taken.amount())
+                    storage.insertFromOrder(taken.key(), taken.amount() - inserted, false);
+                remaining -= inserted;
+                if (inserted > 0 && deliveryStrategy == ProvisionerDeliveryStrategy.ROUND_ROBIN)
+                    connectionCursor = (index + 1) % size;
+            }
+        }
+    }
+
+    private List<Integer> connectionOrder()
+    {
+        int size = wirelessConnections.size();
+        ArrayList<Integer> order = new ArrayList<>(size);
+        if (deliveryStrategy == ProvisionerDeliveryStrategy.ROUND_ROBIN)
+        {
+            for (int offset = 0; offset < size; offset++) order.add((connectionCursor + offset) % size);
+            return order;
+        }
+        for (int index = 0; index < size; index++) order.add(index);
+        Comparator<Integer> comparator = Comparator
+                .comparingLong((Integer index) -> distanceSquared(wirelessConnections.get(index)))
+                .thenComparingInt(Integer::intValue);
+        if (deliveryStrategy == ProvisionerDeliveryStrategy.FARTHEST_FIRST)
+            comparator = comparator.reversed();
+        order.sort(comparator);
+        return order;
+    }
+
+    private long distanceSquared(WirelessConnection connection)
+    {
+        if (level == null || !connection.dimension().equals(level.dimension())) return Long.MAX_VALUE;
+        long dx = (long) connection.position().getX() - worldPosition.getX();
+        long dy = (long) connection.position().getY() - worldPosition.getY();
+        long dz = (long) connection.position().getZ() - worldPosition.getZ();
+        return dx * dx + dy * dy + dz * dz;
+    }
 
     /** Moves every staged resource accepted by the target network and keeps any rejected remainder. */
     public void returnContentTo(UnifiedStorage networkStorage)
@@ -169,6 +289,18 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                 .forEach(type -> candidates.add(StringTag.valueOf(type.toString())));
         tag.put("recipe_candidates", candidates);
         if (targetBlockIcon != null) tag.putString("target_block_icon", targetBlockIcon.toString());
+        tag.putInt("delivery_strategy", deliveryStrategy.id());
+        ListTag connections = new ListTag();
+        for (WirelessConnection connection : wirelessConnections)
+        {
+            CompoundTag encoded = new CompoundTag();
+            encoded.putString("dimension", connection.dimension().identifier().toString());
+            encoded.putLong("position", connection.position().asLong());
+            encoded.putByte("face", (byte) connection.face().get3DDataValue());
+            encoded.putString("block", connection.blockId().toString());
+            connections.add(encoded);
+        }
+        tag.put("wireless_connections", connections);
         output.store(DATA_TAG, CompoundTag.CODEC, tag);
         output.storeNullable("target_item_icon", ItemStack.CODEC,
                 targetItemIcon.isEmpty() ? null : targetItemIcon);
@@ -190,6 +322,21 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
         }
         targetBlockIcon = Identifier.tryParse(tag.getStringOr("target_block_icon", ""));
         targetItemIcon = input.read("target_item_icon", ItemStack.CODEC).orElse(ItemStack.EMPTY);
+        deliveryStrategy = ProvisionerDeliveryStrategy.fromId(tag.getIntOr("delivery_strategy", 0));
+        wirelessConnections.clear();
+        ListTag connections = tag.getListOrEmpty("wireless_connections");
+        for (int i = 0; i < Math.min(1_024, connections.size()); i++)
+        {
+            CompoundTag encoded = connections.getCompoundOrEmpty(i);
+            Identifier dimensionId = Identifier.tryParse(encoded.getStringOr("dimension", ""));
+            Identifier blockId = Identifier.tryParse(encoded.getStringOr("block", ""));
+            if (dimensionId == null || blockId == null) continue;
+            wirelessConnections.add(new WirelessConnection(
+                    ResourceKey.create(Registries.DIMENSION, dimensionId),
+                    BlockPos.of(encoded.getLongOr("position", 0L)),
+                    Direction.from3DDataValue(encoded.getByteOr("face", (byte) 0)), blockId));
+        }
+        connectionCursor = 0;
         if (targetItemIcon.isEmpty() && targetBlockIcon != null)
         {
             var block = BuiltInRegistries.BLOCK.getValue(targetBlockIcon);
@@ -206,4 +353,9 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                     Block.UPDATE_CLIENTS | Block.UPDATE_IMMEDIATE);
         }
     }
+
+    public enum ConnectionEdit { ADDED, UPDATED, REMOVED, LIMIT_REACHED }
+
+    public record WirelessConnection(ResourceKey<net.minecraft.world.level.Level> dimension,
+                                     BlockPos position, Direction face, Identifier blockId) {}
 }

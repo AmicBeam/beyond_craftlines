@@ -32,6 +32,16 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.recipe_index_max_per_tick")
             .defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
 
+    public static final ModConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
+            .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
+            .translation("config.beyond_craftlines.amount_preview_delay_ticks")
+            .defineInRange("amountPreviewDelayTicks", 20, 1, 1_200);
+
+    public static final ModConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
+            .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
+            .translation("config.beyond_craftlines.recipe_preview_delay_ticks")
+            .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
+
     public static final ModConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .comment("Show only the occurrence closest to the root for an identical component-aware resource in the recipe tree; later occurrences become clickable jump references.")
             .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")
@@ -44,11 +54,32 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.show_jei_order_button_everywhere")
             .define("showOrderButtonEverywhere", true);
 
+    public static final ModConfigSpec.IntValue ORDER_STATUS_REFRESH_INTERVAL_TICKS = CLIENT_BUILDER
+            .pop()
+            .push("orders")
+            .comment("Ticks between order-status refresh requests while the order status screen is open.")
+            .translation("config.beyond_craftlines.order_status_refresh_interval_ticks")
+            .defineInRange("orderStatusRefreshIntervalTicks", 20, 1, 72_000);
+
     public static final ModConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting")
             .comment("Ticks between simulated crafting batches. Stack-stable inputs are processed as one BD long-count batch; state-changing tools remain sequential.")
             .translation("config.beyond_craftlines.virtual_crafting_node_interval_ticks")
             .defineInRange("virtualCraftingNodeIntervalTicks", 20, 1, 72_000);
+
+    public static final ModConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
+            .pop()
+            .push("provisioner")
+            .comment("Maximum number of wireless target devices bound to one Craftline Provisioner.")
+            .translation("config.beyond_craftlines.max_provisioner_connections")
+            .defineInRange("maxWirelessConnections", 16, 1, 1_024);
+
+    public static final ModConfigSpec.BooleanValue DEBUG_RECIPE_TYPE_MAPPINGS = SERVER_BUILDER
+            .pop()
+            .push("crafting")
+            .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
+            .translation("config.beyond_craftlines.debug_recipe_type_mappings")
+            .define("debugRecipeTypeMappings", false);
 
     public static final ModConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
             .comment("Maximum recursive recipe-tree depth per order.")

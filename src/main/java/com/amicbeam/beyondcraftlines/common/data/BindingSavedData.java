@@ -195,6 +195,7 @@ public final class BindingSavedData extends SavedData
         }
         entry.putString("name", record.nickname());
         entry.putBoolean("favorite", record.favorite());
+        entry.putInt("priority", record.priority());
         entry.putLong("time", record.boundGameTime());
         ListTag families = new ListTag();
         record.recipeFamilies().forEach(family -> families.add(StringTag.valueOf(family)));
@@ -259,7 +260,7 @@ public final class BindingSavedData extends SavedData
                     readDeviceType(entry.getString("device")), jeiTypes, families, inputGroups,
                     ResourceLocation.parse(entry.getString("block")), provisionerDimension, provisionerPosition,
                     entry.getString("name"),
-                    entry.getBoolean("favorite"), entry.getLong("time"));
+                    entry.getBoolean("favorite"), entry.getInt("priority"), entry.getLong("time"));
         }
         catch (RuntimeException ignored)
         {

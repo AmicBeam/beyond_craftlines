@@ -100,6 +100,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Map<IngredientSlotKey, ResourceLocation> defaultIngredients = new LinkedHashMap<>();
     private long previewNonce;
     private int previewDelay;
+    private int previewDelayTicks = 1;
     private boolean previewDirty;
     private String previewError = "";
     private int previewNextPage;
@@ -154,7 +155,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         amount.setFilter(value -> value.matches("[0-9]{0,19}")
                 && (value.isEmpty() || parsesPositiveLong(value)));
         amount.setResponder(ignored -> {
-            markPreviewDirty();
+            markAmountPreviewDirty();
             rebuildTree(false);
         });
         addRenderableWidget(amount);
@@ -221,7 +222,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             refreshTicks = 0;
             requestNetworkAmount();
         }
-        if (planningCatalog != null && previewDirty && ++previewDelay >= 5) requestPlanPreview();
+        if (planningCatalog != null && previewDirty && ++previewDelay >= previewDelayTicks)
+            requestPlanPreview();
     }
 
     private void finishRecipeIndex()
@@ -1480,10 +1482,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     }
 
     private void markPreviewDirty()
+    { markPreviewDirty(CraftlinesConfig.RECIPE_PREVIEW_DELAY_TICKS.get()); }
+
+    private void markAmountPreviewDirty()
+    { markPreviewDirty(CraftlinesConfig.AMOUNT_PREVIEW_DELAY_TICKS.get()); }
+
+    private void markPreviewDirty(int delayTicks)
     {
         cancelPlanningTask();
         previewDirty = true;
         previewDelay = 0;
+        previewDelayTicks = Math.max(1, delayTicks);
         previewNonce++;
         proposalReady = false;
         clearDisplayMetrics();

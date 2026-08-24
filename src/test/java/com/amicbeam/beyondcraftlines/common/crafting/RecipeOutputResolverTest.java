@@ -45,6 +45,13 @@ final class RecipeOutputResolverTest
     }
 
     @Test
+    void readsMalumSpiritFocusingOutputAccessors()
+    {
+        assertEquals(List.of("prismarine_shard", "prismarine_shard_copy"),
+                RecipeOutputResolver.reflectiveOutputValues(new MalumSpiritFocusingLikeRecipe()));
+    }
+
+    @Test
     void unwrapsCapabilityOutputMapsAndContentRecords()
     {
         assertEquals(List.of("assembled_machine"),
@@ -126,6 +133,12 @@ final class RecipeOutputResolverTest
     {
         public final String output = "processed_item";
         public final String result = "machine_result";
+    }
+
+    private static final class MalumSpiritFocusingLikeRecipe
+    {
+        public String getOutputRaw() { return "prismarine_shard"; }
+        public String createOutput() { return "prismarine_shard_copy"; }
     }
 
     private static final class CapabilityMapRecipe

@@ -17,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "13";
+    private static final String PROTOCOL = "18";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -43,6 +43,11 @@ public final class CraftlinesNetwork {
         server(OpenBoundMachineConfigPayload.class, OpenBoundMachineConfigPayload.STREAM_CODEC,
                 OpenBoundMachineConfigPayload::handle);
         server(ConfigureProvisionerPayload.class, ConfigureProvisionerPayload.STREAM_CODEC, ConfigureProvisionerPayload::handle);
+        server(ConfigureBindingPriorityPayload.class, ConfigureBindingPriorityPayload.STREAM_CODEC,
+                ConfigureBindingPriorityPayload::handle);
+        server(ConfigureProvisionerDeliveryStrategyPayload.class,
+                ConfigureProvisionerDeliveryStrategyPayload.STREAM_CODEC,
+                ConfigureProvisionerDeliveryStrategyPayload::handle);
         server(ReturnProvisionerContentPayload.class, ReturnProvisionerContentPayload.STREAM_CODEC,
                 ReturnProvisionerContentPayload::handle);
         server(RequestBindingVisualsPayload.class, RequestBindingVisualsPayload.STREAM_CODEC, RequestBindingVisualsPayload::handle);
@@ -58,6 +63,8 @@ public final class CraftlinesNetwork {
                 BindMachineFeedbackPayload::handle);
         client(JeiNetworkAvailabilityPayload.class, JeiNetworkAvailabilityPayload.STREAM_CODEC,
                 JeiNetworkAvailabilityPayload::handle);
+        client(RecipeFieldWhitelistPayload.class, RecipeFieldWhitelistPayload.STREAM_CODEC,
+                RecipeFieldWhitelistPayload::handle);
     }
 
     public static void sendToServer(Object payload) { CHANNEL.sendToServer(payload); }

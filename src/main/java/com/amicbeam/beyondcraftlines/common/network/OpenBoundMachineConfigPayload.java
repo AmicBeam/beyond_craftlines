@@ -29,7 +29,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public record OpenBoundMachineConfigPayload(long targetPosition, List<String> jeiRecipeTypes)
+public record OpenBoundMachineConfigPayload(long targetPosition, List<String> jeiRecipeTypes,
+                                            List<String> recipeHints)
         implements CustomPacketPayload
 {
     public static final Type<OpenBoundMachineConfigPayload> TYPE = new Type<>(
@@ -38,12 +39,17 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             ByteBufCodecs.VAR_LONG, OpenBoundMachineConfigPayload::targetPosition,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(256), 32),
             OpenBoundMachineConfigPayload::jeiRecipeTypes,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(768), 128),
+            OpenBoundMachineConfigPayload::recipeHints,
             OpenBoundMachineConfigPayload::new);
 
-    public static OpenBoundMachineConfigPayload of(BlockPos target, Set<ResourceLocation> types)
+    public static OpenBoundMachineConfigPayload of(BlockPos target, Set<ResourceLocation> types,
+            java.util.Collection<com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint> hints)
     {
         return new OpenBoundMachineConfigPayload(target.asLong(),
-                types.stream().map(Object::toString).sorted().limit(32).toList());
+                types.stream().map(Object::toString).sorted().limit(32).toList(),
+                hints.stream().map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::encode)
+                        .limit(128).toList());
     }
 
     public static void handle(OpenBoundMachineConfigPayload payload, IPayloadContext context)
@@ -55,6 +61,13 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             if (!level.isLoaded(position) || player.blockPosition().distSqr(position) > 64
                     || (!player.getMainHandItem().is(CraftlinesItems.NETWORK_LINKER.get())
                     && !player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
+            if (level.getBlockState(position)
+                    .is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks.CRAFTLINE_PROVISIONER.get()))
+            {
+                com.amicbeam.beyondcraftlines.common.block.CraftlineProvisionerBlock
+                        .openConfiguration(player, position);
+                return;
+            }
 
             var binding = BindingSavedData.get(player.getServer()).at(level.dimension(), position);
             if (binding == null || binding.deviceType() != DeviceType.EXTERNAL_RECIPE_MACHINE
@@ -67,11 +80,21 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             LinkedHashSet<ResourceLocation> requested = new LinkedHashSet<>(binding.jeiRecipeTypes());
             payload.jeiRecipeTypes().stream().limit(32).map(ResourceLocation::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(requested::add);
-            Set<String> loadedFamilies = level.getRecipeManager().getRecipes().stream()
-                    .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+            JeiRecipeFamilyRegistry.verifyAndRemember(level, payload.recipeHints().stream().limit(128)
+                    .map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::decode)
+                    .filter(java.util.Objects::nonNull).toList());
+            Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
             var resolved = JeiRecipeFamilyRegistry.resolve(requested, loadedFamilies);
             Set<ResourceLocation> candidates = resolved.jeiTypes();
-            if (candidates.isEmpty()) return;
+            if (candidates.isEmpty())
+            {
+                JeiRecipeFamilyRegistry.logUnmapped(requested, loadedFamilies);
+                player.displayClientMessage(Component.translatable(
+                        "error.beyond_craftlines.recipe_type_mapping_failed",
+                        requested.stream().map(Object::toString).sorted()
+                                .collect(java.util.stream.Collectors.joining(", "))), false);
+                return;
+            }
             Set<ResourceLocation> selected = binding.jeiRecipeTypes().stream()
                     .filter(candidates::contains).collect(java.util.stream.Collectors.toUnmodifiableSet());
             Map<ResourceLocation, Set<String>> availableGroups =
@@ -83,10 +106,10 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
 
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                     new ProvisionerConfigMenu(id, inventory, position, candidates, selected,
-                            availableGroups, selectedGroups),
+                            availableGroups, selectedGroups, binding.priority()),
                     Component.translatable("menu.beyond_craftlines.bound_machine")), buffer ->
                     ProvisionerConfigMenu.writeOptions(buffer, position, candidates, selected,
-                            availableGroups, selectedGroups, true));
+                            availableGroups, selectedGroups, true, binding.priority()));
         });
     }
 

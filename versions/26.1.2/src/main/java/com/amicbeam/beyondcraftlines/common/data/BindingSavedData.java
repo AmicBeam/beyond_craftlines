@@ -205,6 +205,7 @@ public final class BindingSavedData extends SavedData
         }
         entry.putString("name", record.nickname());
         entry.putBoolean("favorite", record.favorite());
+        entry.putInt("priority", record.priority());
         entry.putLong("time", record.boundGameTime());
         ListTag families = new ListTag();
         record.recipeFamilies().forEach(family -> families.add(StringTag.valueOf(family)));
@@ -271,7 +272,8 @@ public final class BindingSavedData extends SavedData
                     inputGroups,
                     Identifier.parse(entry.getStringOr("block", "minecraft:air")), provisionerDimension, provisionerPosition,
                     entry.getStringOr("name", ""),
-                    entry.getBooleanOr("favorite", false), entry.getLongOr("time", 0L));
+                    entry.getBooleanOr("favorite", false), entry.getIntOr("priority", 0),
+                    entry.getLongOr("time", 0L));
         }
         catch (RuntimeException ignored)
         {

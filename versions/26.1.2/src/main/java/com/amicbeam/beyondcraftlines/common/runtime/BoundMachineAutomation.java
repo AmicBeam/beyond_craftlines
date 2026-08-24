@@ -35,6 +35,11 @@ public final class BoundMachineAutomation
         return !resourceHandlers(level, position).isEmpty();
     }
 
+    public static boolean isAutomatable(ServerLevel level, BlockPos position, Direction side)
+    {
+        return !resourceHandlers(level, position, side).isEmpty();
+    }
+
     public static boolean containsAny(ServerLevel level, BlockPos position, Set<Identifier> itemIds)
     {
         if (itemIds.isEmpty()) return false;
@@ -84,6 +89,18 @@ public final class BoundMachineAutomation
         return best;
     }
 
+    public static long insertCapacity(ServerLevel level, BlockPos position, Direction side,
+                                      IStackKey<?> key, long limit)
+    {
+        if (key instanceof ItemStackKey item)
+            return insertCapacity(handlers(level, position, side), item.getReadOnlyStack(), limit);
+        long best = 0;
+        for (BdResourceHandler handler : resourceHandlers(level, position, side))
+            if (handler.type().equals(key.getTypeId()))
+                best = Math.max(best, handler.insert(key, limit, true));
+        return best;
+    }
+
     static long insertCapacity(List<ItemHandler> handlers, Identifier itemId, long limit)
     { return insertCapacity(handlers, new ItemStack(BuiltInRegistries.ITEM.getValue(itemId)), limit); }
 
@@ -118,6 +135,18 @@ public final class BoundMachineAutomation
     {
         if (key instanceof ItemStackKey item) return insert(level, position, item, amount);
         BdResourceHandler selected = resourceHandlers(level, position).stream()
+                .filter(handler -> handler.type().equals(key.getTypeId()))
+                .max(java.util.Comparator.comparingLong(handler -> handler.insert(key, amount, true)))
+                .orElse(null);
+        return selected == null ? 0 : selected.insert(key, amount, false);
+    }
+
+    public static long insert(ServerLevel level, BlockPos position, Direction side,
+                              IStackKey<?> key, long amount)
+    {
+        if (key instanceof ItemStackKey item)
+            return insert(handlers(level, position, side), item.getReadOnlyStack(), amount);
+        BdResourceHandler selected = resourceHandlers(level, position, side).stream()
                 .filter(handler -> handler.type().equals(key.getTypeId()))
                 .max(java.util.Comparator.comparingLong(handler -> handler.insert(key, amount, true)))
                 .orElse(null);
@@ -268,6 +297,14 @@ public final class BoundMachineAutomation
         return result;
     }
 
+    private static List<ItemHandler> handlers(ServerLevel level, BlockPos position, Direction side)
+    {
+        if (!level.isLoaded(position)) return List.of();
+        ResourceHandler<ItemResource> handler = level.getCapability(Capabilities.Item.BLOCK, position, side);
+        return handler == null || handler.size() <= 0 ? List.of()
+                : List.of(new ItemHandlerAdapter(handler));
+    }
+
     private static void add(ResourceHandler<ItemResource> handler, Set<ResourceHandler<ItemResource>> seen,
                             List<ItemHandler> result)
     {
@@ -276,6 +313,11 @@ public final class BoundMachineAutomation
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static List<BdResourceHandler> resourceHandlers(ServerLevel level, BlockPos position)
+    { return resourceHandlers(level, position, null); }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static List<BdResourceHandler> resourceHandlers(ServerLevel level, BlockPos position,
+                                                            Direction selectedSide)
     {
         if (!level.isLoaded(position)) return List.of();
         List<BdResourceHandler> result = new ArrayList<>();
@@ -283,7 +325,7 @@ public final class BoundMachineAutomation
             Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
             var factory = StackHandlerWrapperHelper.stackWrappers.get(type);
             if (factory == null) return;
-            for (Direction side : allSides())
+            for (Direction side : selectedSide == null ? allSides() : List.of(selectedSide))
             {
                 try
                 {

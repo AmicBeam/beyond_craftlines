@@ -13,8 +13,12 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -29,16 +33,11 @@ public final class ClientPlannerPreferences
 
     private ClientPlannerPreferences() {}
 
-    public static Snapshot load()
+    public static synchronized Snapshot load()
     {
         Path path = path();
         if (!Files.isRegularFile(path)) return Snapshot.EMPTY;
-        try (Reader reader = Files.newBufferedReader(path))
-        {
-            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
-            return new Snapshot(readMap(root.getAsJsonObject("recipes")),
-                    readMap(root.getAsJsonObject("ingredients")));
-        }
+        try { return read(path); }
         catch (IOException | RuntimeException exception)
         {
             LOGGER.warn("Unable to read Craftlines client planner preferences", exception);
@@ -46,7 +45,7 @@ public final class ClientPlannerPreferences
         }
     }
 
-    public static boolean setRecipe(String output, ResourceLocation recipe)
+    public static synchronized boolean setRecipe(String output, ResourceLocation recipe)
     {
         Snapshot old = load();
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
@@ -54,7 +53,8 @@ public final class ClientPlannerPreferences
         return write(recipes, old.ingredients());
     }
 
-    public static boolean setIngredients(ResourceLocation recipe, Iterable<Integer> slots, ResourceLocation item)
+    public static synchronized boolean setIngredients(ResourceLocation recipe, Iterable<Integer> slots,
+                                                      ResourceLocation item)
     {
         Snapshot old = load();
         LinkedHashMap<String, ResourceLocation> ingredients = new LinkedHashMap<>(old.ingredients());
@@ -83,6 +83,16 @@ public final class ClientPlannerPreferences
         return Map.copyOf(result);
     }
 
+    private static Snapshot read(Path path) throws IOException
+    {
+        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8))
+        {
+            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+            return new Snapshot(readMap(root.getAsJsonObject("recipes")),
+                    readMap(root.getAsJsonObject("ingredients")));
+        }
+    }
+
     private static boolean write(Map<String, ResourceLocation> recipes,
                                  Map<String, ResourceLocation> ingredients)
     {
@@ -95,16 +105,15 @@ public final class ClientPlannerPreferences
             root.addProperty("version", 1);
             root.add("recipes", toJson(recipes));
             root.add("ingredients", toJson(ingredients));
-            try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(root, writer); }
-            try
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 Writer writer = Channels.newWriter(channel, StandardCharsets.UTF_8))
             {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE);
+                GSON.toJson(root, writer);
+                writer.flush();
+                channel.force(true);
             }
-            catch (java.nio.file.AtomicMoveNotSupportedException ignored)
-            {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
-            }
+            moveReplacing(temporary, path);
             return true;
         }
         catch (IOException exception)
@@ -112,6 +121,17 @@ public final class ClientPlannerPreferences
             LOGGER.warn("Unable to save Craftlines client planner preferences", exception);
             return false;
         }
+    }
+
+    private static void moveReplacing(Path source, Path target) throws IOException
+    {
+        try
+        {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        }
+        catch (java.nio.file.AtomicMoveNotSupportedException ignored)
+        { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
     }
 
     private static JsonObject toJson(Map<String, ResourceLocation> values)

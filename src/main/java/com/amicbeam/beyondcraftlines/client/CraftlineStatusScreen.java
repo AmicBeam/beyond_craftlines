@@ -1,5 +1,6 @@
 package com.amicbeam.beyondcraftlines.client;
 
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineStatusMenu;
 import com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage;
 import com.amicbeam.beyondcraftlines.common.network.CancelOrderPayload;
@@ -20,8 +21,10 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -40,6 +43,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     private boolean defaultExpansionApplied;
     private int scrollOffset;
     private int statusTicks;
+    private UUID statusSession = UUID.randomUUID();
     private Button cancelButton;
 
     public CraftlineStatusScreen(CraftlineStatusMenu menu, Inventory inventory, Component title)
@@ -49,7 +53,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         if (initial != null)
         {
             orders = List.of(new OrderView(initial.id(), initial.target(), initial.requested(), 0, 0,
-                    initial.blockingMode(), "QUEUED", "", List.of()));
+                    initial.blockingMode(), "QUEUED", "", 0, List.of()));
             selectedOrder = initial.id();
         }
     }
@@ -66,40 +70,76 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         cancelButton.setTooltip(Tooltip.create(Component.translatable("tooltip.beyond_craftlines.cancel")));
         cancelButton.active = selectedActive();
         OrderStatusPayload.clientReceiver = this::receiveOrders;
-        PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId()));
+        requestStatus();
     }
 
     @Override
     protected void containerTick()
     {
         super.containerTick();
-        if (++statusTicks >= 40)
+        if (++statusTicks >= CraftlinesConfig.ORDER_STATUS_REFRESH_INTERVAL_TICKS.get())
         {
             statusTicks = 0;
-            PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId()));
+            requestStatus();
         }
     }
 
+    private void requestStatus()
+    { PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId(), statusSession)); }
+
     private void receiveOrders(net.minecraft.nbt.CompoundTag root)
     {
-        List<OrderView> next = new ArrayList<>();
-        var list = root.getList("orders", Tag.TAG_COMPOUND);
-        for (int i = 0; i < list.size(); i++)
+        if (!root.hasUUID("session") || !statusSession.equals(root.getUUID("session"))) return;
+        Map<UUID, OrderView> cached = new LinkedHashMap<>();
+        if (!root.getBoolean("reset")) orders.forEach(order -> cached.put(order.id(), order));
+
+        var updates = root.getList("updates", Tag.TAG_COMPOUND);
+        for (int i = 0; i < updates.size(); i++)
         {
-            var value = list.getCompound(i);
-            List<StepView> steps = new ArrayList<>();
-            var encodedSteps = value.getList("unfinished_steps", Tag.TAG_COMPOUND);
+            var value = updates.getCompound(i);
+            UUID id = value.getUUID("id");
+            OrderView previous = cached.get(id);
+            List<StepView> steps = value.getBoolean("reset_steps") || previous == null
+                    ? new ArrayList<>() : new ArrayList<>(previous.steps());
+            var encodedSteps = value.getList("step_updates", Tag.TAG_COMPOUND);
             for (int stepIndex = 0; stepIndex < encodedSteps.size(); stepIndex++)
             {
                 var encoded = encodedSteps.getCompound(stepIndex);
                 IStackKey<?> key = decodeKey(encoded);
-                if (key != null && !key.isEmpty()) steps.add(new StepView(key,
-                        encoded.getLong("completed"), encoded.getLong("required"),
-                        encoded.getString("fallback")));
+                if (key == null || key.isEmpty()) continue;
+                int existing = -1;
+                for (int at = 0; at < steps.size(); at++)
+                    if (key.isSame(steps.get(at).key())) { existing = at; break; }
+                if (encoded.getBoolean("removed"))
+                {
+                    if (existing >= 0) steps.remove(existing);
+                }
+                else
+                {
+                    StepView step = new StepView(key, encoded.getLong("completed"),
+                            encoded.getLong("required"), encoded.getString("fallback"));
+                    if (existing >= 0) steps.set(existing, step); else steps.add(step);
+                }
             }
-            next.add(new OrderView(value.getUUID("id"), value.getString("target"), value.getLong("requested"),
+            cached.put(id, new OrderView(id, value.getString("target"), value.getLong("requested"),
                     value.getInt("next"), value.getInt("total"), value.getBoolean("blocking_mode"),
-                    value.getString("status"), value.getString("message"), List.copyOf(steps)));
+                    value.getString("status"), value.getString("message"), value.getLong("revision"),
+                    List.copyOf(steps)));
+        }
+
+        List<OrderView> next = new ArrayList<>();
+        var orderIndex = root.getList("index", Tag.TAG_COMPOUND);
+        for (int i = 0; i < orderIndex.size(); i++)
+        {
+            var indexed = orderIndex.getCompound(i);
+            OrderView order = cached.get(indexed.getUUID("id"));
+            if (order == null || order.revision() != indexed.getLong("revision"))
+            {
+                statusSession = UUID.randomUUID();
+                requestStatus();
+                return;
+            }
+            next.add(order);
         }
         orders = List.copyOf(next);
         if (!defaultExpansionApplied)
@@ -123,7 +163,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         orders.stream().filter(order -> order.id().equals(selectedOrder) && order.active()).findFirst()
                 .ifPresent(order -> {
                     PacketDistributor.sendToServer(new CancelOrderPayload(order.id()));
-                    PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId()));
+                    requestStatus();
                 });
     }
 
@@ -309,7 +349,8 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     }
 
     private record OrderView(UUID id, String target, long requested, int next, int total,
-                             boolean blockingMode, String status, String message, List<StepView> steps)
+                             boolean blockingMode, String status, String message, long revision,
+                             List<StepView> steps)
     {
         boolean active() { return status.equals("QUEUED") || status.equals("RUNNING") || status.equals("PAUSED"); }
     }

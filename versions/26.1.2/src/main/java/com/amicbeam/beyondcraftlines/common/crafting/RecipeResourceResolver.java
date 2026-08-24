@@ -117,7 +117,8 @@ public final class RecipeResourceResolver
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
-    { return resolve(recipe, CountedInputReflection.INPUT_METHODS, true); }
+    { return resolve(recipe, RecipeFieldWhitelistRegistry.inputMembers(
+            recipe, CountedInputReflection.INPUT_METHODS), true); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)

@@ -30,6 +30,8 @@ public final class RecipeOrderSavedData extends SavedData
                     data -> data.save(new CompoundTag(), NbtCompat.builtinRegistries())),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
     private final Map<UUID, RecipeOrderJob> jobs = new LinkedHashMap<>();
+    private final Map<UUID, Long> revisions = new HashMap<>();
+    private long nextRevision = 1;
 
     public static RecipeOrderSavedData get(MinecraftServer server)
     {
@@ -79,6 +81,7 @@ public final class RecipeOrderSavedData extends SavedData
                         value.getLongOr("created", 0L), value.getLongOr("finished", 0L), value.getLongOr("next_crafting_tick", 0L),
                         readExternalWait(value, registries), readReserved(value, registries));
                 data.jobs.put(job.id(), job);
+                data.revisions.put(job.id(), data.nextRevision++);
             }
             catch (RuntimeException ignored) {}
         }
@@ -93,15 +96,20 @@ public final class RecipeOrderSavedData extends SavedData
     }
     public List<RecipeOrderJob> forOwner(UUID owner) { return jobs.values().stream().filter(j -> j.owner().equals(owner)).toList(); }
     public RecipeOrderJob get(UUID id) { return jobs.get(id); }
+    public long revision(UUID id) { return revisions.getOrDefault(id, 0L); }
     public void removeExpiredDisplayedTerminal(long gameTime)
     {
-        boolean removed = jobs.values().removeIf(job ->
-                OrderRetention.expired(job.status(), job.finishedAt(), gameTime));
+        List<UUID> expired = jobs.values().stream().filter(job ->
+                OrderRetention.expired(job.status(), job.finishedAt(), gameTime))
+                .map(RecipeOrderJob::id).toList();
+        expired.forEach(id -> { jobs.remove(id); revisions.remove(id); });
+        boolean removed = !expired.isEmpty();
         if (removed) setDirty();
     }
     public void put(RecipeOrderJob job)
     {
         RecipeOrderJob previous = jobs.put(job.id(), job);
+        if (!job.equals(previous)) revisions.put(job.id(), nextRevision++);
         boolean pruned = terminal(job.status()) && pruneTerminalHistory();
         if (!job.equals(previous) || pruned) setDirty();
     }
@@ -111,7 +119,7 @@ public final class RecipeOrderSavedData extends SavedData
         List<UUID> excess = jobs.values().stream().filter(job -> terminal(job.status()))
                 .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt).reversed())
                 .skip(CraftlinesConfig.TERMINAL_ORDER_HISTORY_LIMIT.get()).map(RecipeOrderJob::id).toList();
-        excess.forEach(jobs::remove);
+        excess.forEach(id -> { jobs.remove(id); revisions.remove(id); });
         return !excess.isEmpty();
     }
 

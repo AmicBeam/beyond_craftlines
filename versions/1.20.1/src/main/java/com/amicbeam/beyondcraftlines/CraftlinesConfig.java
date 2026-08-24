@@ -16,12 +16,30 @@ public final class CraftlinesConfig {
             .define("showProvisionerTargetMaterial", true);
     public static final ForgeConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
             .pop().push("planning").defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
+    public static final ForgeConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
+            .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
+            .defineInRange("amountPreviewDelayTicks", 20, 1, 1_200);
+    public static final ForgeConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
+            .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
+            .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
     public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .define("collapseDuplicateTreeResources", true);
     public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
             .pop().push("jei").define("showOrderButtonEverywhere", true);
+    public static final ForgeConfigSpec.IntValue ORDER_STATUS_REFRESH_INTERVAL_TICKS = CLIENT_BUILDER
+            .pop().push("orders")
+            .comment("Ticks between order-status refresh requests while the order status screen is open.")
+            .defineInRange("orderStatusRefreshIntervalTicks", 20, 1, 72_000);
     public static final ForgeConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting").defineInRange("virtualCraftingNodeIntervalTicks", 20, 1, 72_000);
+    public static final ForgeConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
+            .pop().push("provisioner")
+            .comment("Maximum number of wireless target devices bound to one Craftline Provisioner.")
+            .defineInRange("maxWirelessConnections", 16, 1, 1_024);
+    public static final ForgeConfigSpec.BooleanValue DEBUG_RECIPE_TYPE_MAPPINGS = SERVER_BUILDER
+            .pop().push("crafting")
+            .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
+            .define("debugRecipeTypeMappings", false);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
             .defineInRange("maxPlanningDepth", 48, 1, 256);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_NODES = SERVER_BUILDER

@@ -22,6 +22,8 @@ public final class RecipePlanningService
 {
     private static final Map<RecipeManager, List<RecipeHolder<?>>> VISIBLE_RECIPE_CACHE =
             Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<RecipeManager, Set<String>> LOADED_FAMILY_CACHE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private RecipePlanningService() {}
 
@@ -38,10 +40,18 @@ public final class RecipePlanningService
     public static void clearRecipeCache()
     {
         VISIBLE_RECIPE_CACHE.clear();
+        LOADED_FAMILY_CACHE.clear();
         RecipeIngredientResolver.clearCache();
         PlanningSnapshotService.clearRecipeEpochCache();
         ClientRecipePlanner.clearCache();
         com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.clearRecipeIndexCache();
+    }
+
+    public static Set<String> loadedFamilies(Level level)
+    {
+        RecipeManager manager = level.getRecipeManager();
+        return LOADED_FAMILY_CACHE.computeIfAbsent(manager, ignored -> manager.getRecipes().stream()
+                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toUnmodifiableSet()));
     }
 
     public static RecipePlan plan(ServerLevel level, int networkId, ResourceLocation target, long amount)
@@ -482,15 +492,20 @@ public final class RecipePlanningService
 
     public static String family(RecipeHolder<?> holder)
     {
-        RecipeType<?> type = holder.value().getType();
+        var recipe = holder.value();
+        RecipeType<?> type = recipe.getType();
         String byType = family(type);
         if (byType != null) return byType;
-        ResourceLocation serializer = BuiltInRegistries.RECIPE_SERIALIZER.getKey(holder.value().getSerializer());
-        return serializer == null ? type.toString() : serializer.toString();
+        var recipeSerializer = recipe.getSerializer();
+        ResourceLocation serializer = recipeSerializer == null ? null
+                : BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipeSerializer);
+        if (serializer != null) return serializer.toString();
+        return type == null ? null : type.toString();
     }
 
     public static String family(RecipeType<?> type)
     {
+        if (type == null) return null;
         if (type == RecipeType.CRAFTING) return "crafting";
         if (type == RecipeType.SMELTING) return "smelting";
         if (type == RecipeType.BLASTING) return "blasting";

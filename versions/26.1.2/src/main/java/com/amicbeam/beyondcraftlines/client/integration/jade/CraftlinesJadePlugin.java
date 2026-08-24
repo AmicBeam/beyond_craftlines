@@ -30,6 +30,7 @@ public final class CraftlinesJadePlugin implements IWailaPlugin
     private static final Identifier UID = Identifier.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "provisioner_recipe_bindings");
     private static final String RECIPE_TYPES = BeyondCraftlines.MOD_ID + ".recipe_types";
+    private static final String CONNECTION_COUNT = BeyondCraftlines.MOD_ID + ".connection_count";
 
     @Override
     public void register(IWailaCommonRegistration registration)
@@ -58,12 +59,16 @@ public final class CraftlinesJadePlugin implements IWailaPlugin
                     .sorted(Comparator.comparing(Identifier::toString))
                     .forEach(type -> types.add(StringTag.valueOf(type.toString())));
             data.put(RECIPE_TYPES, types);
+            if (accessor.getBlockEntity() instanceof CraftlineProvisionerBlockEntity provisioner)
+                data.putInt(CONNECTION_COUNT, provisioner.connectedDeviceCount());
         }
 
         @Override
         public void appendTooltip(ITooltip tooltip, BlockAccessor accessor, IPluginConfig config)
         {
             ListTag types = accessor.getServerData().getListOrEmpty(RECIPE_TYPES);
+            tooltip.add(Component.translatable("tooltip.jade.beyond_craftlines.provisioner_connections",
+                    accessor.getServerData().getIntOr(CONNECTION_COUNT, 0)));
             if (types.isEmpty())
             {
                 tooltip.add(Component.translatable("tooltip.jade.beyond_craftlines.provisioner_recipe.unbound"));

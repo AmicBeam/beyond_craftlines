@@ -19,6 +19,7 @@ import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = "beyond_craftlines")
 public final class CraftlinesEvents {
+    private static net.minecraft.server.MinecraftServer recipeAliasServer;
     private CraftlinesEvents() {}
 
     @SubscribeEvent
@@ -46,5 +47,25 @@ public final class CraftlinesEvents {
     @SubscribeEvent public static void onChunkLoad(ChunkEvent.Load event) { NativeFurnaceRegistry.onChunkLoad(event); }
     @SubscribeEvent public static void onChunkUnload(ChunkEvent.Unload event) { NativeFurnaceRegistry.onChunkUnload(event); }
     @SubscribeEvent public static void onLevelUnload(LevelEvent.Unload event) { NativeFurnaceRegistry.onLevelUnload(event); }
-    @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) { RecipePlanningService.clearRecipeCache(); }
+    @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) {
+        RecipePlanningService.clearRecipeCache();
+        var server = event.getPlayerList().getServer();
+        if (event.getPlayer() == null || recipeAliasServer != server
+                || com.amicbeam.beyondcraftlines.common.crafting
+                .RecipeFamilyAliasRegistry.aliases().isEmpty()) {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
+                    server.getResourceManager());
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeFieldWhitelistRegistry.reload(
+                    server.getResourceManager());
+            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
+            recipeAliasServer = server;
+        }
+        var whitelist = com.amicbeam.beyondcraftlines.common.network.RecipeFieldWhitelistPayload.snapshot();
+        if (event.getPlayer() != null)
+            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
+                    .sendToPlayer(event.getPlayer(), whitelist);
+        else server.getPlayerList().getPlayers().forEach(player ->
+                com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
+                        .sendToPlayer(player, whitelist));
+    }
 }

@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.client;
 
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
+import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
@@ -20,7 +21,7 @@ import org.jspecify.annotations.Nullable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Draws a localized device name only when its item cannot be baked into the provisioner model. */
+/** Draws a localized target name when no target icon can be baked into the provisioner model. */
 public final class ProvisionerFallbackLabelRenderer implements BlockEntityRenderer<
         CraftlineProvisionerBlockEntity, ProvisionerFallbackLabelRenderer.LabelState>
 {
@@ -51,9 +52,18 @@ public final class ProvisionerFallbackLabelRenderer implements BlockEntityRender
         state.layout = null;
         if (!CraftlinesConfig.SHOW_PROVISIONER_TARGET_MATERIAL.get()) return;
         ItemStack icon = provisioner.targetItemIcon();
-        if (!ProvisionerMaterialModel.usesTextFallback(icon)) return;
-        String name = icon.getHoverName().getString();
+        String name = label(provisioner, icon);
         if (!name.isBlank()) state.layout = LAYOUTS.computeIfAbsent(name, this::layout);
+    }
+
+    private static String label(CraftlineProvisionerBlockEntity provisioner, ItemStack icon)
+    {
+        if (!icon.isEmpty()) return ProvisionerMaterialModel.usesTextFallback(icon)
+                ? icon.getHoverName().getString() : "";
+        if (provisioner.recipeCandidates().size() != 1) return "";
+        var type = provisioner.recipeCandidates().iterator().next();
+        return JeiCatalystIndex.recipeTypeTitle(type).map(component -> component.getString())
+                .filter(value -> !value.isBlank()).orElse(type.toString());
     }
 
     private LabelLayout layout(String text)

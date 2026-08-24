@@ -21,20 +21,29 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-public record BindMachinePayload(long targetPosition, List<String> jeiRecipeTypes, boolean remove) implements CustomPacketPayload
+public record BindMachinePayload(long targetPosition, int targetFace, List<String> jeiRecipeTypes,
+                                 List<String> recipeHints, boolean remove) implements CustomPacketPayload
 {
     public static final Type<BindMachinePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "bind_machine"));
     public static final StreamCodec<ByteBuf, BindMachinePayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_LONG, BindMachinePayload::targetPosition,
+            ByteBufCodecs.VAR_INT, BindMachinePayload::targetFace,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(256), 32),
             BindMachinePayload::jeiRecipeTypes,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(768), 128),
+            BindMachinePayload::recipeHints,
             ByteBufCodecs.BOOL, BindMachinePayload::remove,
             BindMachinePayload::new);
 
-    public static BindMachinePayload of(BlockPos target, Set<ResourceLocation> types, boolean remove)
-    { return new BindMachinePayload(target.asLong(),
-            types.stream().map(Object::toString).sorted().limit(32).toList(), remove); }
+    public static BindMachinePayload of(BlockPos target, Set<ResourceLocation> types,
+                                        net.minecraft.core.Direction face,
+                                        java.util.Collection<com.amicbeam.beyondcraftlines.common.crafting
+                                                .RecipeFamilyHint> hints, boolean remove)
+    { return new BindMachinePayload(target.asLong(), face.get3DDataValue(),
+            types.stream().map(Object::toString).sorted().limit(32).toList(),
+            hints.stream().map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::encode)
+                    .limit(128).toList(), remove); }
 
     public static void handle(BindMachinePayload payload, IPayloadContext context)
     {
@@ -48,6 +57,12 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
             LinkedHashSet<ResourceLocation> types = new LinkedHashSet<>();
             payload.jeiRecipeTypes().stream().limit(32).map(ResourceLocation::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(types::add);
+            var hints = payload.recipeHints().stream().limit(128)
+                    .map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::decode)
+                    .filter(java.util.Objects::nonNull).toList();
+            net.minecraft.server.level.ServerLevel level = player.serverLevel();
+            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                    .verifyAndRemember(level, hints);
             if (payload.remove())
             {
                 boolean removed = DeviceBindingRegistry.unbind(player, target);
@@ -57,7 +72,22 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
                 if (removed) BindingVisualsPayload.broadcast(player.serverLevel());
                 return;
             }
-            var binding = DeviceBindingRegistry.bindMachine(player, target, types);
+            Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
+                    .RecipePlanningService.loadedFamilies(level);
+            boolean connectionMode = DeviceBindingRegistry.hasProvisionerConnectionSelection(player);
+            if (!connectionMode && com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                    .resolve(types, loadedFamilies).isEmpty())
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                        .logUnmapped(types, loadedFamilies);
+                player.displayClientMessage(Component.translatable(
+                        "error.beyond_craftlines.recipe_type_mapping_failed",
+                        types.stream().map(Object::toString).sorted().collect(java.util.stream.Collectors.joining(", "))), false);
+                return;
+            }
+            net.minecraft.core.Direction targetFace = net.minecraft.core.Direction
+                    .from3DDataValue(payload.targetFace());
+            var binding = DeviceBindingRegistry.bindMachine(player, target, targetFace, types);
             var result = binding.result();
             if (binding.isSuccess() && result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.EXTERNAL_RECIPE_MACHINE)
@@ -68,7 +98,15 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
                 BindingVisualsPayload.broadcast(player.serverLevel());
                 return;
             }
-            String message = binding.isSuccess()
+            String message = binding.isSuccess() && result.connectionEdit() != null
+                    ? switch (result.connectionEdit())
+                    {
+                        case ADDED -> "message.beyond_craftlines.provisioner_device_connected";
+                        case UPDATED -> "message.beyond_craftlines.provisioner_device_face_updated";
+                        case REMOVED -> "message.beyond_craftlines.provisioner_device_disconnected";
+                        case LIMIT_REACHED -> "error.beyond_craftlines.provisioner_connection_limit";
+                    }
+                    : binding.isSuccess()
                     ? result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING
                     ? result.autoSelected()
@@ -76,7 +114,10 @@ public record BindMachinePayload(long targetPosition, List<String> jeiRecipeType
                     : "message.beyond_craftlines.provisioner_target_bound"
                     : "message.beyond_craftlines.machine_bound"
                     : binding.failure().messageKey();
-            Component feedback = !binding.isSuccess() || result.deviceType()
+            Component feedback = binding.isSuccess() && result.connectionEdit() != null
+                    ? Component.translatable(message,
+                    Component.translatable("direction.minecraft." + targetFace.getName()))
+                    : !binding.isSuccess() || result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING
                     ? Component.translatable(message)
                     : Component.translatable(message, String.join(", ", result.recipeFamilies()));

@@ -36,6 +36,18 @@ final class InputGroupRouteLogicTest
     }
 
     @Test
+    void configuredPrioritySelectsAmongEquallySpecificEndpoints()
+    {
+        assertEquals(List.of("preferred"), selected(List.of(
+                direct("normal", ProvisionerInputGroupSelection.EXPLICIT_PRIORITY, 0),
+                direct("preferred", ProvisionerInputGroupSelection.EXPLICIT_PRIORITY, 10),
+                direct("also-normal", ProvisionerInputGroupSelection.EXPLICIT_PRIORITY, 0))));
+        assertEquals(List.of("exact"), selected(List.of(
+                direct("exact", ProvisionerInputGroupSelection.EXPLICIT_PRIORITY, -10),
+                direct("wildcard", ProvisionerInputGroupSelection.WILDCARD_PRIORITY, 100))));
+    }
+
+    @Test
     void oneAltarCanReceiveInputAndSpiritsInSuccessiveRounds()
     {
         assertTrue(InputGroupRouteLogic.canContinuePartialRound(1, 0, false),
@@ -49,10 +61,14 @@ final class InputGroupRouteLogicTest
     }
 
     private static InputGroupRouteLogic.Candidate<String> direct(String id, int priority)
-    { return new InputGroupRouteLogic.Candidate<>(id, InputGroupRouteLogic.Kind.DIRECT_MACHINE, priority, id); }
+    { return direct(id, priority, 0); }
+
+    private static InputGroupRouteLogic.Candidate<String> direct(String id, int groupPriority, int endpointPriority)
+    { return new InputGroupRouteLogic.Candidate<>(id, InputGroupRouteLogic.Kind.DIRECT_MACHINE,
+            groupPriority, endpointPriority, id); }
 
     private static InputGroupRouteLogic.Candidate<String> provisioner(String id, int priority)
-    { return new InputGroupRouteLogic.Candidate<>(id, InputGroupRouteLogic.Kind.PROVISIONER, priority, id); }
+    { return new InputGroupRouteLogic.Candidate<>(id, InputGroupRouteLogic.Kind.PROVISIONER, priority, 0, id); }
 
     private static List<String> selected(List<InputGroupRouteLogic.Candidate<String>> candidates)
     { return InputGroupRouteLogic.preferred(candidates).stream()

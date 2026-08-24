@@ -19,7 +19,10 @@ public final class RecipeOutputResolver
     private static final List<String> OUTPUT_METHODS = List.of(
             "getOutputDefinition", "getOutputDefinitions",
             "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",
-            "outputs", "getOutputs", "output", "getOutput", "result", "getResult");
+            "outputs", "getOutputs",
+            // Malum exposes Spirit Focusing results through these accessors.
+            "getOutputRaw", "createOutput",
+            "output", "getOutput", "result", "getResult");
 
     private RecipeOutputResolver() {}
 
@@ -31,7 +34,8 @@ public final class RecipeOutputResolver
                 .filter(item -> !item.isEmpty())
                 .forEach(item -> add(result,
                         new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount())));
-        for (Object output : reflectiveOutputValues(recipe))
+        for (Object output : reflectiveOutputValues(recipe,
+                RecipeFieldWhitelistRegistry.outputMembers(recipe, OUTPUT_METHODS)))
             addOutput(result, output);
         return List.copyOf(result.values());
     }

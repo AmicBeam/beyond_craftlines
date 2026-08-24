@@ -127,7 +127,8 @@ public final class CraftlinesClientEvents
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
             types.add(blockId);
-            PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types));
+            PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
+                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
             event.setCanceled(true);
         }
 

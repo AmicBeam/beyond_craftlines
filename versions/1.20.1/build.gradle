@@ -188,13 +188,14 @@ dependencies {
     runtimeOnly "maven.modrinth:jade:${jade_version}"
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'com.google.code.gson:gson:2.11.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     var replaceProperties = [minecraft_version_range: minecraft_version_range,
             forge_version_range: forge_version_range, loader_version_range: loader_version_range,
-            mod_id: mod_id, mod_name: mod_name, mod_license: 'MIT', mod_version: mod_version,
+            mod_id: mod_id, mod_name: mod_name, mod_license: 'GNU GPL 3.0', mod_version: mod_version,
             mod_authors: mod_authors, mod_description: mod_description,
             beyond_dimensions_version: beyond_dimensions_version, jei_version: jei_version]
     inputs.properties replaceProperties
@@ -204,6 +205,10 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
     into layout.buildDirectory.dir('generated/sources/modMetadata')
 }
 sourceSets.main.resources.srcDir generateModMetadata
+tasks.named('processResources', ProcessResources) {
+    from('../../LICENSE') { into 'META-INF' }
+    from('../../THIRD_PARTY_NOTICES.md') { into 'META-INF' }
+}
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xmaxerrs', '1000'])

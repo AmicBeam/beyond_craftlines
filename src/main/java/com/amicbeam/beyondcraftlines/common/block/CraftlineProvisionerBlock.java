@@ -15,6 +15,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityTicker;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 
@@ -29,7 +31,23 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
         if (player.isShiftKeyDown()) return super.useWithoutItem(state, level, pos, player, hit);
         if (!level.isClientSide() && player instanceof ServerPlayer serverPlayer
                 && level.getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity be)
-        {
+            openConfiguration(serverPlayer, pos, be);
+        return InteractionResult.sidedSuccess(level.isClientSide());
+    }
+
+    public static boolean openConfiguration(ServerPlayer serverPlayer, BlockPos pos)
+    {
+        if (serverPlayer.blockPosition().distSqr(pos) > 64
+                || !(serverPlayer.level().getBlockEntity(pos) instanceof CraftlineProvisionerBlockEntity be))
+            return false;
+        openConfiguration(serverPlayer, pos, be);
+        return true;
+    }
+
+    private static void openConfiguration(ServerPlayer serverPlayer, BlockPos pos,
+                                          CraftlineProvisionerBlockEntity be)
+    {
+            Level level = serverPlayer.level();
             var selected = BindingSavedData.get(serverPlayer.getServer())
                     .recipeTypesForProvisioner(level.dimension(), pos);
             be.addRecipeCandidates(selected);
@@ -44,21 +62,32 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
             var availableGroups = DeviceBindingRegistry.inputGroupsByJeiType(serverPlayer.serverLevel(), candidates);
             var selectedGroups = DeviceBindingRegistry.selectedGroupsByJeiType(serverPlayer.serverLevel(), candidates,
                     BindingSavedData.get(serverPlayer.getServer()).inputGroupsForProvisioner(level.dimension(), pos));
+            var binding = BindingSavedData.get(serverPlayer.getServer()).at(level.dimension(), pos);
+            int priority = binding == null ? 0 : binding.priority();
             serverPlayer.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                     new ProvisionerConfigMenu(id, inventory, pos, candidates, configured,
-                            availableGroups, selectedGroups, be),
+                            availableGroups, selectedGroups, priority, be),
                     Component.translatable("menu.beyond_craftlines.provisioner")), buffer -> {
                         ProvisionerConfigMenu.writeOptions(buffer, pos, candidates, configured,
-                                availableGroups, selectedGroups);
+                                availableGroups, selectedGroups, priority);
                     });
-        }
-        return InteractionResult.sidedSuccess(level.isClientSide());
     }
 
     @Override
     public BlockEntity newBlockEntity(BlockPos pos, BlockState state)
     {
         return new CraftlineProvisionerBlockEntity(pos, state);
+    }
+
+    @Override
+    public <T extends BlockEntity> BlockEntityTicker<T> getTicker(Level level, BlockState state,
+                                                                  BlockEntityType<T> type)
+    {
+        if (level.isClientSide()) return null;
+        return (tickLevel, position, tickState, blockEntity) -> {
+            if (blockEntity instanceof CraftlineProvisionerBlockEntity provisioner)
+                CraftlineProvisionerBlockEntity.serverTick(tickLevel, position, tickState, provisioner);
+        };
     }
 
     @Override

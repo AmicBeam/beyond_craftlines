@@ -25,6 +25,7 @@ public record BindingRecord(
         BlockPos provisionerPosition,
         String nickname,
         boolean favorite,
+        int priority,
         long boundGameTime
 ) {
     public static final String ALL_INPUT_GROUPS =

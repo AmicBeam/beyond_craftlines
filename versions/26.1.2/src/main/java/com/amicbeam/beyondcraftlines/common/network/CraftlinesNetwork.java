@@ -13,7 +13,7 @@ public final class CraftlinesNetwork
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event)
     {
-        var registrar = event.registrar("12");
+        var registrar = event.registrar("18");
         registrar.playToServer(OpenOrderMenuPayload.TYPE, OpenOrderMenuPayload.STREAM_CODEC, OpenOrderMenuPayload::handle);
         registrar.playToServer(OpenOrderStatusMenuPayload.TYPE, OpenOrderStatusMenuPayload.STREAM_CODEC,
                 OpenOrderStatusMenuPayload::handle);
@@ -36,6 +36,11 @@ public final class CraftlinesNetwork
                 OpenBoundMachineConfigPayload::handle);
         registrar.playToServer(ConfigureProvisionerPayload.TYPE, ConfigureProvisionerPayload.STREAM_CODEC,
                 ConfigureProvisionerPayload::handle);
+        registrar.playToServer(ConfigureBindingPriorityPayload.TYPE, ConfigureBindingPriorityPayload.STREAM_CODEC,
+                ConfigureBindingPriorityPayload::handle);
+        registrar.playToServer(ConfigureProvisionerDeliveryStrategyPayload.TYPE,
+                ConfigureProvisionerDeliveryStrategyPayload.STREAM_CODEC,
+                ConfigureProvisionerDeliveryStrategyPayload::handle);
         registrar.playToServer(ReturnProvisionerContentPayload.TYPE, ReturnProvisionerContentPayload.STREAM_CODEC,
                 ReturnProvisionerContentPayload::handle);
         registrar.playToServer(RequestBindingVisualsPayload.TYPE, RequestBindingVisualsPayload.STREAM_CODEC,
@@ -57,5 +62,7 @@ public final class CraftlinesNetwork
                 BindMachineFeedbackPayload::handle);
         registrar.playToClient(JeiNetworkAvailabilityPayload.TYPE, JeiNetworkAvailabilityPayload.STREAM_CODEC,
                 JeiNetworkAvailabilityPayload::handle);
+        registrar.playToClient(RecipeFieldWhitelistPayload.TYPE, RecipeFieldWhitelistPayload.STREAM_CODEC,
+                RecipeFieldWhitelistPayload::handle);
     }
 }

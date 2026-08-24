@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -47,6 +48,12 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.displayClientMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"), false);
                 return;
             }
+            var level = player.level();
+            var candidates = (requestedRecipe == null
+                    ? level.getRecipeManager().getOrderedRecipes().stream()
+                    : level.getRecipeManager().byKey(requestedRecipe).stream()).toList();
+            if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
+                showRecipeDebug(player, payload, candidates);
             DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
                     && dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
                     ? storage.getNet() : DimensionsNet.getPrimaryNetFromPlayer(player);
@@ -57,10 +64,6 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
-            var level = player.level();
-            var candidates = (requestedRecipe == null
-                    ? level.getRecipeManager().getOrderedRecipes().stream()
-                    : level.getRecipeManager().byKey(requestedRecipe).stream()).toList();
             if (candidates.isEmpty())
             {
                 reject(player, payload, "not_loaded", "error.beyond_craftlines.order_recipe_not_loaded",
@@ -110,6 +113,20 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);
                     });
         });
+    }
+
+    private static void showRecipeDebug(ServerPlayer player, OpenOrderMenuPayload payload,
+                                        java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> candidates)
+    {
+        String families = candidates.stream().map(RecipePlanningService::family)
+                .filter(java.util.Objects::nonNull).filter(family -> !family.isBlank())
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(", "));
+        Component actual = families.isEmpty()
+                ? Component.translatable("message.beyond_craftlines.debug_recipe_type_not_found")
+                : Component.literal(families);
+        player.displayClientMessage(Component.translatable(
+                "message.beyond_craftlines.debug_order_recipe", payload.recipeId(),
+                payload.jeiRecipeType(), actual), false);
     }
 
     private static void reject(ServerPlayer player, OpenOrderMenuPayload payload, String gate,

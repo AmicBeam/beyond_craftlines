@@ -20,6 +20,8 @@ public final class RecipeOutputResolver
             "outputs", "getOutputs",
             // Some data-driven recipes expose a public result/output member while
             // intentionally returning ItemStack.EMPTY from Recipe#getResultItem.
+            // Malum 1.21.x exposes Spirit Focusing results through these accessors.
+            "getOutputRaw", "createOutput",
             "output", "getOutput", "result", "getResult");
 
     private RecipeOutputResolver() {}
@@ -30,7 +32,8 @@ public final class RecipeOutputResolver
         LinkedHashMap<IStackKey<?>, KeyAmount> result = new LinkedHashMap<>();
         ItemStack item = recipe.getResultItem(registries);
         if (!item.isEmpty()) add(result, new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount()));
-        for (Object output : reflectiveOutputValues(recipe))
+        for (Object output : reflectiveOutputValues(recipe,
+                RecipeFieldWhitelistRegistry.outputMembers(recipe, OUTPUT_METHODS)))
             addOutput(result, output);
         return List.copyOf(result.values());
     }

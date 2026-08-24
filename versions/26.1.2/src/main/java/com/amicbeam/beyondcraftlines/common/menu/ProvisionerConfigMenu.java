@@ -30,31 +30,37 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private final Map<Identifier, Set<String>> selectedGroups;
     private final ContainerData provisionerData;
     private final boolean boundMachineConfiguration;
+    private final int priority;
 
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
-        this(id, inventory, readOptions(data), new SimpleContainerData(1));
+        this(id, inventory, readOptions(data), new SimpleContainerData(3));
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
     { this(id, inventory, options.position(), options.candidates(), options.selected(),
             options.availableGroups(), options.selectedGroups(), provisionerData,
-            options.boundMachineConfiguration()); }
+            options.boundMachineConfiguration(), options.priority()); }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                  Set<Identifier> candidates, Set<Identifier> selected,
                                  Map<Identifier, Set<String>> availableGroups,
                                  Map<Identifier, Set<String>> selectedGroups,
+                                 int priority,
                                  CraftlineProvisionerBlockEntity provisioner)
     {
         this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
                 new ContainerData()
                 {
                     @Override public int get(int index)
-                    { return index == 0 && !provisioner.isEmpty() ? 1 : 0; }
+                    {
+                        if (index == 0) return !provisioner.isEmpty() ? 1 : 0;
+                        if (index == 1) return provisioner.connectedDeviceCount();
+                        return index == 2 ? provisioner.deliveryStrategy().id() : 0;
+                    }
                     @Override public void set(int index, int value) {}
-                    @Override public int getCount() { return 1; }
-                }, false);
+                    @Override public int getCount() { return 3; }
+                }, false, priority);
     }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
@@ -66,23 +72,30 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                                  Map<Identifier, Set<String>> availableGroups)
     {
         this(id, inventory, position, candidates, selected, availableGroups, Map.of(),
-                new SimpleContainerData(1), true);
+                new SimpleContainerData(3), true, 0);
     }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                  Set<Identifier> candidates, Set<Identifier> selected,
                                  Map<Identifier, Set<String>> availableGroups,
                                  Map<Identifier, Set<String>> selectedGroups)
+    { this(id, inventory, position, candidates, selected, availableGroups, selectedGroups, 0); }
+
+    public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
+                                 Set<Identifier> candidates, Set<Identifier> selected,
+                                 Map<Identifier, Set<String>> availableGroups,
+                                 Map<Identifier, Set<String>> selectedGroups,
+                                 int priority)
     {
         this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
-                new SimpleContainerData(1), true);
+                new SimpleContainerData(3), true, priority);
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                   Set<Identifier> candidates, Set<Identifier> selected,
                                   Map<Identifier, Set<String>> availableGroups,
                                   Map<Identifier, Set<String>> selectedGroups,
-                                  ContainerData provisionerData, boolean boundMachineConfiguration)
+                                  ContainerData provisionerData, boolean boundMachineConfiguration, int priority)
     {
         super(CraftlinesMenus.PROVISIONER.get(), id);
         this.position = position.immutable();
@@ -92,6 +105,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         this.selectedGroups = copyGroups(selectedGroups);
         this.provisionerData = provisionerData;
         this.boundMachineConfiguration = boundMachineConfiguration;
+        this.priority = priority;
         addDataSlots(provisionerData);
     }
 
@@ -101,22 +115,49 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     public Map<Identifier, Set<String>> availableGroups() { return availableGroups; }
     public Map<Identifier, Set<String>> selectedGroups() { return selectedGroups; }
     public boolean hasResources() { return provisionerData.get(0) != 0; }
+    public int connectedDeviceCount()
+    { return provisionerData.getCount() > 1 ? provisionerData.get(1) : 0; }
+    public com.amicbeam.beyondcraftlines.common.runtime.ProvisionerDeliveryStrategy deliveryStrategy()
+    { return com.amicbeam.beyondcraftlines.common.runtime.ProvisionerDeliveryStrategy.fromId(
+            provisionerData.getCount() > 2 ? provisionerData.get(2) : 0); }
     public boolean isBoundMachineConfiguration() { return boundMachineConfiguration; }
+    public boolean allowsManualRecipeSelection()
+    { return com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeSelectionPolicy
+            .isManualMode(boundMachineConfiguration, candidates, selected); }
+    public boolean acceptsRecipeSelection(Set<Identifier> requested)
+    { return com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeSelectionPolicy
+            .accepts(boundMachineConfiguration, candidates, selected, requested); }
+    public int priority() { return priority; }
 
     public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
                                     Set<Identifier> candidates, Set<Identifier> selected,
                                     Map<Identifier, Set<String>> availableGroups,
                                     Map<Identifier, Set<String>> selectedGroups)
-    { writeOptions(buffer, position, candidates, selected, availableGroups, selectedGroups, false); }
+    { writeOptions(buffer, position, candidates, selected, availableGroups, selectedGroups, false, 0); }
+
+    public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
+                                    Set<Identifier> candidates, Set<Identifier> selected,
+                                    Map<Identifier, Set<String>> availableGroups,
+                                    Map<Identifier, Set<String>> selectedGroups, int priority)
+    { writeOptions(buffer, position, candidates, selected, availableGroups, selectedGroups, false, priority); }
 
     public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
                                     Set<Identifier> candidates, Set<Identifier> selected,
                                     Map<Identifier, Set<String>> availableGroups,
                                     Map<Identifier, Set<String>> selectedGroups,
                                     boolean boundMachineConfiguration)
+    { writeOptions(buffer, position, candidates, selected, availableGroups, selectedGroups,
+            boundMachineConfiguration, 0); }
+
+    public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
+                                    Set<Identifier> candidates, Set<Identifier> selected,
+                                    Map<Identifier, Set<String>> availableGroups,
+                                    Map<Identifier, Set<String>> selectedGroups,
+                                    boolean boundMachineConfiguration, int priority)
     {
         buffer.writeBlockPos(position);
         buffer.writeBoolean(boundMachineConfiguration);
+        buffer.writeInt(priority);
         var sorted = candidates.stream().sorted(Comparator.comparing(Identifier::toString)).limit(32).toList();
         buffer.writeVarInt(sorted.size());
         for (Identifier type : sorted)
@@ -132,6 +173,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     {
         BlockPos position = data.readBlockPos();
         boolean boundMachineConfiguration = data.readBoolean();
+        int priority = data.readInt();
         int count = Math.min(32, Math.max(0, data.readVarInt()));
         LinkedHashSet<Identifier> candidates = new LinkedHashSet<>();
         LinkedHashSet<Identifier> selected = new LinkedHashSet<>();
@@ -150,7 +192,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
             selectedGroups.put(type, groups);
         }
         return new Options(position, Set.copyOf(candidates), Set.copyOf(selected),
-                copyGroups(availableGroups), copyGroups(selectedGroups), boundMachineConfiguration);
+                copyGroups(availableGroups), copyGroups(selectedGroups), boundMachineConfiguration, priority);
     }
 
     private static void writeGroups(FriendlyByteBuf buffer, Set<String> groups)
@@ -185,7 +227,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private record Options(BlockPos position, Set<Identifier> candidates, Set<Identifier> selected,
                            Map<Identifier, Set<String>> availableGroups,
                            Map<Identifier, Set<String>> selectedGroups,
-                           boolean boundMachineConfiguration) {}
+                           boolean boundMachineConfiguration, int priority) {}
 
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
 

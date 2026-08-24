@@ -28,6 +28,7 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class DeviceBindingRegistry
@@ -50,6 +51,10 @@ public final class DeviceBindingRegistry
 
     public static BindAttempt bindMachine(Player player, BlockPos position,
                                           Set<Identifier> jeiTypes)
+    { return bindMachine(player, position, Direction.UP, jeiTypes); }
+
+    public static BindAttempt bindMachine(Player player, BlockPos position, Direction clickedFace,
+                                          Set<Identifier> jeiTypes)
     {
         if (!(player.level() instanceof ServerLevel level) || level.getServer() == null)
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
@@ -58,6 +63,10 @@ public final class DeviceBindingRegistry
             return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
         if (!level.isLoaded(position)) return BindAttempt.failure(BindFailure.INVALID_TARGET);
         BindingSavedData data = BindingSavedData.get(level.getServer());
+        ProvisionerSelection connectionSelection = validSelection(level.getServer(), player.getUUID(),
+                network.getId(), SelectionMode.DEVICE_CONNECTION);
+        if (connectionSelection != null)
+            return toggleProvisionerConnection(player, level, position, clickedFace, connectionSelection);
         BindingRecord existing = data.at(level.dimension(), position);
         if (existing != null && existing.networkId() != network.getId())
             return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
@@ -65,11 +74,11 @@ public final class DeviceBindingRegistry
         Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
         if (!DeviceType.isBindableMachine(blockId.toString()) || level.getBlockEntity(position) == null)
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
-        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
-                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
         var resolved = JeiRecipeFamilyRegistry.resolve(jeiTypes, loadedFamilies);
         if (resolved.isEmpty()) return BindAttempt.failure(BindFailure.UNSUPPORTED_RECIPE_TYPE);
-        ProvisionerSelection selection = validSelection(level.getServer(), player.getUUID(), network.getId());
+        ProvisionerSelection selection = validSelection(level.getServer(), player.getUUID(), network.getId(),
+                SelectionMode.RECIPE_SCAN);
         DeviceType deviceType = selection == null ? DeviceType.EXTERNAL_RECIPE_MACHINE
                 : DeviceType.PROVISIONER_RECIPE_BINDING;
         if (deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE
@@ -89,10 +98,11 @@ public final class DeviceBindingRegistry
                     level.dimension(), position, deviceType, selected.jeiTypes(), selected.families(), Map.of(), blockId,
                     null, null, existing == null ? "" : existing.nickname(),
                     existing != null && existing.favorite(),
+                    existing == null ? 0 : existing.priority(),
                     existing == null ? level.getGameTime() : existing.boundGameTime());
             data.add(record);
             return BindAttempt.success(new BindResult(
-                    deviceType, selected.jeiTypes(), selected.families(), false));
+                    deviceType, selected.jeiTypes(), selected.families(), false, null));
         }
         ServerLevel provisionerLevel = level.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
@@ -106,7 +116,29 @@ public final class DeviceBindingRegistry
                 && configureProvisioner(player, provisionerLevel, selection.position(), provisioner, candidates);
         PROVISIONER_SELECTIONS.remove(player.getUUID());
         return BindAttempt.success(new BindResult(
-                deviceType, resolved.jeiTypes(), resolved.families(), autoSelected));
+                deviceType, resolved.jeiTypes(), resolved.families(), autoSelected, null));
+    }
+
+    private static BindAttempt toggleProvisionerConnection(Player player, ServerLevel targetLevel,
+                                                           BlockPos target, Direction face,
+                                                           ProvisionerSelection selection)
+    {
+        ServerLevel provisionerLevel = targetLevel.getServer().getLevel(selection.dimension());
+        if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
+                instanceof CraftlineProvisionerBlockEntity provisioner))
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
+        if (targetLevel.dimension().equals(selection.dimension()) && target.equals(selection.position()))
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(target).getBlock());
+        if (!DeviceType.isBindableMachine(blockId.toString())
+                || targetLevel.getBlockEntity(target) == null
+                || !BoundMachineAutomation.isAutomatable(targetLevel, target, face))
+            return BindAttempt.failure(BindFailure.UNSUPPORTED_CAPABILITY);
+        var edit = provisioner.toggleWirelessConnection(targetLevel.dimension(), target, face, blockId);
+        if (edit == CraftlineProvisionerBlockEntity.ConnectionEdit.LIMIT_REACHED)
+            return BindAttempt.failure(BindFailure.CONNECTION_LIMIT);
+        return BindAttempt.success(new BindResult(DeviceType.PROVISIONER_RECIPE_BINDING,
+                Set.of(), Set.of(), false, edit));
     }
 
     public static boolean configureProvisioner(Player player, BlockPos position,
@@ -116,11 +148,24 @@ public final class DeviceBindingRegistry
     public static boolean configureProvisioner(Player player, BlockPos position,
                                                Set<Identifier> selectedTypes,
                                                Map<Identifier, Set<String>> selectedGroups)
+    { return configureProvisioner(player, position, selectedTypes, selectedGroups, 0); }
+
+    public static boolean configureProvisioner(Player player, BlockPos position,
+                                               Set<Identifier> selectedTypes,
+                                               Map<Identifier, Set<String>> selectedGroups,
+                                               int priority)
+    { return configureProvisioner(player, position, selectedTypes, selectedGroups, priority, false); }
+
+    public static boolean configureProvisioner(Player player, BlockPos position,
+                                               Set<Identifier> selectedTypes,
+                                               Map<Identifier, Set<String>> selectedGroups,
+                                               int priority, boolean allowManualSelection)
     {
         if (!(player.level() instanceof ServerLevel level) || level.getServer() == null
                 || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
             return false;
-        return configureProvisioner(player, level, position, provisioner, selectedTypes, selectedGroups);
+        return configureProvisioner(player, level, position, provisioner, selectedTypes, selectedGroups,
+                priority, allowManualSelection);
     }
 
     public static boolean configureBoundMachine(Player player, BlockPos position,
@@ -130,6 +175,12 @@ public final class DeviceBindingRegistry
     public static boolean configureBoundMachine(Player player, BlockPos position,
                                                 Set<Identifier> selectedTypes,
                                                 Map<Identifier, Set<String>> selectedGroups)
+    { return configureBoundMachine(player, position, selectedTypes, selectedGroups, 0); }
+
+    public static boolean configureBoundMachine(Player player, BlockPos position,
+                                                Set<Identifier> selectedTypes,
+                                                Map<Identifier, Set<String>> selectedGroups,
+                                                int priority)
     {
         if (player.level().getServer() == null || !(player.level() instanceof ServerLevel level)
                 || !level.isLoaded(position)) return false;
@@ -142,8 +193,7 @@ public final class DeviceBindingRegistry
         if (!blockId.equals(existing.lastBlockId()) || !BoundMachineAutomation.isAutomatable(level, position))
             return false;
 
-        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
-                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
         var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
         if ((!selectedTypes.isEmpty() && resolved.isEmpty())
                 || resolved.jeiTypes().size() != selectedTypes.size()) return false;
@@ -165,32 +215,43 @@ public final class DeviceBindingRegistry
                 existing.dimension(), existing.position(), existing.deviceType(),
                 resolved.jeiTypes(), resolved.families(), Map.copyOf(groupsByFamily), existing.lastBlockId(),
                 existing.provisionerDimension(), existing.provisionerPosition(), existing.nickname(),
-                existing.favorite(), existing.boundGameTime()));
+                existing.favorite(), priority, existing.boundGameTime()));
         return true;
     }
 
     private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
                                                 CraftlineProvisionerBlockEntity provisioner,
                                                 Set<Identifier> selectedTypes)
-    { return configureProvisioner(player, level, position, provisioner, selectedTypes, Map.of()); }
+    { return configureProvisioner(player, level, position, provisioner, selectedTypes, Map.of(), 0, false); }
 
     private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
                                                 CraftlineProvisionerBlockEntity provisioner,
                                                 Set<Identifier> selectedTypes,
-                                                Map<Identifier, Set<String>> selectedGroups)
+                                                Map<Identifier, Set<String>> selectedGroups,
+                                                int priority)
+    { return configureProvisioner(player, level, position, provisioner, selectedTypes,
+            selectedGroups, priority, false); }
+
+    private static boolean configureProvisioner(Player player, ServerLevel level, BlockPos position,
+                                                CraftlineProvisionerBlockEntity provisioner,
+                                                Set<Identifier> selectedTypes,
+                                                Map<Identifier, Set<String>> selectedGroups,
+                                                int priority, boolean allowManualSelection)
     {
         DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
         if (network == null || !network.isManager(player)) return false;
-        if (!provisioner.recipeCandidates().containsAll(selectedTypes)) return false;
+        boolean manualSelection = allowManualSelection && provisioner.recipeCandidates().isEmpty()
+                && selectedTypes.size() == 1;
+        if (!manualSelection && !provisioner.recipeCandidates().containsAll(selectedTypes)) return false;
 
         BindingSavedData data = BindingSavedData.get(level.getServer());
         if (selectedTypes.isEmpty())
         {
+            provisioner.clearWirelessConnections();
             data.removeForProvisioner(level.dimension(), position);
             return true;
         }
-        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
-                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
         var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
         if (resolved.isEmpty() || resolved.jeiTypes().size() != selectedTypes.size()) return false;
         Map<Identifier, Set<String>> availableGroups = inputGroupsByJeiType(level, selectedTypes);
@@ -216,8 +277,10 @@ public final class DeviceBindingRegistry
                 resolved.jeiTypes(), resolved.families(), Map.copyOf(groupsByFamily), provisionerId,
                 level.dimension(), position, existing == null ? "" : existing.nickname(),
                 existing != null && existing.favorite(),
+                priority,
                 existing == null ? level.getGameTime() : existing.boundGameTime());
         data.replaceProvisionerBinding(level.dimension(), position, replacement);
+        if (manualSelection) provisioner.addRecipeCandidates(resolved.jeiTypes());
         return true;
     }
 
@@ -226,7 +289,8 @@ public final class DeviceBindingRegistry
         if (player.level().getServer() == null) return false;
         DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
         if (network == null || !network.isManager(player)) return false;
-        ProvisionerSelection selection = validSelection(player.level().getServer(), player.getUUID(), network.getId());
+        ProvisionerSelection selection = validSelection(player.level().getServer(), player.getUUID(), network.getId(),
+                SelectionMode.RECIPE_SCAN);
         if (selection == null) return false;
         PROVISIONER_SELECTIONS.remove(player.getUUID());
         ServerLevel level = player.level().getServer().getLevel(selection.dimension());
@@ -236,9 +300,38 @@ public final class DeviceBindingRegistry
         {
             clearedCandidates = !provisioner.recipeCandidates().isEmpty();
             provisioner.clearRecipeCandidates();
+            provisioner.clearWirelessConnections();
         }
         BindingSavedData data = BindingSavedData.get(player.level().getServer());
         return data.removeForProvisioner(selection.dimension(), selection.position()) || clearedCandidates;
+    }
+
+    public static boolean configurePriority(Player player, BlockPos position, int priority,
+                                            boolean boundMachineConfiguration)
+    {
+        if (player.level().getServer() == null || !(player.level() instanceof ServerLevel level)
+                || !level.isLoaded(position)) return false;
+        BindingSavedData data = BindingSavedData.get(player.level().getServer());
+        BindingRecord existing = data.at(level.dimension(), position);
+        DeviceType expected = boundMachineConfiguration ? DeviceType.EXTERNAL_RECIPE_MACHINE
+                : DeviceType.PROVISIONER_RECIPE_BINDING;
+        if (existing == null || existing.deviceType() != expected) return false;
+        DimensionsNet network = DimensionsNet.getNetFromId(existing.networkId());
+        if (network == null || !network.isManager(player)) return false;
+        if (boundMachineConfiguration)
+        {
+            Identifier blockId = BuiltInRegistries.BLOCK.getKey(level.getBlockState(position).getBlock());
+            if (!blockId.equals(existing.lastBlockId()) || !BoundMachineAutomation.isAutomatable(level, position))
+                return false;
+        }
+        else if (!(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner)
+                || provisioner.getNetId() != existing.networkId()) return false;
+        data.add(new BindingRecord(existing.id(), existing.owner(), existing.networkId(), existing.dimension(),
+                existing.position(), existing.deviceType(), existing.jeiRecipeTypes(), existing.recipeFamilies(),
+                existing.provisionerInputGroups(), existing.lastBlockId(), existing.provisionerDimension(),
+                existing.provisionerPosition(), existing.nickname(), existing.favorite(), priority,
+                existing.boundGameTime()));
+        return true;
     }
 
     public static boolean selectProvisioner(Player player, BlockPos position)
@@ -249,8 +342,58 @@ public final class DeviceBindingRegistry
         DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
         if (network == null || !network.isManager(player)) return false;
         PROVISIONER_SELECTIONS.put(player.getUUID(), new ProvisionerSelection(
-                level.dimension(), position.immutable(), network.getId()));
+                level.dimension(), position.immutable(), network.getId(), SelectionMode.RECIPE_SCAN));
         return true;
+    }
+
+    public static boolean selectProvisionerConnections(Player player, BlockPos position)
+    {
+        if (!(player.level() instanceof ServerLevel level) || level.getServer() == null
+                || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
+            return false;
+        DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
+        if (network == null || !network.isManager(player)
+                || BindingSavedData.get(level.getServer())
+                .recipeTypesForProvisioner(level.dimension(), position).isEmpty()) return false;
+        PROVISIONER_SELECTIONS.put(player.getUUID(), new ProvisionerSelection(
+                level.dimension(), position.immutable(), network.getId(), SelectionMode.DEVICE_CONNECTION));
+        return true;
+    }
+
+    public static boolean hasProvisionerConnectionSelection(Player player)
+    {
+        MinecraftServer server = player.level().getServer();
+        if (server == null) return false;
+        DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
+        return network != null && validSelection(server, player.getUUID(), network.getId(),
+                SelectionMode.DEVICE_CONNECTION) != null;
+    }
+
+    public static Optional<ConnectionSelection> connectionSelection(Player player)
+    {
+        MinecraftServer server = player.level().getServer();
+        if (server == null) return Optional.empty();
+        DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
+        if (network == null) return Optional.empty();
+        ProvisionerSelection selection = validSelection(server, player.getUUID(), network.getId(),
+                SelectionMode.DEVICE_CONNECTION);
+        if (selection == null) return Optional.empty();
+        ServerLevel level = server.getLevel(selection.dimension());
+        if (level == null || !(level.getBlockEntity(selection.position())
+                instanceof CraftlineProvisionerBlockEntity provisioner)) return Optional.empty();
+        return Optional.of(new ConnectionSelection(selection.dimension(), selection.position(), provisioner));
+    }
+
+    public static SelectionClearResult useLinkerInAir(Player player)
+    {
+        ProvisionerSelection selected = PROVISIONER_SELECTIONS.get(player.getUUID());
+        if (selected != null && selected.mode() == SelectionMode.DEVICE_CONNECTION)
+        {
+            PROVISIONER_SELECTIONS.remove(player.getUUID());
+            return SelectionClearResult.CONNECTION_MODE_CLEARED;
+        }
+        return clearSelectedProvisionerRecipes(player)
+                ? SelectionClearResult.RECIPES_CLEARED : SelectionClearResult.NOTHING;
     }
 
     public static Optional<BoundMachine> machineFor(MinecraftServer server, int networkId, String family)
@@ -272,6 +415,8 @@ public final class DeviceBindingRegistry
                 .sorted(java.util.Comparator
                         .comparingInt((BoundMachine machine) -> machine.binding()
                                 .inputGroupRoutingPriority(family, inputGroup))
+                        .thenComparing(Comparator.comparingInt(
+                                (BoundMachine machine) -> machine.binding().priority()).reversed())
                         .thenComparing(machine -> machine.binding().dimension().identifier().toString())
                         .thenComparingLong(machine -> machine.binding().position().asLong()))
                 .toList();
@@ -337,6 +482,8 @@ public final class DeviceBindingRegistry
                                 .ProvisionerInputGroupSelection.routingPriority(
                                         target.binding().provisionerInputGroups().getOrDefault(family, Set.of()),
                                         inputGroup))
+                        .thenComparing(Comparator.comparingInt(
+                                (ProvisionerTarget target) -> target.binding().priority()).reversed())
                         .thenComparing(target -> target.binding().dimension().identifier().toString()
                                 + "|" + target.binding().position().asLong())).toList();
     }
@@ -344,8 +491,7 @@ public final class DeviceBindingRegistry
     public static Map<Identifier, Set<String>> inputGroupsByJeiType(ServerLevel level,
                                                                     Set<Identifier> jeiTypes)
     {
-        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
-                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
         LinkedHashMap<Identifier, Set<String>> familiesByType = new LinkedHashMap<>();
         Set<String> relevantFamilies = new HashSet<>();
         for (Identifier type : jeiTypes)
@@ -376,8 +522,7 @@ public final class DeviceBindingRegistry
     public static Map<Identifier, Set<String>> selectedGroupsByJeiType(
             ServerLevel level, Set<Identifier> jeiTypes, Map<String, Set<String>> stored)
     {
-        Set<String> loadedFamilies = level.recipeAccess().getRecipes().stream()
-                .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toSet());
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
         LinkedHashMap<Identifier, Set<String>> result = new LinkedHashMap<>();
         for (Identifier type : jeiTypes)
         {
@@ -424,21 +569,27 @@ public final class DeviceBindingRegistry
         return Optional.of(new ProvisionerTarget(record, provisioner));
     }
 
-    private static ProvisionerSelection validSelection(MinecraftServer server, UUID player, int networkId)
+    private static ProvisionerSelection validSelection(MinecraftServer server, UUID player, int networkId,
+                                                       SelectionMode mode)
     {
         ProvisionerSelection selection = PROVISIONER_SELECTIONS.get(player);
-        if (selection == null || selection.networkId() != networkId) return null;
+        if (selection == null || selection.networkId() != networkId || selection.mode() != mode) return null;
         ServerLevel level = server.getLevel(selection.dimension());
         if (level == null || !level.isLoaded(selection.position())
                 || !(level.getBlockEntity(selection.position()) instanceof CraftlineProvisionerBlockEntity provisioner)
                 || provisioner.getNetId() != networkId) return null;
+        if (mode == SelectionMode.DEVICE_CONNECTION && BindingSavedData.get(server)
+                .recipeTypesForProvisioner(selection.dimension(), selection.position()).isEmpty()) return null;
         return selection;
     }
 
     public record BoundMachine(BindingRecord binding, ServerLevel level) {}
     public record ProvisionerTarget(BindingRecord binding, CraftlineProvisionerBlockEntity provisioner) {}
+    public record ConnectionSelection(ResourceKey<Level> dimension, BlockPos position,
+                                      CraftlineProvisionerBlockEntity provisioner) {}
     public record BindResult(DeviceType deviceType, Set<Identifier> jeiRecipeTypes,
-                             Set<String> recipeFamilies, boolean autoSelected) {}
+                             Set<String> recipeFamilies, boolean autoSelected,
+                             CraftlineProvisionerBlockEntity.ConnectionEdit connectionEdit) {}
     public record BindAttempt(BindResult result, BindFailure failure)
     {
         public static BindAttempt success(BindResult result) { return new BindAttempt(result, null); }
@@ -450,13 +601,17 @@ public final class DeviceBindingRegistry
         NO_NETWORK_PERMISSION("error.beyond_craftlines.machine_binding_no_network_permission"),
         UNSUPPORTED_RECIPE_TYPE("error.beyond_craftlines.machine_recipe_type_unknown"),
         UNSUPPORTED_CAPABILITY("error.beyond_craftlines.machine_capability_unsupported"),
+        CONNECTION_LIMIT("error.beyond_craftlines.provisioner_connection_limit"),
         INVALID_TARGET("error.beyond_craftlines.machine_binding_invalid_target");
 
         private final String messageKey;
         BindFailure(String messageKey) { this.messageKey = messageKey; }
         public String messageKey() { return messageKey; }
     }
-    private record ProvisionerSelection(ResourceKey<Level> dimension, BlockPos position, int networkId) {}
+    public enum SelectionClearResult { RECIPES_CLEARED, CONNECTION_MODE_CLEARED, NOTHING }
+    private enum SelectionMode { RECIPE_SCAN, DEVICE_CONNECTION }
+    private record ProvisionerSelection(ResourceKey<Level> dimension, BlockPos position, int networkId,
+                                        SelectionMode mode) {}
 
     public static void removeAt(MinecraftServer server, ResourceKey<Level> dimension, BlockPos position)
     {
@@ -483,7 +638,7 @@ public final class DeviceBindingRegistry
                                 record.provisionerDimension(), record.provisionerPosition(), record.deviceType(),
                                 recipeTypes, recipeFamilies, record.provisionerInputGroups(), provisionerId,
                                 record.provisionerDimension(), record.provisionerPosition(), record.nickname(),
-                                record.favorite(), record.boundGameTime()));
+                                record.favorite(), record.priority(), record.boundGameTime()));
             }
         }
         else data.remove(dimension, position);

@@ -353,6 +353,7 @@ public final class RecipeOrderService
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.direct(machine), InputGroupRouteLogic.Kind.DIRECT_MACHINE,
                         binding.inputGroupRoutingPriority(step.family(), group),
+                        binding.priority(),
                         binding.dimension().location() + "|" + binding.position().asLong()));
             }
             for (DeviceBindingRegistry.ProvisionerTarget provisioner : DeviceBindingRegistry.provisionersFor(
@@ -363,6 +364,7 @@ public final class RecipeOrderService
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.provisioner(provisioner), InputGroupRouteLogic.Kind.PROVISIONER,
                         binding.inputGroupRoutingPriority(step.family(), group),
+                        binding.priority(),
                         key.dimension().location() + "|" + key.position().asLong()));
             }
             List<GroupEndpoint> selected = InputGroupRouteLogic.preferred(candidates).stream()

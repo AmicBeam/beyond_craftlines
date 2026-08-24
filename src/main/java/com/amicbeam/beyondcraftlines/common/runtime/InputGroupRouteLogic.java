@@ -10,7 +10,7 @@ final class InputGroupRouteLogic
 {
     enum Kind { DIRECT_MACHINE, PROVISIONER }
 
-    record Candidate<T>(T endpoint, Kind kind, int priority, String orderKey)
+    record Candidate<T>(T endpoint, Kind kind, int groupPriority, int endpointPriority, String orderKey)
     {
         Candidate
         {
@@ -21,18 +21,20 @@ final class InputGroupRouteLogic
 
     private InputGroupRouteLogic() {}
 
-    /** Exact group bindings beat wildcards; equally exact direct machines beat provisioners. */
+    /** Exact group bindings beat wildcards; then higher configured priorities win. */
     static <T> List<Candidate<T>> preferred(List<Candidate<T>> candidates)
     {
         List<Candidate<T>> sorted = candidates.stream()
-                .filter(value -> value.priority() < ProvisionerInputGroupSelection.REJECTED_PRIORITY)
-                .sorted(Comparator.comparingInt(Candidate<T>::priority)
+                .filter(value -> value.groupPriority() < ProvisionerInputGroupSelection.REJECTED_PRIORITY)
+                .sorted(Comparator.comparingInt(Candidate<T>::groupPriority)
+                        .thenComparing(Comparator.comparingInt(Candidate<T>::endpointPriority).reversed())
                         .thenComparingInt(value -> value.kind() == Kind.DIRECT_MACHINE ? 0 : 1)
                         .thenComparing(Candidate<T>::orderKey)).toList();
         if (sorted.isEmpty()) return List.of();
         Candidate<T> first = sorted.getFirst();
         if (first.kind() == Kind.PROVISIONER) return List.of(first);
-        return sorted.stream().filter(value -> value.priority() == first.priority()
+        return sorted.stream().filter(value -> value.groupPriority() == first.groupPriority()
+                && value.endpointPriority() == first.endpointPriority()
                 && value.kind() == Kind.DIRECT_MACHINE).toList();
     }
 

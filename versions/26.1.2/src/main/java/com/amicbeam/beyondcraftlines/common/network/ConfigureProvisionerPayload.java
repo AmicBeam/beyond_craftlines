@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import io.netty.buffer.ByteBuf;
@@ -22,7 +23,7 @@ import java.util.HashMap;
 import java.util.Set;
 
 public record ConfigureProvisionerPayload(long position, List<String> selectedTypes,
-                                          List<String> selectedGroups)
+                                          List<String> selectedGroups, List<String> recipeHints, int priority)
         implements CustomPacketPayload
 {
     public static final Type<ConfigureProvisionerPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(
@@ -33,16 +34,24 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             ConfigureProvisionerPayload::selectedTypes,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
             ConfigureProvisionerPayload::selectedGroups,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(768), 128),
+            ConfigureProvisionerPayload::recipeHints,
+            ByteBufCodecs.VAR_INT, ConfigureProvisionerPayload::priority,
             ConfigureProvisionerPayload::new);
 
     public static ConfigureProvisionerPayload of(BlockPos position, Set<Identifier> selected,
-                                                  Map<Identifier, Set<String>> groups)
+                                                  Map<Identifier, Set<String>> groups,
+                                                  java.util.Collection<com.amicbeam.beyondcraftlines.common.crafting
+                                                          .RecipeFamilyHint> hints,
+                                                  int priority)
     {
         return new ConfigureProvisionerPayload(position.asLong(),
                 selected.stream().map(Object::toString).sorted().limit(32).toList(),
                 selected.stream().sorted(java.util.Comparator.comparing(Identifier::toString))
                         .flatMap(type -> groups.getOrDefault(type, Set.of()).stream().sorted()
-                                .map(group -> type + "|" + group)).limit(512).toList());
+                                .map(group -> type + "|" + group)).limit(512).toList(),
+                hints.stream().map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::encode)
+                        .limit(128).toList(), priority);
     }
 
     public static void handle(ConfigureProvisionerPayload payload, IPayloadContext context)
@@ -55,7 +64,29 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             LinkedHashSet<Identifier> selected = new LinkedHashSet<>();
             payload.selectedTypes().stream().limit(32).map(Identifier::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(selected::add);
-            if (!menu.candidates().containsAll(selected)) return;
+            var hints = payload.recipeHints().stream().limit(128)
+                    .map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::decode)
+                    .filter(java.util.Objects::nonNull).toList();
+            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                    .verifyAndRemember(player.level(), hints);
+            Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
+                    .RecipePlanningService.loadedFamilies(player.level());
+            var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                    .resolve(selected, loadedFamilies);
+            if (!selected.isEmpty() && mapping.jeiTypes().size() != selected.size())
+            {
+                var missing = selected.stream().filter(type -> !mapping.jeiTypes().contains(type))
+                        .map(Object::toString).sorted().toList();
+                com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                        .logUnmapped(missing, loadedFamilies);
+                player.sendSystemMessage(Component.translatable(
+                        "error.beyond_craftlines.recipe_type_mapping_failed", String.join(", ", missing)));
+                if (CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
+                    showMappingDebug(player, player.level(), hints, missing);
+                return;
+            }
+            boolean manualSelection = menu.allowsManualRecipeSelection();
+            if (!menu.acceptsRecipeSelection(selected)) return;
             Map<Identifier, Set<String>> selectedGroups = new HashMap<>();
             boolean invalidGroups = false;
             for (String encoded : payload.selectedGroups().stream().limit(512).toList())
@@ -71,8 +102,10 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                 selectedGroups.computeIfAbsent(type, ignored -> new LinkedHashSet<>()).add(group);
             }
             boolean configured = !invalidGroups && (menu.isBoundMachineConfiguration()
-                    ? DeviceBindingRegistry.configureBoundMachine(player, position, selected, selectedGroups)
-                    : DeviceBindingRegistry.configureProvisioner(player, position, selected, selectedGroups));
+                    ? DeviceBindingRegistry.configureBoundMachine(
+                            player, position, selected, selectedGroups, payload.priority())
+                    : DeviceBindingRegistry.configureProvisioner(
+                            player, position, selected, selectedGroups, payload.priority(), manualSelection));
             String messageKey = menu.isBoundMachineConfiguration()
                     ? configured ? "message.beyond_craftlines.bound_machine_configured"
                     : "error.beyond_craftlines.bound_machine_config_failed"
@@ -81,7 +114,35 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             Component message = Component.translatable(messageKey);
             if (configured) player.sendOverlayMessage(message); else player.sendSystemMessage(message);
             if (configured) BindingVisualsPayload.broadcast(player.level());
+            if (configured && manualSelection)
+                com.amicbeam.beyondcraftlines.common.block.CraftlineProvisionerBlock
+                        .openConfiguration(player, position);
         });
+    }
+
+    private static void showMappingDebug(ServerPlayer player, net.minecraft.server.level.ServerLevel level,
+                                         List<com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint> hints,
+                                         List<String> missing)
+    {
+        var actual = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                .diagnoseActualFamilies(level, hints, missing);
+        for (String jeiType : missing)
+        {
+            List<String> families = actual.getOrDefault(jeiType, Set.of()).stream().sorted().toList();
+            Component value = families.isEmpty()
+                    ? Component.translatable("message.beyond_craftlines.debug_recipe_type_not_found")
+                    : Component.literal(String.join(", ", families));
+            player.sendSystemMessage(Component.translatable(
+                    "message.beyond_craftlines.debug_recipe_type_mapping", jeiType, value));
+            if (!families.isEmpty())
+            {
+                String entries = families.stream().map(family -> "\"" + family + "\"")
+                        .collect(java.util.stream.Collectors.joining(","));
+                String json = "{\"jei_type\":\"" + jeiType + "\",\"recipe_types\":[" + entries + "]}";
+                player.sendSystemMessage(Component.translatable(
+                        "message.beyond_craftlines.debug_recipe_type_json", json));
+            }
+        }
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

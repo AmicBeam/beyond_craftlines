@@ -20,5 +20,11 @@ public final class CraftlineProvisionerItem extends BlockItem
     {
         tooltip.accept(Component.translatable("tooltip.beyond_craftlines.provisioner.description")
                 .withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.provisioner.open_gui")
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.provisioner.wireless_binding")
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.provisioner.delivery_strategy")
+                .withStyle(ChatFormatting.GRAY));
     }
 }

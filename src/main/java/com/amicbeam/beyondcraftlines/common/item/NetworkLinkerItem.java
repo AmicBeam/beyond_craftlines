@@ -38,6 +38,12 @@ public final class NetworkLinkerItem extends Item
     {
         tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker.description")
                 .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker.left_click")
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker.provisioner_wireless")
+                .withStyle(ChatFormatting.GRAY));
+        tooltip.add(Component.translatable("tooltip.beyond_craftlines.linker.provisioner_scan")
+                .withStyle(ChatFormatting.GRAY));
     }
 
     @Override

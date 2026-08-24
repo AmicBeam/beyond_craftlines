@@ -117,6 +117,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('.setNormal(pose,', '.normal(pose.normal(),')
             .replace('.normal(pose.normal(), normalX, normalY, normalZ);',
                     '.normal(pose.normal(), normalX, normalY, normalZ).endVertex();')
+            .replace('.normal(pose.normal(), dx, dy, dz);',
+                    '.normal(pose.normal(), dx, dy, dz).endVertex();')
             .replace('location.id().equals(PROVISIONER)', 'new ResourceLocation(location.getNamespace(), location.getPath()).equals(PROVISIONER)')
             .replace('location.variant()', 'location.getVariant()')
             .replace('(RegistryFriendlyByteBuf) data', 'new RegistryFriendlyByteBuf(data)')
@@ -136,6 +138,7 @@ def prepareVersionResources = tasks.register('prepareVersionResources', Sync) {
         details.path = details.path
                 .replace('/recipe/', '/recipes/')
                 .replace('/loot_table/', '/loot_tables/')
+                .replace('/tags/block/', '/tags/blocks/')
     }
     filesMatching('data/**/*.json') {
         filter { line -> line

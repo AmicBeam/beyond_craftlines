@@ -23,7 +23,16 @@ public final class CraftlinesEvents
     public static void onServerTick(ServerTickEvent.Post event)
     {
         var server = event.getServer();
+        com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.tick(server);
         com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService.tick(server);
+    }
+
+    @SubscribeEvent
+    public static void onBlockPlaced(BlockEvent.EntityPlaceEvent event)
+    {
+        if (event.getLevel() instanceof net.minecraft.server.level.ServerLevel level)
+            com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry
+                    .onBlockPlaced(level, event.getPos());
     }
 
     @SubscribeEvent
@@ -78,15 +87,15 @@ public final class CraftlinesEvents
         {
             com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
                     server.getResourceManager());
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeFieldWhitelistRegistry.reload(
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
             recipeAliasServer = server;
         }
-        var whitelist = com.amicbeam.beyondcraftlines.common.network.RecipeFieldWhitelistPayload.snapshot();
+        var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
         if (event.getPlayer() != null)
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), whitelist);
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), profiles);
         else server.getPlayerList().getPlayers().forEach(player ->
-                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, whitelist));
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, profiles));
     }
 }

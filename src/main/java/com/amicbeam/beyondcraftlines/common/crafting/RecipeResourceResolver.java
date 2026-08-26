@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,40 +38,21 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
-        List<String> inputMethods = specializedDirectionalInputMethods(recipe, output);
+        List<String> inputMethods = directionalInputMethodsForStackType(recipe, output);
         if (inputMethods.isEmpty()) inputMethods = directionalInputMethods(recipe,
                 raw -> matchesOutputDirection(output, raw));
         return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
     }
 
-    private static List<String> specializedDirectionalInputMethods(Recipe<?> recipe, IStackKey<?> output)
+    private static List<String> directionalInputMethodsForStackType(Recipe<?> recipe, IStackKey<?> output)
     {
-        String stackTypePath = output.getTypeId().getPath();
-        for (Class<?> type = recipe.getClass(); type != null; type = type.getSuperclass())
-        {
-            List<String> methods = mekanismInputMethods(type.getName(), stackTypePath);
-            if (!methods.isEmpty()) return methods;
-        }
-        return List.of();
+        String id = output.getTypeId().toString();
+        String path = output.getTypeId().getPath();
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        RecipeIoProfileRegistry.directionRules(recipe).stream().filter(rule -> rule.matchesClass(recipe)
+                && rule.matchesStackType(id, path)).forEach(rule -> result.addAll(rule.inputFields()));
+        return List.copyOf(result);
     }
-
-    static List<String> mekanismInputMethods(String recipeClassName, String stackTypePath)
-    {
-        if ("mekanism.api.recipes.ItemStackChemicalToObjectRecipe".equals(recipeClassName)
-                || "mekanism.api.recipes.chemical.ItemStackChemicalToItemStackRecipe".equals(recipeClassName)
-                || "mekanism.api.recipes.ItemStackGasToItemStackRecipe".equals(recipeClassName))
-            return List.of("getItemInput", "getChemicalInput");
-        if (!"mekanism.api.recipes.RotaryRecipe".equals(recipeClassName)) return List.of();
-        if ("stack_type/fluid".equals(stackTypePath))
-            return List.of("getGasInput", "getChemicalInput");
-        if ("stack_type/chemical".equals(stackTypePath)
-                || stackTypePath.startsWith("stack_type/chemicals/"))
-            return List.of("getFluidInput");
-        return List.of();
-    }
-
-    static List<String> mekanismRotaryInputMethods(String recipeClassName, String stackTypePath)
-    { return mekanismInputMethods(recipeClassName, stackTypePath); }
 
     static boolean matchesOutputDirection(IStackKey<?> selectedOutput, Object rawOutput)
     {
@@ -88,12 +70,12 @@ public final class RecipeResourceResolver
 
     static List<String> directionalInputMethods(Object recipe, Predicate<Object> selectedOutput)
     {
-        if (RecipeOutputResolver.reflectiveOutputValues(recipe,
-                List.of("getGasOutputDefinition", "getChemicalOutputDefinition"))
-                .stream().anyMatch(selectedOutput)) return List.of("getFluidInput");
-        if (RecipeOutputResolver.reflectiveOutputValues(recipe, List.of("getFluidOutputDefinition"))
-                .stream().anyMatch(selectedOutput)) return List.of("getGasInput", "getChemicalInput");
-        return List.of();
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (RecipeIoProfileRegistry.DirectionRule rule : RecipeIoProfileRegistry.directionRules(recipe))
+            if (rule.matchesClass(recipe) && !rule.outputFields().isEmpty()
+                    && RecipeOutputResolver.reflectiveOutputValues(recipe, rule.outputFields().stream().toList())
+                    .stream().anyMatch(selectedOutput)) result.addAll(rule.inputFields());
+        return List.copyOf(result);
     }
 
     public static void clearCache() { CACHE.clear(); }
@@ -117,8 +99,7 @@ public final class RecipeResourceResolver
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
-    { return resolve(recipe, RecipeFieldWhitelistRegistry.inputMembers(
-            recipe, CountedInputReflection.INPUT_METHODS), true); }
+    { return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)
@@ -147,11 +128,13 @@ public final class RecipeResourceResolver
         // Craftlines to the owning mod.
         for (String methodName : inputMethods)
         {
+            RecipeIoProfileRegistry.InputCountSemantics countSemantics =
+                    RecipeIoProfileRegistry.inputCountSemantics(recipe, methodName);
             Object rawInput = RecipeReflection.readPublicMember(recipe, methodName);
-            for (Object input : CountedInputReflection.flatten(rawInput))
+            for (Object input : CountedInputReflection.flatten(recipe, rawInput))
             {
                 if (input == null || seen.contains(input)) continue;
-                CountedInputReflection.Value reflected = CountedInputReflection.read(input);
+                CountedInputReflection.Value reflected = CountedInputReflection.read(recipe, input);
                 Object ingredientSource = reflected == null ? input : reflected.ingredient();
                 long multiplier = SaturatingLongMath.multiply(
                         reflected == null ? 1 : reflected.count(),
@@ -162,7 +145,7 @@ public final class RecipeResourceResolver
                     // Custom Forge ingredients may keep the vanilla Ingredient value array empty
                     // while overriding getItems() with their real candidates (GTCEu's sized
                     // ingredients are a prominent example). The actual candidates are authoritative.
-                    List<KeyAmount> candidates = itemCandidates(ingredient, multiplier);
+                    List<KeyAmount> candidates = itemCandidates(ingredient, multiplier, countSemantics);
                     if (candidates.isEmpty()) continue;
                     seen.add(input);
                     // Recipe#getIngredients() is authoritative when it already exposes this
@@ -173,14 +156,14 @@ public final class RecipeResourceResolver
                     continue;
                 }
 
-                List<?> values = CountedInputReflection.representationValues(ingredientSource);
+                List<?> values = CountedInputReflection.representationValues(recipe, ingredientSource);
                 if (values.isEmpty()) continue;
                 LinkedHashMap<IStackKey<?>, KeyAmount> candidates = new LinkedHashMap<>();
                 for (Object value : values)
                 {
                     KeyAmount converted = fromStack(value);
                     if (converted == null) continue;
-                    long amount = SaturatingLongMath.multiply(converted.amount(), multiplier);
+                    long amount = interpretedInputAmount(converted.amount(), multiplier, countSemantics);
                     if (amount > 0) candidates.putIfAbsent(converted.key(),
                             new KeyAmount(converted.key(), amount));
                 }
@@ -196,13 +179,21 @@ public final class RecipeResourceResolver
         return List.copyOf(result);
     }
 
-    private static List<KeyAmount> itemCandidates(Ingredient ingredient, long count)
+    static long interpretedInputAmount(long representedAmount, long wrapperMultiplier,
+                                       RecipeIoProfileRegistry.InputCountSemantics semantics)
+    {
+        if (semantics == RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT) return 1;
+        return SaturatingLongMath.multiply(Math.max(1, representedAmount), Math.max(1, wrapperMultiplier));
+    }
+
+    private static List<KeyAmount> itemCandidates(Ingredient ingredient, long count,
+                                                   RecipeIoProfileRegistry.InputCountSemantics semantics)
     {
         List<KeyAmount> candidates = new ArrayList<>();
         for (ItemStack stack : ingredient.getItems())
             if (!stack.isEmpty()) candidates.add(new KeyAmount(
                     new ItemStackKey(stack.copyWithCount(1)),
-                    SaturatingLongMath.multiply(Math.max(1, stack.getCount()), count)));
+                    interpretedInputAmount(stack.getCount(), count, semantics)));
         return List.copyOf(candidates);
     }
 

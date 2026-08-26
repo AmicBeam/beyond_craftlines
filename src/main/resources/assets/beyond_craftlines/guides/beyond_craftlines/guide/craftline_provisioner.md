@@ -3,7 +3,7 @@ navigation:
   parent: index.md
   title: Craftline Provisioner
   icon: craftline_provisioner
-  position: 2
+  position: 3
 item_ids:
   - beyond_craftlines:craftline_provisioner
 ---
@@ -21,6 +21,17 @@ Right-click the block, or left-click it while holding a <ItemLink id="network_li
 Enable the recipe types this provisioner should serve, then optionally select material groups within each type. Selecting no material groups makes the provisioner a wildcard for that recipe type. Explicit group endpoints are preferred over wildcard endpoints. Its numeric priority is compared with other endpoints at the same match level.
 
 Clearing all recipe types also clears every wireless device connection, so the provisioner cannot retain stale routing.
+
+## Using wireless edit mode
+
+The provisioner must have at least one enabled recipe type before wireless connections can be edited.
+
+1. Hold a <ItemLink id="network_linker" /> and **right-click the provisioner** to enter wireless edit mode.
+2. **Right-click a target device face** to set its supply face. Right-clicking another face on the same device moves the supply connection; repeating the action on its currently bound face disconnects supply.
+3. **Sneak-right-click a target device face** to set its extraction face. Sneak-right-clicking another face moves the extraction connection; repeating the action on its currently bound face disconnects extraction.
+4. **Right-click air** with the linker to leave wireless edit mode without clearing the provisioner's recipe configuration.
+
+One device may have both a supply face and an extraction face. While editing, supply faces and connection lines are blue, extraction faces and lines are deep orange, and the candidate face under the crosshair is yellow. Outside edit mode, connected faces use a persistent blue-black dimensional frame; the client configuration can hide that persistent frame without disabling edit-mode highlights.
 
 ## Stored-output workflow
 
@@ -48,7 +59,7 @@ A single device may have both a supply face and an extraction face. By default, 
 
 ## Choosing a routing style
 
-- Use a **directly bound machine** when its exposed capabilities are sufficient and one machine should own the whole recipe step.
+- Use a **directly bound machine** when its exposed capabilities are sufficient and one machine should own the whole recipe step; no Craftline Provisioner is needed in this case.
 - Use **stored output plus pipes** when an external transport system should distribute inputs.
 - Use **wireless supply** when the provisioner should choose among several remote targets itself.
 - Add **request-time extraction** when the same provisioner should collect results from those devices only for requests it is serving.

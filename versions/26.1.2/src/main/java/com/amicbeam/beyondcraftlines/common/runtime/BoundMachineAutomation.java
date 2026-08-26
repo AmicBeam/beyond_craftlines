@@ -204,6 +204,38 @@ public final class BoundMachineAutomation
         return selected == null ? List.of() : selected.extract(key, amount);
     }
 
+    public static List<KeyAmount> extractableStacks(ServerLevel level, BlockPos position, Direction side)
+    {
+        List<KeyAmount> result = new ArrayList<>();
+        for (BdResourceHandler handler : resourceHandlers(level, position, side))
+            for (KeyAmount stack : handler.extractableStacks()) merge(result, stack);
+        return List.copyOf(result);
+    }
+
+    public static List<KeyAmount> extractStacks(ServerLevel level, BlockPos position, Direction side,
+                                                IStackKey<?> key, long amount)
+    {
+        BdResourceHandler selected = resourceHandlers(level, position, side).stream()
+                .filter(handler -> handler.type().equals(key.getTypeId()))
+                .max(java.util.Comparator.comparingLong(handler -> handler.count(key))).orElse(null);
+        return selected == null ? List.of() : selected.extract(key, amount);
+    }
+
+    private static void merge(List<KeyAmount> stacks, KeyAmount added)
+    {
+        if (added == null || added.isEmpty()) return;
+        for (int i = 0; i < stacks.size(); i++)
+        {
+            KeyAmount existing = stacks.get(i);
+            if (!existing.key().isSame(added.key())) continue;
+            long amount = existing.amount() > Long.MAX_VALUE - added.amount()
+                    ? Long.MAX_VALUE : existing.amount() + added.amount();
+            stacks.set(i, new KeyAmount(existing.key(), amount));
+            return;
+        }
+        stacks.add(added);
+    }
+
     static long countExtractable(List<ItemHandler> handlers, Identifier itemId)
     {
         long best = 0;
@@ -432,6 +464,19 @@ public final class BoundMachineAutomation
                 if (value != null && key.isSame(value.key()))
                     result = result > Long.MAX_VALUE - value.amount()
                             ? Long.MAX_VALUE : result + value.amount();
+            }
+            return result;
+        }
+
+        List<KeyAmount> extractableStacks()
+        {
+            List<KeyAmount> result = new ArrayList<>();
+            for (int slot = 0; slot < wrapper.getSlots(); slot++)
+            {
+                KeyAmount present = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
+                if (present == null || present.isEmpty()) continue;
+                long amount = wrapper.extract(slot, present.amount(), true);
+                if (amount > 0) merge(result, new KeyAmount(present.key(), amount));
             }
             return result;
         }

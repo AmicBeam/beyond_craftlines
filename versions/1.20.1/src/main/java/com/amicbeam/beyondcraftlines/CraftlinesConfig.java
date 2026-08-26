@@ -10,6 +10,9 @@ public final class CraftlinesConfig {
 
     public static final ForgeConfigSpec.BooleanValue SHOW_BOUND_MACHINE_FRAMES = CLIENT_BUILDER
             .push("binding").define("showBoundMachineFrames", true);
+    public static final ForgeConfigSpec.BooleanValue SHOW_PROVISIONER_BOUND_FACE_FRAMES = CLIENT_BUILDER
+            .comment("Show the persistent black-and-blue Beyond Dimensions frame on faces wirelessly bound to a Craftline Provisioner.")
+            .define("showProvisionerBoundFaceFrames", true);
     public static final ForgeConfigSpec.IntValue BOUND_MACHINE_FRAME_RENDER_DISTANCE = CLIENT_BUILDER
             .defineInRange("boundMachineFrameRenderDistance", 96, 16, 512);
     public static final ForgeConfigSpec.BooleanValue SHOW_PROVISIONER_TARGET_MATERIAL = CLIENT_BUILDER
@@ -54,6 +57,9 @@ public final class CraftlinesConfig {
             .defineInRange("maxActiveOrders", 1_024, 1, 100_000);
     public static final ForgeConfigSpec.IntValue MAX_ACTIVE_ORDERS_PER_PLAYER = SERVER_BUILDER
             .defineInRange("maxActiveOrdersPerPlayer", 64, 1, 10_000);
+    public static final ForgeConfigSpec.IntValue MAX_CONCURRENT_ORDERS_PER_NETWORK = SERVER_BUILDER
+            .comment("Maximum orders that may execute concurrently on one BD network when their non-crafting recipe families do not overlap. Set to one for strict FIFO execution.")
+            .defineInRange("maxConcurrentOrdersPerNetwork", 4, 1, 1_024);
     public static final ForgeConfigSpec.IntValue TERMINAL_ORDER_HISTORY_LIMIT = SERVER_BUILDER
             .defineInRange("terminalOrderHistoryLimit", 200, 0, 100_000);
 

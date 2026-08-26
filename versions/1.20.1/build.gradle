@@ -60,8 +60,6 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('level.getRecipeManager().byKey(', 'com.amicbeam.beyondcraftlines.compat.RecipeManagerCompat.byKey(level.getRecipeManager(), ')
             .replace('.getFirst()', '.get(0)')
             .replace('node.children.getLast()', 'node.children.get(node.children.size() - 1)')
-            .replace('BaseNetFurnaceBlockEntity<?>', 'NetFurnaceBlockEntity')
-            .replace('com.wintercogs.beyonddimensions.common.block.entity.BaseNetFurnaceBlockEntity', 'com.wintercogs.beyonddimensions.common.block.entity.NetFurnaceBlockEntity')
             .replace('net.minecraftforge.capabilities.Capabilities', 'net.minecraftforge.common.capabilities.ForgeCapabilities')
             .replace('Capabilities.ItemHandler.BLOCK', 'ForgeCapabilities.ITEM_HANDLER')
             .replace('level.getCapability(ForgeCapabilities.ITEM_HANDLER, position,', 'com.amicbeam.beyondcraftlines.compat.ForgeCapabilityAccess.get(level, ForgeCapabilities.ITEM_HANDLER, position,')
@@ -181,9 +179,8 @@ repositories {
     maven { name = 'CurseMaven'; url = 'https://cursemaven.com' }
 }
 
-def cachedBd = fileTree(dir: "${System.getProperty('user.home')}/.gradle/caches/modules-2/files-2.1/curse.maven/beyonddimensions-1222890", include: '**/beyonddimensions-1222890-7737205.jar').files.toList()
 dependencies {
-    implementation files(cachedBd.isEmpty() ? file('/private/tmp/missing-beyonddimensions-1.20.1.jar') : cachedBd.first())
+    implementation "maven.modrinth:beyonddimensions:${beyond_dimensions_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-forge-api:${jei_version}"
     runtimeOnly "mezz.jei:jei-${minecraft_version}-forge:${jei_version}"

@@ -1,0 +1,5 @@
+{
+  "recipe_type": "ars_nouveau:enchanting_apparatus",
+  "input_fields": ["reagent", "pedestalItems"],
+  "output_fields": ["result"]
+}

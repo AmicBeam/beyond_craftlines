@@ -34,7 +34,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
 
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
-        this(id, inventory, readOptions(data), new SimpleContainerData(3));
+        this(id, inventory, readOptions(data), new SimpleContainerData(4));
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
@@ -55,11 +55,12 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                     @Override public int get(int index)
                     {
                         if (index == 0) return !provisioner.isEmpty() ? 1 : 0;
-                        if (index == 1) return provisioner.connectedDeviceCount();
-                        return index == 2 ? provisioner.deliveryStrategy().id() : 0;
+                        if (index == 1) return provisioner.supplyConnectionCount();
+                        if (index == 2) return provisioner.extractConnectionCount();
+                        return index == 3 ? provisioner.deliveryStrategy().id() : 0;
                     }
                     @Override public void set(int index, int value) {}
-                    @Override public int getCount() { return 3; }
+                    @Override public int getCount() { return 4; }
                 }, false, priority);
     }
 
@@ -72,7 +73,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                                  Map<ResourceLocation, Set<String>> availableGroups)
     {
         this(id, inventory, position, candidates, selected, availableGroups, Map.of(),
-                new SimpleContainerData(3), true, 0);
+                new SimpleContainerData(4), true, 0);
     }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
@@ -88,7 +89,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                                  int priority)
     {
         this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
-                new SimpleContainerData(3), true, priority);
+                new SimpleContainerData(4), true, priority);
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
@@ -116,10 +117,14 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     public Map<ResourceLocation, Set<String>> selectedGroups() { return selectedGroups; }
     public boolean hasResources() { return provisionerData.get(0) != 0; }
     public int connectedDeviceCount()
+    { return supplyConnectionCount() + extractConnectionCount(); }
+    public int supplyConnectionCount()
     { return provisionerData.getCount() > 1 ? provisionerData.get(1) : 0; }
+    public int extractConnectionCount()
+    { return provisionerData.getCount() > 2 ? provisionerData.get(2) : 0; }
     public com.amicbeam.beyondcraftlines.common.runtime.ProvisionerDeliveryStrategy deliveryStrategy()
     { return com.amicbeam.beyondcraftlines.common.runtime.ProvisionerDeliveryStrategy.fromId(
-            provisionerData.getCount() > 2 ? provisionerData.get(2) : 0); }
+            provisionerData.getCount() > 3 ? provisionerData.get(3) : 0); }
     public boolean isBoundMachineConfiguration() { return boundMachineConfiguration; }
     public boolean allowsManualRecipeSelection()
     { return com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeSelectionPolicy

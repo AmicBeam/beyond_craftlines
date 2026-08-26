@@ -63,7 +63,8 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             net.minecraft.server.level.ServerLevel level = player.serverLevel();
             com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                     .verifyAndRemember(level, hints);
-            if (payload.remove())
+            boolean connectionMode = DeviceBindingRegistry.hasProvisionerConnectionSelection(player);
+            if (payload.remove() && !connectionMode)
             {
                 boolean removed = DeviceBindingRegistry.unbind(player, target);
                 player.displayClientMessage(Component.translatable(removed
@@ -74,7 +75,6 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             }
             Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
                     .RecipePlanningService.loadedFamilies(level);
-            boolean connectionMode = DeviceBindingRegistry.hasProvisionerConnectionSelection(player);
             if (!connectionMode && com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                     .resolve(types, loadedFamilies).isEmpty())
             {
@@ -87,7 +87,12 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             }
             net.minecraft.core.Direction targetFace = net.minecraft.core.Direction
                     .from3DDataValue(payload.targetFace());
-            var binding = DeviceBindingRegistry.bindMachine(player, target, targetFace, types);
+            var role = payload.remove()
+                    ? com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity
+                    .ConnectionRole.EXTRACT
+                    : com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity
+                    .ConnectionRole.SUPPLY;
+            var binding = DeviceBindingRegistry.bindMachine(player, target, targetFace, types, role);
             var result = binding.result();
             if (binding.isSuccess() && result.deviceType()
                     == com.amicbeam.beyondcraftlines.common.data.DeviceType.EXTERNAL_RECIPE_MACHINE)
@@ -103,6 +108,7 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
                     {
                         case ADDED -> "message.beyond_craftlines.provisioner_device_connected";
                         case UPDATED -> "message.beyond_craftlines.provisioner_device_face_updated";
+                        case EXTRACTING -> "message.beyond_craftlines.provisioner_device_extracting";
                         case REMOVED -> "message.beyond_craftlines.provisioner_device_disconnected";
                         case LIMIT_REACHED -> "error.beyond_craftlines.provisioner_connection_limit";
                     }

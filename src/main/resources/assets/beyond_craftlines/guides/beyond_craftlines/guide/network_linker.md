@@ -3,7 +3,7 @@ navigation:
   parent: index.md
   title: Network Linker
   icon: network_linker
-  position: 1
+  position: 2
 item_ids:
   - beyond_craftlines:network_linker
 ---

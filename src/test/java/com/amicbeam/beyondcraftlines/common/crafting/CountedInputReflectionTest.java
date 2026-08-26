@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 
 import mekanism.test.PerTickChemicalRecipe;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class CountedInputReflectionTest
 {
+    @BeforeEach
+    void installProfiles()
+    { RecipeIoProfileTestSupport.install("defaults.json", "mekanism.json"); }
+
     @Test
     void readsRecordStyleIngredientAndCount()
     {
@@ -127,7 +132,7 @@ final class CountedInputReflectionTest
         var provider = new MatchingFluidProvider(steam);
         assertEquals(List.of(steam), CountedInputReflection.representationValues(provider));
         assertNull(CountedInputReflection.read(provider));
-        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getFluidIngredients"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("getFluidIngredients"));
     }
 
     @Test
@@ -142,8 +147,8 @@ final class CountedInputReflectionTest
     @Test
     void discoversGoetyRitualActivationItem()
     {
-        assertTrue(CountedInputReflection.INPUT_METHODS.contains("activationItem"));
-        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getActivationItem"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("activationItem"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("getActivationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("activationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("getActivationItem"));
     }
@@ -156,8 +161,8 @@ final class CountedInputReflectionTest
         var recipe = new MalumLikeRecipe(List.of(
                 new ModernSpiritProvider(modernShard), new LegacySpiritProvider(legacyShard)));
 
-        assertTrue(CountedInputReflection.INPUT_METHODS.contains("spirits"));
-        assertTrue(CountedInputReflection.INPUT_METHODS.contains("getSpirits"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("spirits"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("getSpirits"));
         assertEquals("spirits", CountedInputReflection.inputGroup("spirits"));
         assertEquals(recipe.spirits, RecipeReflection.readPublicMember(recipe, "spirits"));
 
@@ -184,7 +189,7 @@ final class CountedInputReflectionTest
     @Test
     void inputDiscoveryDoesNotProbeEnergyMetadata()
     {
-        assertFalse(CountedInputReflection.INPUT_METHODS.stream()
+        assertFalse(RecipeIoProfileRegistry.inputMembers(null).stream()
                 .anyMatch(name -> name.toLowerCase(java.util.Locale.ROOT).contains("energy")));
     }
 
@@ -200,6 +205,17 @@ final class CountedInputReflectionTest
                 new UnrelatedPerTickRecipe(), "getChemicalInput"));
         assertEquals(200, CountedInputReflection.recipeInputMultiplier(
                 new mekanism.api.recipes.ItemStackGasToItemStackRecipe(), "getChemicalInput"));
+    }
+
+    @Test
+    void batchLimitCountSemanticsNormalizesWrapperAndRepresentationCounts()
+    {
+        assertEquals(24, RecipeResourceResolver.interpretedInputAmount(3, 8,
+                RecipeIoProfileRegistry.InputCountSemantics.REQUIRED));
+        assertEquals(1, RecipeResourceResolver.interpretedInputAmount(3, 8,
+                RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT));
+        assertEquals(1, RecipeResourceResolver.interpretedInputAmount(8, 1,
+                RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT));
     }
 
     @Test

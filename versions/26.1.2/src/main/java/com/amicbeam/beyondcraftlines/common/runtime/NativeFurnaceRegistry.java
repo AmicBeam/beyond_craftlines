@@ -1,9 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.wintercogs.beyonddimensions.common.block.entity.BaseNetFurnaceBlockEntity;
-import com.wintercogs.beyonddimensions.common.block.entity.NetBlastFurnaceBlockEntity;
-import com.wintercogs.beyonddimensions.common.block.entity.NetFurnaceBlockEntity;
-import com.wintercogs.beyonddimensions.common.block.entity.NetSmokerBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -29,6 +26,7 @@ public final class NativeFurnaceRegistry
 {
     private static final Map<Location, Entry> LOADED = new HashMap<>();
     private static final Map<NetworkFamily, TreeSet<Location>> BY_NETWORK_FAMILY = new HashMap<>();
+    private static final DeferredRegistrationQueue<Location> DEFERRED = new DeferredRegistrationQueue<>();
     private static final Set<BaseNetFurnaceBlockEntity<?>> WATCHED =
             Collections.newSetFromMap(new WeakHashMap<>());
     private static final Comparator<Location> LOCATION_ORDER = Comparator
@@ -36,6 +34,22 @@ public final class NativeFurnaceRegistry
             .thenComparingLong(location -> location.position().asLong());
 
     private NativeFurnaceRegistry() {}
+
+    public static void onBlockPlaced(ServerLevel level, BlockPos position)
+    {
+        if (level.getBlockEntity(position) instanceof BaseNetFurnaceBlockEntity<?>)
+            DEFERRED.schedule(new Location(level.dimension(), position));
+    }
+
+    public static void tick(MinecraftServer server)
+    {
+        for (Location location : DEFERRED.drain())
+        {
+            ServerLevel level = server.getLevel(location.dimension());
+            if (level != null && level.isLoaded(location.position()))
+                register(level.getBlockEntity(location.position()));
+        }
+    }
 
     public static void onChunkLoad(ChunkEvent.Load event)
     {
@@ -131,10 +145,7 @@ public final class NativeFurnaceRegistry
 
     private static String family(BaseNetFurnaceBlockEntity<?> furnace)
     {
-        if (furnace instanceof NetFurnaceBlockEntity) return "smelting";
-        if (furnace instanceof NetBlastFurnaceBlockEntity) return "blasting";
-        if (furnace instanceof NetSmokerBlockEntity) return "smoking";
-        return null;
+        return NativeFurnaceFamily.forClass(furnace.getClass());
     }
 
     private record Location(ResourceKey<Level> dimension, BlockPos position)

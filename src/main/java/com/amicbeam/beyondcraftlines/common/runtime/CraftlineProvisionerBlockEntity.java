@@ -59,8 +59,15 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public Set<ResourceLocation> recipeCandidates() { return Set.copyOf(recipeCandidates); }
     public ItemStack targetItemIcon() { return targetItemIcon; }
     public List<WirelessConnection> wirelessConnections() { return List.copyOf(wirelessConnections); }
-    public int connectedDeviceCount() { return wirelessConnections.size(); }
+    public int connectedDeviceCount()
+    { return (int) wirelessConnections.stream().map(connection ->
+            connection.dimension().location() + "|" + connection.position().asLong()).distinct().count(); }
+    public int supplyConnectionCount() { return connectionCount(ConnectionRole.SUPPLY); }
+    public int extractConnectionCount() { return connectionCount(ConnectionRole.EXTRACT); }
     public ProvisionerDeliveryStrategy deliveryStrategy() { return deliveryStrategy; }
+
+    private int connectionCount(ConnectionRole role)
+    { return (int) wirelessConnections.stream().filter(connection -> connection.role() == role).count(); }
 
     public void setDeliveryStrategy(ProvisionerDeliveryStrategy strategy)
     {
@@ -72,12 +79,13 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
 
     public ConnectionEdit toggleWirelessConnection(ResourceKey<net.minecraft.world.level.Level> dimension,
                                                    BlockPos position, Direction face,
-                                                   ResourceLocation blockId)
+                                                   ResourceLocation blockId, ConnectionRole role)
     {
         for (int i = 0; i < wirelessConnections.size(); i++)
         {
             WirelessConnection existing = wirelessConnections.get(i);
-            if (!existing.dimension().equals(dimension) || !existing.position().equals(position)) continue;
+            if (!existing.dimension().equals(dimension) || !existing.position().equals(position)
+                    || existing.role() != role) continue;
             if (existing.face() == face)
             {
                 wirelessConnections.remove(i);
@@ -85,15 +93,19 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                 syncChanged();
                 return ConnectionEdit.REMOVED;
             }
-            wirelessConnections.set(i, new WirelessConnection(dimension, position.immutable(), face, blockId));
+            wirelessConnections.set(i, new WirelessConnection(
+                    dimension, position.immutable(), face, blockId, role));
             syncChanged();
-            return ConnectionEdit.UPDATED;
+            return role == ConnectionRole.EXTRACT ? ConnectionEdit.EXTRACTING : ConnectionEdit.UPDATED;
         }
-        if (wirelessConnections.size() >= CraftlinesConfig.MAX_PROVISIONER_CONNECTIONS.get())
+        boolean existingDevice = wirelessConnections.stream().anyMatch(connection ->
+                connection.dimension().equals(dimension) && connection.position().equals(position));
+        if (!existingDevice && connectedDeviceCount() >= CraftlinesConfig.MAX_PROVISIONER_CONNECTIONS.get())
             return ConnectionEdit.LIMIT_REACHED;
-        wirelessConnections.add(new WirelessConnection(dimension, position.immutable(), face, blockId));
+        wirelessConnections.add(new WirelessConnection(
+                dimension, position.immutable(), face, blockId, role));
         syncChanged();
-        return ConnectionEdit.ADDED;
+        return role == ConnectionRole.EXTRACT ? ConnectionEdit.EXTRACTING : ConnectionEdit.ADDED;
     }
 
     public boolean clearWirelessConnections()
@@ -108,9 +120,11 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     public static void serverTick(net.minecraft.world.level.Level level, BlockPos position,
                                   BlockState state, CraftlineProvisionerBlockEntity provisioner)
     {
-        if (!(level instanceof ServerLevel) || provisioner.storage.isEmpty()
-                || provisioner.wirelessConnections.isEmpty()) return;
-        provisioner.dispatchWireless();
+        if (!(level instanceof ServerLevel serverLevel) || provisioner.wirelessConnections.isEmpty()) return;
+        if (!provisioner.storage.isEmpty() && provisioner.supplyConnectionCount() > 0)
+            provisioner.dispatchWireless();
+        if (provisioner.extractConnectionCount() > 0 && provisioner.participatesInActiveOrder(serverLevel))
+            provisioner.extractWireless(serverLevel);
     }
 
     private void dispatchWireless()
@@ -125,6 +139,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             {
                 if (remaining <= 0) break;
                 WirelessConnection connection = wirelessConnections.get(index);
+                if (connection.role() != ConnectionRole.SUPPLY) continue;
                 ServerLevel targetLevel = currentLevel.getServer().getLevel(connection.dimension());
                 if (targetLevel == null || !targetLevel.isLoaded(connection.position())
                         || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
@@ -143,6 +158,68 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                     connectionCursor = (index + 1) % size;
             }
         }
+    }
+
+    private boolean participatesInActiveOrder(ServerLevel currentLevel)
+    {
+        for (RecipeOrderJob job : RecipeOrderSavedData.get(currentLevel.getServer()).active())
+        {
+            if (job.networkId() != getNetId()) continue;
+            for (RecipeOrderJob.StepExecution execution : job.executions())
+            {
+                RecipeOrderJob.ExternalWait wait = execution.externalWait();
+                // Mixed input-group routes are ticked as bound-machine waits, so wait.provisioner()
+                // is false even when this provisioner is one of the occupied endpoints.
+                if (wait == null) continue;
+                boolean occupied = wait.occupiedMachines().stream().anyMatch(machine ->
+                        machine.dimension().equals(currentLevel.dimension())
+                                && machine.position().equals(worldPosition));
+                if (ProvisionerParticipationLogic.shouldActivate(wait.provisioner(), occupied))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private void extractWireless(ServerLevel currentLevel)
+    {
+        var network = com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet.getNetFromId(getNetId());
+        if (network == null) return;
+        UnifiedStorage networkStorage = network.getUnifiedStorage();
+        for (WirelessConnection connection : wirelessConnections)
+        {
+            if (connection.role() != ConnectionRole.EXTRACT) continue;
+            ServerLevel targetLevel = currentLevel.getServer().getLevel(connection.dimension());
+            if (targetLevel == null || !targetLevel.isLoaded(connection.position())
+                    || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
+                    .equals(connection.blockId())) continue;
+            for (KeyAmount visible : BoundMachineAutomation.extractableStacks(
+                    targetLevel, connection.position(), connection.face()))
+            {
+                KeyAmount simulatedRemainder = networkStorage.insert(visible.key(), visible.amount(), true);
+                long accepted = visible.amount() - (simulatedRemainder.isEmpty()
+                        ? 0 : simulatedRemainder.amount());
+                if (accepted <= 0) continue;
+                for (KeyAmount extracted : BoundMachineAutomation.extractStacks(targetLevel,
+                        connection.position(), connection.face(), visible.key(), accepted))
+                {
+                    KeyAmount rejected = networkStorage.insert(extracted.key(), extracted.amount(), false);
+                    if (!rejected.isEmpty()) preserveRejected(targetLevel, connection, rejected);
+                }
+            }
+        }
+    }
+
+    private static void preserveRejected(ServerLevel targetLevel, WirelessConnection connection,
+                                         KeyAmount rejected)
+    {
+        long restored = BoundMachineAutomation.insert(targetLevel, connection.position(), connection.face(),
+                rejected.key(), rejected.amount());
+        long stranded = rejected.amount() - restored;
+        if (stranded <= 0) return;
+        ItemStack ball = new ItemStack(BDItems.MATTER_COMPRESS_BALL.get());
+        ball.set(BDDataComponents.ISTACK_SLOTS, List.of(new KeyAmount(rejected.key(), stranded)));
+        Block.popResource(targetLevel, connection.position(), ball);
     }
 
     private List<Integer> connectionOrder()
@@ -295,6 +372,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             encoded.putLong("position", connection.position().asLong());
             encoded.putByte("face", (byte) connection.face().get3DDataValue());
             encoded.putString("block", connection.blockId().toString());
+            encoded.putByte("role", (byte) connection.role().id());
             connections.add(encoded);
         }
         tag.put("wireless_connections", connections);
@@ -327,7 +405,8 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             wirelessConnections.add(new WirelessConnection(
                     ResourceKey.create(Registries.DIMENSION, dimensionId),
                     BlockPos.of(encoded.getLong("position")),
-                    Direction.from3DDataValue(encoded.getByte("face")), blockId));
+                    Direction.from3DDataValue(encoded.getByte("face")), blockId,
+                    ConnectionRole.fromId(encoded.getByte("role"))));
         }
         connectionCursor = 0;
         if (targetItemIcon.isEmpty() && targetBlockIcon != null)
@@ -347,8 +426,18 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
         }
     }
 
-    public enum ConnectionEdit { ADDED, UPDATED, REMOVED, LIMIT_REACHED }
+    public enum ConnectionEdit { ADDED, UPDATED, EXTRACTING, REMOVED, LIMIT_REACHED }
+
+    public enum ConnectionRole
+    {
+        SUPPLY(0), EXTRACT(1);
+        private final int id;
+        ConnectionRole(int id) { this.id = id; }
+        public int id() { return id; }
+        public static ConnectionRole fromId(int id) { return id == 1 ? EXTRACT : SUPPLY; }
+    }
 
     public record WirelessConnection(ResourceKey<net.minecraft.world.level.Level> dimension,
-                                     BlockPos position, Direction face, ResourceLocation blockId) {}
+                                     BlockPos position, Direction face, ResourceLocation blockId,
+                                     ConnectionRole role) {}
 }

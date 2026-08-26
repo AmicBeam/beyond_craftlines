@@ -30,7 +30,8 @@ public final class CraftlinesJadePlugin implements IWailaPlugin
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "provisioner_recipe_bindings");
     private static final String RECIPE_TYPES = BeyondCraftlines.MOD_ID + ".recipe_types";
-    private static final String CONNECTION_COUNT = BeyondCraftlines.MOD_ID + ".connection_count";
+    private static final String SUPPLY_CONNECTION_COUNT = BeyondCraftlines.MOD_ID + ".supply_connection_count";
+    private static final String EXTRACT_CONNECTION_COUNT = BeyondCraftlines.MOD_ID + ".extract_connection_count";
 
     @Override
     public void register(IWailaCommonRegistration registration)
@@ -60,7 +61,10 @@ public final class CraftlinesJadePlugin implements IWailaPlugin
                     .forEach(type -> types.add(StringTag.valueOf(type.toString())));
             data.put(RECIPE_TYPES, types);
             if (accessor.getBlockEntity() instanceof CraftlineProvisionerBlockEntity provisioner)
-                data.putInt(CONNECTION_COUNT, provisioner.connectedDeviceCount());
+            {
+                data.putInt(SUPPLY_CONNECTION_COUNT, provisioner.supplyConnectionCount());
+                data.putInt(EXTRACT_CONNECTION_COUNT, provisioner.extractConnectionCount());
+            }
         }
 
         @Override
@@ -68,7 +72,8 @@ public final class CraftlinesJadePlugin implements IWailaPlugin
         {
             ListTag types = accessor.getServerData().getList(RECIPE_TYPES, Tag.TAG_STRING);
             tooltip.add(Component.translatable("tooltip.jade.beyond_craftlines.provisioner_connections",
-                    accessor.getServerData().getInt(CONNECTION_COUNT)));
+                    accessor.getServerData().getInt(SUPPLY_CONNECTION_COUNT),
+                    accessor.getServerData().getInt(EXTRACT_CONNECTION_COUNT)));
             if (types.isEmpty())
             {
                 tooltip.add(Component.translatable("tooltip.jade.beyond_craftlines.provisioner_recipe.unbound"));

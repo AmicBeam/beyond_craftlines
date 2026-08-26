@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
-import com.wintercogs.beyonddimensions.common.block.entity.NetFurnaceBlockEntity;
+import com.wintercogs.beyonddimensions.api.event.dimensionnet.NetedBlockEvent;
+import com.wintercogs.beyonddimensions.common.block.entity.BaseNetFurnaceBlockEntity;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -18,15 +19,32 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraftforge.event.level.ChunkEvent;
 import net.minecraftforge.event.level.LevelEvent;
 
-/** Loaded-furnace index for the BD 0.7.5 1.20.1 network furnace implementation. */
+/** Runtime index of loaded BD 0.7.27+ native network furnaces. */
 public final class NativeFurnaceRegistry {
     private static final Map<Location, Entry> LOADED = new HashMap<>();
     private static final Map<NetworkFamily, TreeSet<Location>> BY_NETWORK_FAMILY = new HashMap<>();
+    private static final DeferredRegistrationQueue<Location> DEFERRED = new DeferredRegistrationQueue<>();
     private static final Comparator<Location> LOCATION_ORDER = Comparator
             .comparing((Location location) -> location.dimension().location().toString())
             .thenComparingLong(location -> location.position().asLong());
 
     private NativeFurnaceRegistry() {}
+
+    public static void onBound(NetedBlockEvent.Bound event) { register(event.getBlockEntity()); }
+    public static void onUnbound(NetedBlockEvent.Unbound event) {
+        remove(new Location(event.getLevel().dimension(), event.getPos()));
+    }
+
+    public static void onBlockPlaced(ServerLevel level, BlockPos position) {
+        if (level.getBlockEntity(position) instanceof BaseNetFurnaceBlockEntity<?>)
+            DEFERRED.schedule(new Location(level.dimension(), position));
+    }
+    public static void tick(MinecraftServer server) {
+        for (Location location : DEFERRED.drain()) {
+            ServerLevel level = server.getLevel(location.dimension());
+            if (level != null && level.isLoaded(location.position())) register(level.getBlockEntity(location.position()));
+        }
+    }
 
     public static void onChunkLoad(ChunkEvent.Load event) {
         if (!(event.getLevel() instanceof ServerLevel) || !(event.getChunk() instanceof LevelChunk chunk)) return;
@@ -51,16 +69,20 @@ public final class NativeFurnaceRegistry {
     }
     public static Set<String> availableFamilies(MinecraftServer server, int networkId) {
         HashSet<String> result = new HashSet<>();
-        if (furnaceFor(server, networkId, "smelting").isPresent()) result.add("smelting");
+        for (String family : Set.of("smelting", "blasting", "smoking"))
+            if (furnaceFor(server, networkId, family).isPresent()) result.add(family);
         return Set.copyOf(result);
     }
-    public static boolean supports(NetFurnaceBlockEntity furnace, String family) { return "smelting".equals(family); }
+    public static boolean supports(BaseNetFurnaceBlockEntity<?> furnace, String family) { return family.equals(family(furnace)); }
 
     private static void register(BlockEntity blockEntity) {
-        if (!(blockEntity instanceof NetFurnaceBlockEntity furnace) || !(furnace.getLevel() instanceof ServerLevel level) || furnace.getNetId() < 0) return;
+        if (!(blockEntity instanceof BaseNetFurnaceBlockEntity<?> furnace)
+                || !(furnace.getLevel() instanceof ServerLevel level) || furnace.getNetId() < 0) return;
+        String family = family(furnace);
+        if (family == null) return;
         Location location = new Location(level.dimension(), furnace.getBlockPos());
         remove(location);
-        Entry entry = new Entry(level.dimension(), furnace.getBlockPos(), furnace.getNetId(), "smelting");
+        Entry entry = new Entry(level.dimension(), furnace.getBlockPos(), furnace.getNetId(), family);
         LOADED.put(location, entry);
         BY_NETWORK_FAMILY.computeIfAbsent(new NetworkFamily(entry.networkId(), entry.family()), ignored -> new TreeSet<>(LOCATION_ORDER)).add(location);
     }
@@ -68,7 +90,8 @@ public final class NativeFurnaceRegistry {
         ServerLevel level = server.getLevel(entry.dimension());
         if (level == null || !level.isLoaded(entry.position())) return Optional.empty();
         BlockEntity blockEntity = level.getBlockEntity(entry.position());
-        if (!(blockEntity instanceof NetFurnaceBlockEntity furnace) || furnace.getNetId() != entry.networkId()) {
+        if (!(blockEntity instanceof BaseNetFurnaceBlockEntity<?> furnace)
+                || furnace.getNetId() != entry.networkId() || !entry.family().equals(family(furnace))) {
             remove(new Location(entry.dimension(), entry.position())); return Optional.empty();
         }
         return Optional.of(new NativeFurnace(level, furnace, entry.family()));
@@ -80,8 +103,12 @@ public final class NativeFurnaceRegistry {
         if (locations != null) { locations.remove(location); if (locations.isEmpty()) BY_NETWORK_FAMILY.remove(key); }
     }
 
+    private static String family(BaseNetFurnaceBlockEntity<?> furnace) {
+        return NativeFurnaceFamily.forClass(furnace.getClass());
+    }
+
     private record Location(ResourceKey<Level> dimension, BlockPos position) { private Location { position = position.immutable(); } }
     private record Entry(ResourceKey<Level> dimension, BlockPos position, int networkId, String family) { private Entry { position = position.immutable(); } }
     private record NetworkFamily(int networkId, String family) {}
-    public record NativeFurnace(ServerLevel level, NetFurnaceBlockEntity blockEntity, String family) {}
+    public record NativeFurnace(ServerLevel level, BaseNetFurnaceBlockEntity<?> blockEntity, String family) {}
 }

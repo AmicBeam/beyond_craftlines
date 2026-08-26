@@ -3,51 +3,12 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 /** Structural reflection for third-party counted item inputs, kept free of mod-specific classes. */
 final class CountedInputReflection
 {
-    private static final List<String> REPRESENTATION_METHODS = List.of(
-            "getRepresentations", "representations",
-            "getMatchingFluidStacks", "matchingFluidStacks",
-            "getMatchingStacks", "matchingStacks",
-            "getFluids", "fluids", "getFluidStacks", "fluidStacks",
-            "getStacks", "stacks", "getInputStacks", "inputStacks",
-            "getItems", "items");
-    private static final long MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER = 200;
-    private static final Set<String> CHEMICAL_INPUT_METHODS = Set.of(
-            "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
-            "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals");
-
-    static final List<String> INPUT_METHODS = List.of(
-            "input", "getInput", "inputs", "getInputs",
-            "inputA", "getInputA", "inputB", "getInputB", "inputC", "getInputC",
-            "inputOne", "getInputOne", "inputTwo", "getInputTwo", "inputThree", "getInputThree",
-            "leftInput", "getLeftInput", "rightInput", "getRightInput",
-            "middleInput", "getMiddleInput",
-            "primaryInput", "getPrimaryInput", "primaryInputs", "getPrimaryInputs",
-            "main", "getMain", "mainInput", "getMainInput",
-            "activationItem", "getActivationItem",
-            "extraInput", "getExtraInput", "extraInputs", "getExtraInputs",
-            "secondaryInput", "getSecondaryInput", "secondaryInputs", "getSecondaryInputs",
-            "itemInput", "getItemInput", "itemInputs", "getItemInputs",
-            "inputItem", "getInputItem", "inputItems", "getInputItems",
-            "solidInput", "getSolidInput", "inputSolid", "getInputSolid",
-            "fluidInput", "getFluidInput", "fluidInputs", "getFluidInputs",
-            "inputFluid", "getInputFluid", "inputFluids", "getInputFluids",
-            "fluidIngredient", "getFluidIngredient", "fluidIngredients", "getFluidIngredients",
-            "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
-            "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals",
-            "chemicalIngredient", "getChemicalIngredient", "chemicalIngredients", "getChemicalIngredients",
-            "gasInput", "getGasInput", "gasInputs", "getGasInputs",
-            "inputGas", "getInputGas", "inputGases", "getInputGases",
-            "gasIngredient", "getGasIngredient", "gasIngredients", "getGasIngredients",
-            "spirits", "getSpirits",
-            "offerings", "getOfferings");
-
     private CountedInputReflection() {}
 
     /** Stable, protocol-safe name for the logical input section exposed by an accessor. */
@@ -58,10 +19,16 @@ final class CountedInputReflection
         return value.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
     }
 
-    static List<?> flatten(Object value)
-    { return StructuralRecipeValues.flatten(value); }
+    static java.util.List<?> flatten(Object value)
+    { return flatten(null, value); }
+
+    static java.util.List<?> flatten(Object recipe, Object value)
+    { return StructuralRecipeValues.flatten(value, recipe); }
 
     static Value read(Object input)
+    { return read(null, input); }
+
+    static Value read(Object recipe, Object input)
     {
         if (input == null) return null;
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -73,15 +40,19 @@ final class CountedInputReflection
             // InputIngredient implementations (notably chemical/fluid ingredients) may
             // themselves look like counted wrappers while their public representations
             // carry the actual resource type and amount. Keep those objects intact.
-            if (hasRepresentationMethod(current)) break;
-            Object ingredient = invokeNoArgs(current, "ingredient");
-            if (ingredient == null) ingredient = invokeNoArgs(current, "getIngredient");
+            if (hasRepresentationMethod(recipe, current)) break;
+            Object ingredient = null;
+            Object rawCount = null;
+            for (RecipeIoProfileRegistry.CountedWrapper wrapper :
+                    RecipeIoProfileRegistry.countedWrappers(recipe))
+            {
+                ingredient = first(current, wrapper.valueFields());
+                if (ingredient == null) continue;
+                rawCount = first(current, wrapper.countFields());
+                break;
+            }
             if (ingredient == null) break;
             wrapped = true;
-            Object rawCount = invokeNoArgs(current, "count");
-            if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "getCount");
-            if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "amount");
-            if (!(rawCount instanceof Number)) rawCount = invokeNoArgs(current, "getAmount");
             long factor = rawCount instanceof Number number ? Math.max(1L, number.longValue()) : 1L;
             count = saturatedMultiply(count, factor);
             current = ingredient;
@@ -89,40 +60,39 @@ final class CountedInputReflection
         return wrapped && current != null ? new Value(current, count) : null;
     }
 
-    static List<?> representationValues(Object ingredient)
+    static java.util.List<?> representationValues(Object ingredient)
+    { return representationValues(null, ingredient); }
+
+    static java.util.List<?> representationValues(Object recipe, Object ingredient)
     {
-        if (ingredient == null) return List.of();
-        for (String method : REPRESENTATION_METHODS)
+        if (ingredient == null) return java.util.List.of();
+        for (String method : RecipeIoProfileRegistry.representationMembers(recipe))
         {
             Object values = invokeNoArgs(ingredient, method);
-            List<?> flattened = flatten(values);
+            java.util.List<?> flattened = flatten(recipe, values);
             if (!flattened.isEmpty()) return flattened;
         }
-        return List.of();
+        return java.util.List.of();
     }
 
     static boolean hasRepresentationMethod(Object target)
-    { return REPRESENTATION_METHODS.stream().anyMatch(method -> hasNoArgMethod(target, method)); }
+    { return hasRepresentationMethod(null, target); }
 
-    /** Mirrors Mekanism's recipe-viewer total for chemicals consumed once per processing tick. */
+    static boolean hasRepresentationMethod(Object recipe, Object target)
+    { return RecipeIoProfileRegistry.representationMembers(recipe).stream()
+            .anyMatch(method -> hasNoArgMethod(target, method)); }
+
     static long recipeInputMultiplier(Object recipe, String inputMethod)
-    {
-        if (recipe == null || !CHEMICAL_INPUT_METHODS.contains(inputMethod)
-                || !recipe.getClass().getName().startsWith("mekanism.")) return 1;
-        Object perTickUsage = invokeNoArgs(recipe, "perTickUsage");
-        if (perTickUsage instanceof Boolean enabled)
-            return enabled ? MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER : 1;
-        // Mekanism 1.20.x predates the perTickUsage flag. Its JEI category applies
-        // the same 200-tick total to every ItemStackGasToItemStackRecipe.
-        return hasTypeNamed(recipe.getClass(), "mekanism.api.recipes.ItemStackGasToItemStackRecipe")
-                ? MEKANISM_PER_TICK_CHEMICAL_MULTIPLIER : 1;
-    }
+    { return RecipeIoProfileRegistry.inputMultiplier(recipe, inputMethod); }
 
-    private static boolean hasTypeNamed(Class<?> type, String expectedName)
+    private static Object first(Object target, Set<String> members)
     {
-        for (Class<?> current = type; current != null; current = current.getSuperclass())
-            if (current.getName().equals(expectedName)) return true;
-        return false;
+        for (String member : members)
+        {
+            Object value = invokeNoArgs(target, member);
+            if (value != null) return value;
+        }
+        return null;
     }
 
     private static long saturatedMultiply(long left, long right)

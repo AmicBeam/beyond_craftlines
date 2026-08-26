@@ -1,0 +1,42 @@
+{
+  "directions": [
+    {
+      "recipe_classes": [
+        "mekanism.api.recipes.ItemStackChemicalToObjectRecipe",
+        "mekanism.api.recipes.chemical.ItemStackChemicalToItemStackRecipe",
+        "mekanism.api.recipes.ItemStackGasToItemStackRecipe"
+      ],
+      "input_fields": ["getItemInput", "getChemicalInput"]
+    },
+    {
+      "recipe_classes": ["mekanism.api.recipes.RotaryRecipe"],
+      "output_stack_types": ["stack_type/fluid"],
+      "input_fields": ["getGasInput", "getChemicalInput"]
+    },
+    {
+      "recipe_classes": ["mekanism.api.recipes.RotaryRecipe"],
+      "output_stack_types": ["stack_type/chemical"],
+      "output_stack_type_prefixes": ["stack_type/chemicals/"],
+      "input_fields": ["getFluidInput"]
+    }
+  ],
+  "input_multipliers": [
+    {
+      "recipe_class_prefixes": ["mekanism."],
+      "input_fields": [
+        "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
+        "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals"
+      ],
+      "when_boolean_field": "perTickUsage",
+      "factor": 200
+    },
+    {
+      "recipe_classes": ["mekanism.api.recipes.ItemStackGasToItemStackRecipe"],
+      "input_fields": [
+        "chemicalInput", "getChemicalInput", "chemicalInputs", "getChemicalInputs",
+        "inputChemical", "getInputChemical", "inputChemicals", "getInputChemicals"
+      ],
+      "factor": 200
+    }
+  ]
+}

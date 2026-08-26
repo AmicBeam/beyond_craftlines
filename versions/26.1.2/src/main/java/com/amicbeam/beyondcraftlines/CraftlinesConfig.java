@@ -15,6 +15,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.show_bound_machine_frames")
             .define("showBoundMachineFrames", true);
 
+    public static final ModConfigSpec.BooleanValue SHOW_PROVISIONER_BOUND_FACE_FRAMES = CLIENT_BUILDER
+            .comment("Show the persistent black-and-blue Beyond Dimensions frame on faces wirelessly bound to a Craftline Provisioner.")
+            .translation("config.beyond_craftlines.show_provisioner_bound_face_frames")
+            .define("showProvisionerBoundFaceFrames", true);
+
     public static final ModConfigSpec.IntValue BOUND_MACHINE_FRAME_RENDER_DISTANCE = CLIENT_BUILDER
             .comment("Maximum distance in blocks for bound-machine frames. Nearby bindings are indexed by chunk.")
             .translation("config.beyond_craftlines.bound_machine_frame_render_distance")
@@ -110,6 +115,11 @@ public final class CraftlinesConfig
             .comment("Maximum active Craftlines orders owned by one player.")
             .translation("config.beyond_craftlines.max_active_orders_per_player")
             .defineInRange("maxActiveOrdersPerPlayer", 64, 1, 10_000);
+
+    public static final ModConfigSpec.IntValue MAX_CONCURRENT_ORDERS_PER_NETWORK = SERVER_BUILDER
+            .comment("Maximum orders that may execute concurrently on one BD network when their non-crafting recipe families do not overlap. Set to one for strict FIFO execution.")
+            .translation("config.beyond_craftlines.max_concurrent_orders_per_network")
+            .defineInRange("maxConcurrentOrdersPerNetwork", 4, 1, 1_024);
 
     public static final ModConfigSpec.IntValue TERMINAL_ORDER_HISTORY_LIMIT = SERVER_BUILDER
             .comment("Completed, cancelled, or failed orders retained in SavedData; zero retains none.")

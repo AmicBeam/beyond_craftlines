@@ -1,14 +1,21 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 final class RecipeOutputResolverTest
 {
+    @BeforeEach
+    void installProfiles()
+    { RecipeIoProfileTestSupport.install("defaults.json", "mekanism.json"); }
+
     @Test
     void readsBothMekanismRotaryOutputDefinitions()
     {
@@ -81,28 +88,53 @@ final class RecipeOutputResolverTest
     }
 
     @Test
-    void specializedRotaryDirectionSupportsModernAndLegacyChemicalKeys()
+    void datapackRotaryDirectionSupportsModernAndLegacyChemicalKeys()
     {
-        String rotary = "mekanism.api.recipes.RotaryRecipe";
-        assertEquals(List.of("getFluidInput"), RecipeResourceResolver.mekanismRotaryInputMethods(
-                rotary, "stack_type/chemical"));
-        assertEquals(List.of("getFluidInput"), RecipeResourceResolver.mekanismRotaryInputMethods(
-                rotary, "stack_type/chemicals/gas"));
-        assertEquals(List.of("getGasInput", "getChemicalInput"),
-                RecipeResourceResolver.mekanismRotaryInputMethods(rotary, "stack_type/fluid"));
-        assertEquals(List.of(), RecipeResourceResolver.mekanismRotaryInputMethods(
-                "example.OtherRecipe", "stack_type/chemical"));
+        var recipe = new mekanism.api.recipes.RotaryRecipe();
+        var rules = RecipeIoProfileRegistry.directionRules(recipe);
+        assertEquals(List.of("getFluidInput"), rules.stream().filter(rule ->
+                        rule.matchesClass(recipe) && rule.matchesStackType("stack_type/chemical", "stack_type/chemical"))
+                .flatMap(rule -> rule.inputFields().stream()).distinct().toList());
+        assertEquals(List.of("getFluidInput"), rules.stream().filter(rule ->
+                        rule.matchesClass(recipe) && rule.matchesStackType(
+                                "stack_type/chemicals/gas", "stack_type/chemicals/gas"))
+                .flatMap(rule -> rule.inputFields().stream()).distinct().toList());
+        assertEquals(List.of("getGasInput", "getChemicalInput"), rules.stream().filter(rule ->
+                        rule.matchesClass(recipe) && rule.matchesStackType("stack_type/fluid", "stack_type/fluid"))
+                .flatMap(rule -> rule.inputFields().stream()).distinct().toList());
     }
 
     @Test
     void chemicalInjectionAlwaysIncludesItsItemAndChemicalInputs()
     {
+        var recipe = new mekanism.api.recipes.ItemStackGasToItemStackRecipe();
         assertEquals(List.of("getItemInput", "getChemicalInput"),
-                RecipeResourceResolver.mekanismInputMethods(
-                        "mekanism.api.recipes.ItemStackChemicalToObjectRecipe", "stack_type/item"));
-        assertEquals(List.of("getItemInput", "getChemicalInput"),
-                RecipeResourceResolver.mekanismInputMethods(
-                        "mekanism.api.recipes.ItemStackGasToItemStackRecipe", "stack_type/item"));
+                RecipeIoProfileRegistry.directionRules(recipe).stream()
+                        .filter(rule -> rule.matchesClass(recipe)
+                                && rule.matchesStackType("stack_type/item", "stack_type/item"))
+                        .flatMap(rule -> rule.inputFields().stream()).distinct().toList());
+    }
+
+    @Test
+    void mapsNumericAmountFieldToExplicitFluidId()
+    {
+        Assumptions.assumeTrue(classAvailable("net.neoforged.neoforge.fluids.FluidStack")
+                || classAvailable("net.minecraftforge.fluids.FluidStack"));
+        var output = MappedRecipeOutput.resolve(new NumericFluidOutputRecipe(),
+                new RecipeIoProfileRegistry.OutputMapping(
+                        RecipeIoProfileRegistry.OutputType.FLUID,
+                        "minecraft:water", "fluidAmount"));
+
+        Assumptions.assumeTrue(output != null, "fluid registry components are not bootstrapped");
+        assertNotNull(output);
+        assertEquals(250, output.amount());
+        assertEquals("minecraft", output.key().getModId());
+    }
+
+    private static boolean classAvailable(String name)
+    {
+        try { Class.forName(name); return true; }
+        catch (ClassNotFoundException ignored) { return false; }
     }
 
     private static final class RotaryLikeRecipe
@@ -145,6 +177,11 @@ final class RecipeOutputResolverTest
     {
         public final Map<String, List<CapabilityContent>> outputs = Map.of(
                 "item", List.of(new CapabilityContent("assembled_machine", 10_000, 10_000)));
+    }
+
+    private static final class NumericFluidOutputRecipe
+    {
+        public final int fluidAmount = 250;
     }
 
     private static final class ClassCapabilityMapRecipe

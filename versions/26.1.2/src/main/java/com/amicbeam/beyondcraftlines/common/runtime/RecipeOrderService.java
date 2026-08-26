@@ -132,7 +132,10 @@ public final class RecipeOrderService
                 }
                 continue;
             }
-            if (!index.claimNetwork(job.networkId()))
+            Set<String> recipeFamilies = job.steps().stream().map(RecipePlan.Step::family)
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+            if (!index.claimNetwork(job.networkId(), recipeFamilies,
+                    CraftlinesConfig.MAX_CONCURRENT_ORDERS_PER_NETWORK.get()))
             {
                 String reason = encode("waiting_network_transaction");
                 if (job.status() != RecipeOrderJob.Status.PAUSED || !job.message().equals(reason))
@@ -229,13 +232,13 @@ public final class RecipeOrderService
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
         if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
         RecipePlan.Step step = job.step(job.nextStep());
-        if (NATIVE_FURNACE_FAMILIES.contains(step.family()))
+        boolean nativeFurnaceFamily = NATIVE_FURNACE_FAMILIES.contains(step.family());
+        if (nativeFurnaceFamily)
         {
             Optional<NativeFurnaceRegistry.NativeFurnace> furnace =
                     NativeFurnaceRegistry.furnaceFor(server, job.networkId(), step.family());
-            return furnace.isPresent() ? reserveNativeFurnace(network, job, step, furnace.get(), index)
-                    : job.with(RecipeOrderJob.Status.PAUSED,
-                    encode("native_furnace_unavailable", step.family()));
+            if (furnace.isPresent())
+                return reserveNativeFurnace(network, job, step, furnace.get(), index);
         }
         boolean hasProvisioner = DeviceBindingRegistry.provisionerFor(
                 server, job.networkId(), step.family()).isPresent();
@@ -243,6 +246,9 @@ public final class RecipeOrderService
                 server, job.networkId(), step.family()).isPresent();
         if (hasProvisioner || hasDirectMachine)
             return reserveGroupedEndpoints(server, network, job, step, index);
+        if (nativeFurnaceFamily)
+            return job.with(RecipeOrderJob.Status.PAUSED,
+                    encode("native_furnace_unavailable", step.family()));
         if (!"crafting".equals(step.family()))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("bound_machine_unavailable", step.family()));
         long gameTime = server.overworld().getGameTime();
@@ -627,64 +633,63 @@ public final class RecipeOrderService
                     working, step, wait.remainingInputs());
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
-            if (dispatch.isEmpty())
-                return working.awaitExternal(wait, encode("feeding_bound_machine"));
-
-            // Extract every network-backed chunk before touching the machine. A stock change can
-            // therefore abort the whole round without leaving only some ingredient kinds behind.
-            List<RoutedInputChunk> available = new ArrayList<>();
-            List<KeyAmount> extracted = new ArrayList<>();
-            boolean extractionFailed = false;
-            for (RoutedInputChunk routed : dispatch)
+            if (!dispatch.isEmpty())
             {
-                InputChunk chunk = routed.chunk();
-                if (chunk.fromReserved())
+                // Extract every network-backed chunk before touching the machine. A stock change can
+                // therefore abort the whole round without leaving only some ingredient kinds behind.
+                List<RoutedInputChunk> available = new ArrayList<>();
+                List<KeyAmount> extracted = new ArrayList<>();
+                boolean extractionFailed = false;
+                for (RoutedInputChunk routed : dispatch)
                 {
-                    available.add(routed);
-                    continue;
+                    InputChunk chunk = routed.chunk();
+                    if (chunk.fromReserved())
+                    {
+                        available.add(routed);
+                        continue;
+                    }
+                    KeyAmount taken = network.getUnifiedStorage().extract(
+                            chunk.key(), chunk.amount(), false, false);
+                    if (!taken.isEmpty()) extracted.add(taken);
+                    if (taken.amount() != chunk.amount())
+                    {
+                        extractionFailed = true;
+                        break;
+                    }
+                    available.add(new RoutedInputChunk(routed.machine(), new InputChunk(
+                            taken.key(), taken.amount(), false, chunk.inputGroup())));
                 }
-                KeyAmount taken = network.getUnifiedStorage().extract(
-                        chunk.key(), chunk.amount(), false, false);
-                if (!taken.isEmpty()) extracted.add(taken);
-                if (taken.amount() != chunk.amount())
+                if (extractionFailed)
                 {
-                    extractionFailed = true;
-                    break;
+                    extracted.forEach(value -> network.getUnifiedStorage().insert(
+                            value.key(), value.amount(), false));
                 }
-                available.add(new RoutedInputChunk(routed.machine(), new InputChunk(
-                        taken.key(), taken.amount(), false, chunk.inputGroup())));
+                else
+                {
+                    List<InputChunk> delivered = new ArrayList<>();
+                    List<RecipePlan.ReservedMaterial> consumed = new ArrayList<>();
+                    for (RoutedInputChunk routed : available)
+                    {
+                        InputChunk chunk = routed.chunk();
+                        ServerLevel machineLevel = server.getLevel(routed.machine().dimension());
+                        if (machineLevel == null) continue;
+                        long inserted = BoundMachineAutomation.insert(
+                                machineLevel, routed.machine().position(), chunk.key(), chunk.amount());
+                        if (!chunk.fromReserved() && inserted < chunk.amount())
+                            network.getUnifiedStorage().insert(
+                                    chunk.key(), chunk.amount() - inserted, false);
+                        if (inserted <= 0) continue;
+                        delivered.add(new InputChunk(chunk.key(), inserted,
+                                chunk.fromReserved(), chunk.inputGroup()));
+                        if (chunk.fromReserved()) consumed.add(
+                                new RecipePlan.ReservedMaterial(chunk.key(), inserted));
+                    }
+                    working = consumeReserved(working, consumed);
+                    wait = wait.withInputs(subtractDeliveredInputs(
+                            wait.remainingInputs(), delivered));
+                    job = working;
+                }
             }
-            if (extractionFailed)
-            {
-                extracted.forEach(value -> network.getUnifiedStorage().insert(
-                        value.key(), value.amount(), false));
-                return working.awaitExternal(wait, encode("feeding_bound_machine"));
-            }
-
-            List<InputChunk> delivered = new ArrayList<>();
-            List<RecipePlan.ReservedMaterial> consumed = new ArrayList<>();
-            for (RoutedInputChunk routed : available)
-            {
-                InputChunk chunk = routed.chunk();
-                ServerLevel machineLevel = server.getLevel(routed.machine().dimension());
-                if (machineLevel == null) continue;
-                long inserted = BoundMachineAutomation.insert(
-                        machineLevel, routed.machine().position(), chunk.key(), chunk.amount());
-                if (!chunk.fromReserved() && inserted < chunk.amount())
-                    network.getUnifiedStorage().insert(
-                            chunk.key(), chunk.amount() - inserted, false);
-                if (inserted <= 0) continue;
-                delivered.add(new InputChunk(chunk.key(), inserted,
-                        chunk.fromReserved(), chunk.inputGroup()));
-                if (chunk.fromReserved()) consumed.add(
-                        new RecipePlan.ReservedMaterial(chunk.key(), inserted));
-            }
-            working = consumeReserved(working, consumed);
-            List<RecipePlan.Material> remaining = subtractDeliveredInputs(
-                    wait.remainingInputs(), delivered);
-            wait = wait.withInputs(remaining);
-            if (!remaining.isEmpty()) return working.awaitExternal(wait, encode("feeding_bound_machine"));
-            job = working;
         }
 
         List<RecipeOrderJob.MachineLocation> outputLocations = distinctLocations(directLocations);
@@ -766,7 +771,10 @@ public final class RecipeOrderService
                     wait.networkBaseline(), afterInsert);
             wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved), wait.collected());
         }
-        if (wait.collected() >= wait.amount()) return job.completeExternalBatch();
+        if (wait.collected() >= wait.amount() && wait.remainingInputs().isEmpty())
+            return job.completeExternalBatch();
+        if (!wait.remainingInputs().isEmpty())
+            return job.awaitExternal(wait, encode("feeding_bound_machine"));
         return job.awaitExternal(wait, encode("machine_processing", wait.collected(), wait.amount()));
     }
 

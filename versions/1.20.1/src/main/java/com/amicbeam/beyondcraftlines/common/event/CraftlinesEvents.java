@@ -24,7 +24,28 @@ public final class CraftlinesEvents {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) RecipeOrderService.tick(event.getServer());
+        if (event.phase == TickEvent.Phase.END) {
+            NativeFurnaceRegistry.tick(event.getServer());
+            RecipeOrderService.tick(event.getServer());
+        }
+    }
+
+    @SubscribeEvent
+    public static void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
+        if (event.getLevel() instanceof ServerLevel level)
+            NativeFurnaceRegistry.onBlockPlaced(level, event.getPos());
+    }
+
+    @SubscribeEvent
+    public static void onNetedBlockBound(
+            com.wintercogs.beyonddimensions.api.event.dimensionnet.NetedBlockEvent.Bound event) {
+        NativeFurnaceRegistry.onBound(event);
+    }
+
+    @SubscribeEvent
+    public static void onNetedBlockUnbound(
+            com.wintercogs.beyonddimensions.api.event.dimensionnet.NetedBlockEvent.Unbound event) {
+        NativeFurnaceRegistry.onUnbound(event);
     }
 
     @SubscribeEvent
@@ -55,17 +76,17 @@ public final class CraftlinesEvents {
                 .RecipeFamilyAliasRegistry.aliases().isEmpty()) {
             com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
                     server.getResourceManager());
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeFieldWhitelistRegistry.reload(
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
             recipeAliasServer = server;
         }
-        var whitelist = com.amicbeam.beyondcraftlines.common.network.RecipeFieldWhitelistPayload.snapshot();
+        var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
         if (event.getPlayer() != null)
             com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                    .sendToPlayer(event.getPlayer(), whitelist);
+                    .sendToPlayer(event.getPlayer(), profiles);
         else server.getPlayerList().getPlayers().forEach(player ->
                 com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                        .sendToPlayer(player, whitelist));
+                        .sendToPlayer(player, profiles));
     }
 }

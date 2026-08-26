@@ -9,7 +9,7 @@ navigation:
 
 Beyond: Craftlines turns recipes into server-validated production orders that draw resources from a Beyond Dimensions network, schedule crafting and machines, and wait for the real outputs to return.
 
-This guide covers the two tools used to connect those orders to machines:
+This guide covers the crafting tree and the tools used to connect its orders to machines:
 
 <SubPages icons={true} />
 

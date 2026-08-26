@@ -79,6 +79,7 @@ public record BindingVisualsPayload(CompoundTag data) implements CustomPacketPay
                                 encoded.putLong("pos", connection.position().asLong());
                                 encoded.putInt("face", connection.face().get3DDataValue());
                                 encoded.putString("block", connection.blockId().toString());
+                                encoded.putInt("role", connection.role().id());
                                 encoded.putBoolean("editing", editingSelection != null
                                         && editingSelection.dimension().equals(dimension)
                                         && editingSelection.position().equals(position));

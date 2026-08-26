@@ -55,6 +55,12 @@ public final class DeviceBindingRegistry
 
     public static BindAttempt bindMachine(Player player, BlockPos position, Direction clickedFace,
                                           Set<Identifier> jeiTypes)
+    { return bindMachine(player, position, clickedFace, jeiTypes,
+            CraftlineProvisionerBlockEntity.ConnectionRole.SUPPLY); }
+
+    public static BindAttempt bindMachine(Player player, BlockPos position, Direction clickedFace,
+                                          Set<Identifier> jeiTypes,
+                                          CraftlineProvisionerBlockEntity.ConnectionRole connectionRole)
     {
         if (!(player.level() instanceof ServerLevel level) || level.getServer() == null)
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
@@ -66,7 +72,8 @@ public final class DeviceBindingRegistry
         ProvisionerSelection connectionSelection = validSelection(level.getServer(), player.getUUID(),
                 network.getId(), SelectionMode.DEVICE_CONNECTION);
         if (connectionSelection != null)
-            return toggleProvisionerConnection(player, level, position, clickedFace, connectionSelection);
+            return toggleProvisionerConnection(player, level, position, clickedFace,
+                    connectionSelection, connectionRole);
         BindingRecord existing = data.at(level.dimension(), position);
         if (existing != null && existing.networkId() != network.getId())
             return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
@@ -121,7 +128,8 @@ public final class DeviceBindingRegistry
 
     private static BindAttempt toggleProvisionerConnection(Player player, ServerLevel targetLevel,
                                                            BlockPos target, Direction face,
-                                                           ProvisionerSelection selection)
+                                                           ProvisionerSelection selection,
+                                                           CraftlineProvisionerBlockEntity.ConnectionRole role)
     {
         ServerLevel provisionerLevel = targetLevel.getServer().getLevel(selection.dimension());
         if (provisionerLevel == null || !(provisionerLevel.getBlockEntity(selection.position())
@@ -134,7 +142,7 @@ public final class DeviceBindingRegistry
                 || targetLevel.getBlockEntity(target) == null
                 || !BoundMachineAutomation.isAutomatable(targetLevel, target, face))
             return BindAttempt.failure(BindFailure.UNSUPPORTED_CAPABILITY);
-        var edit = provisioner.toggleWirelessConnection(targetLevel.dimension(), target, face, blockId);
+        var edit = provisioner.toggleWirelessConnection(targetLevel.dimension(), target, face, blockId, role);
         if (edit == CraftlineProvisionerBlockEntity.ConnectionEdit.LIMIT_REACHED)
             return BindAttempt.failure(BindFailure.CONNECTION_LIMIT);
         return BindAttempt.success(new BindResult(DeviceType.PROVISIONER_RECIPE_BINDING,

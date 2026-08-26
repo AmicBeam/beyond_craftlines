@@ -102,6 +102,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int previewDelay;
     private int previewDelayTicks = 1;
     private boolean previewDirty;
+    private boolean amountOnlyPreviewChange;
+    private boolean requestedSnapshotPrefersAutomaticChoices;
     private String previewError = "";
     private int previewNextPage;
     private int materialScroll;
@@ -1482,17 +1484,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     }
 
     private void markPreviewDirty()
-    { markPreviewDirty(CraftlinesConfig.RECIPE_PREVIEW_DELAY_TICKS.get()); }
+    { markPreviewDirty(CraftlinesConfig.RECIPE_PREVIEW_DELAY_TICKS.get(), false); }
 
     private void markAmountPreviewDirty()
-    { markPreviewDirty(CraftlinesConfig.AMOUNT_PREVIEW_DELAY_TICKS.get()); }
+    { markPreviewDirty(CraftlinesConfig.AMOUNT_PREVIEW_DELAY_TICKS.get(), true); }
 
-    private void markPreviewDirty(int delayTicks)
+    private void markPreviewDirty(int delayTicks, boolean amountOnly)
     {
         cancelPlanningTask();
         previewDirty = true;
         previewDelay = 0;
         previewDelayTicks = Math.max(1, delayTicks);
+        amountOnlyPreviewChange = amountOnly;
         previewNonce++;
         proposalReady = false;
         clearDisplayMetrics();
@@ -1533,17 +1536,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selected == null || minecraft.level == null) return;
         IStackKey<?> target = menu.initialTarget();
         long nonce = previewNonce;
+        boolean preferAutomaticChoices = amountOnlyPreviewChange;
+        amountOnlyPreviewChange = false;
         previewNextPage = 0;
         snapshotNextPage = 0;
         previewError = "";
-        if (planningSnapshotValid && minecraft.level.getGameTime() - planningSnapshotCapturedAt <= 20)
+        long snapshotAge = planningSnapshotValid
+                ? minecraft.level.getGameTime() - planningSnapshotCapturedAt : Long.MAX_VALUE;
+        if (planningSnapshotValid && (preferAutomaticChoices || snapshotAge <= 20))
         {
             loadingStatus = Component.translatable("gui.beyond_craftlines.planning_tree").getString();
             startClientPlanning(nonce, target, amountValue(), planningSnapshotRevision, planningRecipeEpoch,
                     planningMaxDepth, planningMaxNodes, Map.copyOf(planningResources),
-                    genericRecipeOverrides(), Map.copyOf(ingredientOverrides));
+                    genericRecipeOverrides(), Map.copyOf(ingredientOverrides), preferAutomaticChoices,
+                    preferAutomaticChoices && snapshotAge > 20);
             return;
         }
+        requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
+        planningSnapshotValid = false;
         planningStock.clear();
         planningResources.clear();
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
@@ -1604,28 +1614,47 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         rebuildTree(false);
         startClientPlanning(snapshot.nonce(), menu.initialTarget(), amountValue(), header.stockRevision(),
                 header.recipeEpoch(), header.limits().maxDepth(), header.limits().maxNodes(),
-                Map.copyOf(planningResources), genericRecipeOverrides(), Map.copyOf(ingredientOverrides));
+                Map.copyOf(planningResources), genericRecipeOverrides(), Map.copyOf(ingredientOverrides),
+                requestedSnapshotPrefersAutomaticChoices, false);
     }
 
     private void startClientPlanning(long nonce, IStackKey<?> target, long count,
                                      long stockRevision, long recipeEpoch, int maxDepth, int maxNodes,
                                      Map<IStackKey<?>, Long> stock,
                                      Map<String, ResourceLocation> manualRecipes,
-                                     Map<IngredientSlotKey, ResourceLocation> manualIngredients)
+                                     Map<IngredientSlotKey, ResourceLocation> manualIngredients,
+                                     boolean preferAutomaticChoices, boolean refreshSnapshotIfMissing)
     {
-        LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(defaultResourceRecipes);
-        defaultRecipes.forEach((output, recipe) -> recipes.put(itemToken(output), recipe));
-        recipes.putAll(manualRecipes);
-        Map<ClientRecipePlanner.IngredientKey, ResourceLocation> ingredients = new LinkedHashMap<>();
-        defaultIngredients.forEach((key, value) -> ingredients.put(
+        LinkedHashMap<String, ResourceLocation> preferredRecipes = new LinkedHashMap<>(defaultResourceRecipes);
+        defaultRecipes.forEach((output, recipe) -> preferredRecipes.put(itemToken(output), recipe));
+        if (preferAutomaticChoices)
+        {
+            preferredRecipes.putAll(automaticResourceRecipes);
+            automaticRecipes.forEach((output, recipe) -> preferredRecipes.put(itemToken(output), recipe));
+        }
+        preferredRecipes.putAll(manualRecipes);
+        Map<ClientRecipePlanner.IngredientKey, ResourceLocation> preferredIngredients = new LinkedHashMap<>();
+        defaultIngredients.forEach((key, value) -> preferredIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
-        manualIngredients.forEach((key, value) -> ingredients.put(
+        if (preferAutomaticChoices) automaticIngredients.forEach((key, value) -> preferredIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        manualIngredients.forEach((key, value) -> preferredIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        LinkedHashMap<String, ResourceLocation> defaultRecipesOnly = new LinkedHashMap<>(defaultResourceRecipes);
+        defaultRecipes.forEach((output, recipe) -> defaultRecipesOnly.put(itemToken(output), recipe));
+        defaultRecipesOnly.putAll(manualRecipes);
+        Map<ClientRecipePlanner.IngredientKey, ResourceLocation> defaultIngredientsOnly = new LinkedHashMap<>();
+        defaultIngredients.forEach((key, value) -> defaultIngredientsOnly.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        manualIngredients.forEach((key, value) -> defaultIngredientsOnly.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         Map<ClientRecipePlanner.IngredientKey, ResourceLocation> forcedIngredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         boolean hasDefaults = !defaultResourceRecipes.isEmpty() || !defaultRecipes.isEmpty()
                 || !defaultIngredients.isEmpty();
+        boolean hasAutomaticChoices = preferAutomaticChoices && (!automaticResourceRecipes.isEmpty()
+                || !automaticRecipes.isEmpty() || !automaticIngredients.isEmpty());
         cancelPlanningTask();
         loadingStatus = Component.translatable("gui.beyond_craftlines.planning_tree").getString();
         long generation = planningGeneration;
@@ -1634,11 +1663,29 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             RuntimeException failure = null;
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
-                    stock, target, count, recipes, ingredients, maxDepth, maxNodes,
+                    stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
                     ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
             catch (RuntimeException exception) { failure = exception; }
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
-            if (hasDefaults && fallbackSearchNanos > 0 && (proposal == null || !proposal.craftable()))
+            if (!refreshSnapshotIfMissing && hasAutomaticChoices && fallbackSearchNanos > 0
+                    && (proposal == null || !proposal.craftable()))
+            {
+                try
+                {
+                    ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
+                            stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
+                            fallbackSearchNanos);
+                    if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
+                    {
+                        proposal = fallback;
+                        failure = null;
+                    }
+                }
+                catch (RuntimeException ignored) {}
+                fallbackSearchNanos = searchDeadline - System.nanoTime();
+            }
+            if (!refreshSnapshotIfMissing && hasDefaults && fallbackSearchNanos > 0
+                    && (proposal == null || !proposal.craftable()))
             {
                 try
                 {
@@ -1664,11 +1711,21 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     {
                         if (completedFailure instanceof CancellationException
                                 || "client planning cancelled".equals(completedFailure.getMessage())) return;
+                        if (refreshSnapshotIfMissing)
+                        {
+                            refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
+                            return;
+                        }
                         previewError = localizedPlanningError(completedFailure.getMessage());
                         return;
                     }
                     if (!completed.craftable())
                     {
+                        if (refreshSnapshotIfMissing)
+                        {
+                            refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
+                            return;
+                        }
                         automaticRecipes.clear();
                         automaticResourceRecipes.clear();
                         completed.recipes().forEach((output, recipe) -> {
@@ -1688,6 +1745,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
                 });
         });
+    }
+
+    private void refreshSnapshotAfterFastAmountPlan(long nonce, boolean preferAutomaticChoices)
+    {
+        planningSnapshotValid = false;
+        requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
+        planningStock.clear();
+        planningResources.clear();
+        loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
+        PacketDistributor.sendToServer(new RequestPlanningSnapshotPayload(nonce, menu.targetToken()));
     }
 
     private static long missingAmount(Map<IStackKey<?>, Long> missing)

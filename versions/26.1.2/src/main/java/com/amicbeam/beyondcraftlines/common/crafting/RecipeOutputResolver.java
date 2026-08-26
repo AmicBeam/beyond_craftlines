@@ -16,14 +16,6 @@ import java.util.List;
 /** Resolves item and third-party resource outputs without linking against their owning mods. */
 public final class RecipeOutputResolver
 {
-    private static final List<String> OUTPUT_METHODS = List.of(
-            "getOutputDefinition", "getOutputDefinitions",
-            "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",
-            "outputs", "getOutputs",
-            // Malum exposes Spirit Focusing results through these accessors.
-            "getOutputRaw", "createOutput",
-            "output", "getOutput", "result", "getResult");
-
     private RecipeOutputResolver() {}
 
     public static List<KeyAmount> outputs(Recipe<?> recipe, Level level)
@@ -34,13 +26,14 @@ public final class RecipeOutputResolver
                 .filter(item -> !item.isEmpty())
                 .forEach(item -> add(result,
                         new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount())));
-        for (Object output : reflectiveOutputValues(recipe,
-                RecipeFieldWhitelistRegistry.outputMembers(recipe, OUTPUT_METHODS)))
-            addOutput(result, output);
+        for (Object output : reflectiveOutputValues(recipe, RecipeIoProfileRegistry.outputMembers(recipe)))
+            addOutput(recipe, result, output);
+        for (RecipeIoProfileRegistry.OutputMapping mapping : RecipeIoProfileRegistry.outputMappings(recipe))
+            add(result, MappedRecipeOutput.resolve(recipe, mapping));
         return List.copyOf(result.values());
     }
 
-    private static void addOutput(LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)
+    private static void addOutput(Recipe<?> recipe, LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)
     {
         if (output instanceof Ingredient ingredient)
         {
@@ -55,7 +48,7 @@ public final class RecipeOutputResolver
             add(result, converted);
             return;
         }
-        for (Object representation : CountedInputReflection.representationValues(output))
+        for (Object representation : CountedInputReflection.representationValues(recipe, output))
         {
             KeyAmount represented = RecipeResourceResolver.fromStack(representation);
             if (represented != null && !represented.isEmpty()) add(result, represented);
@@ -63,13 +56,13 @@ public final class RecipeOutputResolver
     }
 
     static List<Object> reflectiveOutputValues(Object recipe)
-    { return reflectiveOutputValues(recipe, OUTPUT_METHODS); }
+    { return reflectiveOutputValues(recipe, RecipeIoProfileRegistry.outputMembers(recipe)); }
 
     static List<Object> reflectiveOutputValues(Object recipe, List<String> methods)
     {
         List<Object> result = new ArrayList<>();
         for (String method : methods)
-            result.addAll(flatten(RecipeReflection.readPublicMember(recipe, method)));
+            result.addAll(flatten(recipe, RecipeReflection.readPublicMember(recipe, method)));
         return List.copyOf(result);
     }
 
@@ -80,24 +73,29 @@ public final class RecipeOutputResolver
     }
 
     private static void add(LinkedHashMap<IStackKey<?>, KeyAmount> result, KeyAmount value)
-    { result.putIfAbsent(value.key(), value); }
+    { if (value != null && !value.isEmpty()) result.putIfAbsent(value.key(), value); }
 
-    private static List<?> flatten(Object value)
+    private static List<?> flatten(Object recipe, Object value)
     {
         if (value == null) return List.of();
         List<Object> result = new ArrayList<>();
-        for (Object leaf : StructuralRecipeValues.flatten(value))
+        for (Object leaf : StructuralRecipeValues.flatten(value, recipe))
         {
             Object current = leaf;
             java.util.Set<Object> wrappers = java.util.Collections.newSetFromMap(
                     new java.util.IdentityHashMap<>());
             for (int depth = 0; depth < 8 && current != null && wrappers.add(current); depth++)
             {
-                Object containedStack = RecipeReflection.readPublicMember(current, "getChemicalStack");
+                Object containedStack = null;
+                for (String member : RecipeIoProfileRegistry.outputWrapperMembers(recipe))
+                {
+                    containedStack = RecipeReflection.readPublicMember(current, member);
+                    if (containedStack != null) break;
+                }
                 if (containedStack == null || containedStack == current) break;
                 current = containedStack;
             }
-            if (current != null) result.addAll(StructuralRecipeValues.flatten(current));
+            if (current != null) result.addAll(StructuralRecipeValues.flatten(current, recipe));
         }
         return List.copyOf(result);
     }

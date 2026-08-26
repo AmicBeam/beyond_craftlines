@@ -9,7 +9,7 @@ navigation:
 
 Beyond: Craftlines 将配方转为由服务端校验的生产订单：从 Beyond Dimensions 网络提取资源，调度工作台与真实机器，并等待实际产物返回网络。
 
-本指南详细介绍用于把订单连接到机器的两个工具：
+本指南详细介绍合成树，以及用于把订单连接到机器的两个工具：
 
 <SubPages icons={true} />
 

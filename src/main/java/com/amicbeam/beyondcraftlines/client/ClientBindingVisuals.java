@@ -107,14 +107,15 @@ public final class ClientBindingVisuals
                         .equals(entry.visual().blockId())) continue;
                 drawFrame(event.getPoseStack().last(), frame, bounds(minecraft, pos), camera);
             }
-        for (BoundFace connection : boundFaces)
-            if ((!connection.editing() || !editingVisualActive)
-                    && minecraft.level.isLoaded(connection.position())
-                    && connection.position().distToCenterSqr(camera) <= renderDistanceSquared
-                    && BuiltInRegistries.BLOCK.getKey(minecraft.level.getBlockState(connection.position()).getBlock())
-                    .equals(connection.blockId()))
-                drawBoundFace(event.getPoseStack().last(), frame, bounds(minecraft, connection.position()),
-                        camera, connection.face());
+        if (CraftlinesConfig.SHOW_PROVISIONER_BOUND_FACE_FRAMES.get())
+            for (BoundFace connection : boundFaces)
+                if ((!connection.editing() || !editingVisualActive)
+                        && minecraft.level.isLoaded(connection.position())
+                        && connection.position().distToCenterSqr(camera) <= renderDistanceSquared
+                        && BuiltInRegistries.BLOCK.getKey(minecraft.level.getBlockState(connection.position()).getBlock())
+                        .equals(connection.blockId()))
+                    drawBoundFace(event.getPoseStack().last(), frame, bounds(minecraft, connection.position()),
+                            camera, connection.face());
         minecraft.renderBuffers().bufferSource().endBatch(frameType);
         if (holdingLinker && selectedProvisioner != null)
         {
@@ -127,9 +128,19 @@ public final class ClientBindingVisuals
                 if (connection.editing() && minecraft.level.isLoaded(connection.position())
                         && BuiltInRegistries.BLOCK.getKey(minecraft.level.getBlockState(connection.position()).getBlock())
                         .equals(connection.blockId()))
+                {
+                    int red = connection.extracting() ? 255 : 0;
+                    int green = connection.extracting() ? 100 : 128;
+                    int blue = connection.extracting() ? 0 : 255;
                     drawFaceHighlight(event.getPoseStack().last(), highlight,
                             bounds(minecraft, connection.position()), camera, connection.face(),
-                            SURFACE_OFFSET, 0, 128, 255);
+                            SURFACE_OFFSET, red, green, blue);
+                    if (minecraft.level.isLoaded(selectedProvisioner))
+                        drawConnectionLine(event.getPoseStack().last(), highlight,
+                                bounds(minecraft, selectedProvisioner),
+                                bounds(minecraft, connection.position()), camera, connection.face(),
+                                red, green, blue);
+                }
             if (minecraft.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
                     && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
                     && !hit.getBlockPos().equals(selectedProvisioner)
@@ -145,6 +156,27 @@ public final class ClientBindingVisuals
     {
         VoxelShape shape = minecraft.level.getBlockState(position).getShape(minecraft.level, position);
         return shape.isEmpty() ? new AABB(position) : shape.bounds().move(position);
+    }
+
+    private static void drawConnectionLine(PoseStack.Pose pose, VertexConsumer consumer,
+                                           AABB provisionerBounds, AABB targetBounds, Vec3 camera,
+                                           Direction face, int red, int green, int blue)
+    {
+        Vec3 start = provisionerBounds.getCenter();
+        Vec3 end = targetBounds.getCenter();
+        end = switch (face)
+        {
+            case NORTH -> new Vec3(end.x, end.y, targetBounds.minZ - SURFACE_OFFSET);
+            case SOUTH -> new Vec3(end.x, end.y, targetBounds.maxZ + SURFACE_OFFSET);
+            case WEST -> new Vec3(targetBounds.minX - SURFACE_OFFSET, end.y, end.z);
+            case EAST -> new Vec3(targetBounds.maxX + SURFACE_OFFSET, end.y, end.z);
+            case DOWN -> new Vec3(end.x, targetBounds.minY - SURFACE_OFFSET, end.z);
+            case UP -> new Vec3(end.x, targetBounds.maxY + SURFACE_OFFSET, end.z);
+        };
+        line(consumer, pose,
+                start.x - camera.x, start.y - camera.y, start.z - camera.z,
+                end.x - camera.x, end.y - camera.y, end.z - camera.z,
+                red, green, blue);
     }
 
     private static void drawBoundFace(PoseStack.Pose pose, VertexConsumer consumer, AABB bounds,
@@ -361,6 +393,7 @@ public final class ClientBindingVisuals
             ResourceLocation block = ResourceLocation.tryParse(entry.getString("block"));
             if (block != null) connections.add(new BoundFace(BlockPos.of(entry.getLong("pos")),
                     Direction.from3DDataValue(entry.getInt("face")), block,
+                    entry.getInt("role") == 1,
                     entry.getBoolean("editing")));
         }
         boundFaces = List.copyOf(connections);
@@ -369,5 +402,6 @@ public final class ClientBindingVisuals
 
     private record BindingVisual(ResourceLocation blockId, boolean provisionerTarget) {}
     private record PositionedVisual(BlockPos position, BindingVisual visual) {}
-    private record BoundFace(BlockPos position, Direction face, ResourceLocation blockId, boolean editing) {}
+    private record BoundFace(BlockPos position, Direction face, ResourceLocation blockId,
+                             boolean extracting, boolean editing) {}
 }

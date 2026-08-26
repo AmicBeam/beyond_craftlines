@@ -13,7 +13,7 @@ import java.util.Set;
 /**
  * Bounded structural traversal for public recipe I/O containers.
  *
- * <p>Only values explicitly returned by the resolver's whitelisted recipe accessors reach this
+ * <p>Only values explicitly returned by the resolver's datapack-profiled recipe accessors reach this
  * class. Map keys are metadata such as recipe capabilities and are deliberately ignored.</p>
  */
 final class StructuralRecipeValues
@@ -24,19 +24,22 @@ final class StructuralRecipeValues
     private StructuralRecipeValues() {}
 
     static List<?> flatten(Object value)
+    { return flatten(value, null); }
+
+    static List<?> flatten(Object value, Object recipe)
     {
         List<Object> result = new ArrayList<>();
-        flatten(value, result, Collections.newSetFromMap(new IdentityHashMap<>()), new Budget(), 0);
+        flatten(value, recipe, result, Collections.newSetFromMap(new IdentityHashMap<>()), new Budget(), 0);
         return List.copyOf(result);
     }
 
-    private static void flatten(Object value, List<Object> result, Set<Object> containers,
+    private static void flatten(Object value, Object recipe, List<Object> result, Set<Object> containers,
                                 Budget budget, int depth)
     {
         if (value == null || depth > MAX_DEPTH || !budget.visit()) return;
         if (value instanceof Optional<?> optional)
         {
-            optional.ifPresent(element -> flatten(element, result, containers, budget, depth + 1));
+            optional.ifPresent(element -> flatten(element, recipe, result, containers, budget, depth + 1));
             return;
         }
         if (value instanceof Map<?, ?> map)
@@ -45,7 +48,7 @@ final class StructuralRecipeValues
             for (Object element : map.values())
             {
                 if (budget.exhausted()) break;
-                flatten(element, result, containers, budget, depth + 1);
+                flatten(element, recipe, result, containers, budget, depth + 1);
             }
             return;
         }
@@ -55,7 +58,7 @@ final class StructuralRecipeValues
             for (Object element : iterable)
             {
                 if (budget.exhausted()) break;
-                flatten(element, result, containers, budget, depth + 1);
+                flatten(element, recipe, result, containers, budget, depth + 1);
             }
             return;
         }
@@ -66,7 +69,7 @@ final class StructuralRecipeValues
             {
                 var iterator = stream.iterator();
                 while (!budget.exhausted() && iterator.hasNext())
-                    flatten(iterator.next(), result, containers, budget, depth + 1);
+                    flatten(iterator.next(), recipe, result, containers, budget, depth + 1);
             }
             finally { stream.close(); }
             return;
@@ -76,14 +79,14 @@ final class StructuralRecipeValues
             if (!containers.add(value)) return;
             int length = Array.getLength(value);
             for (int i = 0; i < length && !budget.exhausted(); i++)
-                flatten(Array.get(value, i), result, containers, budget, depth + 1);
+                flatten(Array.get(value, i), recipe, result, containers, budget, depth + 1);
             return;
         }
         // A representation provider is already a semantic recipe-input leaf. In particular,
         // Malum 1.21's SpiritIngredient is a record whose getItems() exposes the actual spirit
         // shard stack. Expanding that record into its holder and numeric count first discards
         // the only representation that Beyond Dimensions can convert into a resource key.
-        if (CountedInputReflection.hasRepresentationMethod(value))
+        if (CountedInputReflection.hasRepresentationMethod(recipe, value))
         {
             result.add(value);
             return;
@@ -93,12 +96,16 @@ final class StructuralRecipeValues
         // be a record, a normal class with a public field, or a bean with getContent().
         // Unwrap the semantic payload before considering generic record components so chance,
         // maxChance and similar numbers can never become recipe resources.
-        Object content = RecipeReflection.readPublicMember(value, "content");
-        if (content == null) content = RecipeReflection.readPublicMember(value, "getContent");
+        Object content = null;
+        for (String member : RecipeIoProfileRegistry.structuralWrapperMembers(recipe))
+        {
+            content = RecipeReflection.readPublicMember(value, member);
+            if (content != null) break;
+        }
         if (content != null && content != value)
         {
             if (!containers.add(value)) return;
-            flatten(content, result, containers, budget, depth + 1);
+            flatten(content, recipe, result, containers, budget, depth + 1);
             return;
         }
         if (value.getClass().isRecord())
@@ -108,7 +115,7 @@ final class StructuralRecipeValues
             for (RecordComponent component : components)
             {
                 if (budget.exhausted()) break;
-                flatten(RecipeReflection.readPublicMember(value, component.getName()), result,
+                flatten(RecipeReflection.readPublicMember(value, component.getName()), recipe, result,
                         containers, budget, depth + 1);
             }
             return;

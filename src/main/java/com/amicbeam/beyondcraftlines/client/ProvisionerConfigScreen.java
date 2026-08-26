@@ -391,7 +391,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                 ? 0x777777 : 0x404040, false);
         if (!menu.isBoundMachineConfiguration())
             graphics.drawString(font, Component.translatable(
-                    "gui.beyond_craftlines.provisioner.connections", menu.connectedDeviceCount()),
+                    "gui.beyond_craftlines.provisioner.connections",
+                    menu.supplyConnectionCount(), menu.extractConnectionCount()),
                     12, 190, 0x404040, false);
         graphics.drawString(font, Component.translatable("gui.beyond_craftlines.priority"), 12, 212,
                 0x404040, false);

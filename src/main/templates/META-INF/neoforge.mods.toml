@@ -37,3 +37,10 @@ type="required"
 versionRange="[${jei_version},)"
 ordering="AFTER"
 side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="guideme"
+type="optional"
+versionRange="[${guideme_version},)"
+ordering="AFTER"
+side="CLIENT"

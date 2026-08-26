@@ -28,6 +28,7 @@ Unless explicitly scoped to one version, feature descriptions and development ch
 
 - `mod_id`: `beyond_craftlines`
 - Required dependencies: Beyond Dimensions and JEI
+- Optional dependency: GuideME (adds the detailed English and Chinese guide; hover the Network Linker or Craftline Provisioner and hold G to open its page)
 
 This mod is focused exclusively on the ordering system: a JEI recipe-page entry point, an EMI-style recursive recipe tree, AE2/RS-style order confirmation, BD network resource extraction and crafting, vanilla and third-party machine recipe-type bindings, persistent order status and cancellation, and configurable Craftline Provisioners.
 

@@ -5,7 +5,6 @@ import com.amicbeam.beyondcraftlines.common.data.DeviceType;
 import com.amicbeam.beyondcraftlines.common.network.BindMachinePayload;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
@@ -13,14 +12,11 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.world.item.component.TooltipDisplay;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.entity.LivingEntity;
-import java.util.function.Consumer;
 import java.util.function.BiFunction;
 
 public final class NetworkLinkerItem extends Item
@@ -34,19 +30,6 @@ public final class NetworkLinkerItem extends Item
     public boolean canDestroyBlock(ItemStack stack, BlockState state, Level level,
                                    BlockPos position, LivingEntity user)
     { return !(user instanceof Player player && player.getAbilities().instabuild); }
-
-    @Override public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display,
-                                          Consumer<Component> tooltip, TooltipFlag flag)
-    {
-        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.linker.description")
-                .withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.linker.left_click")
-                .withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.linker.provisioner_wireless")
-                .withStyle(ChatFormatting.GRAY));
-        tooltip.accept(Component.translatable("tooltip.beyond_craftlines.linker.provisioner_scan")
-                .withStyle(ChatFormatting.GRAY));
-    }
 
     @Override
     public InteractionResult use(Level level, Player player, InteractionHand usedHand)

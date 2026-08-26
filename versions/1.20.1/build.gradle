@@ -200,7 +200,8 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
             forge_version_range: forge_version_range, loader_version_range: loader_version_range,
             mod_id: mod_id, mod_name: mod_name, mod_license: 'GNU GPL 3.0', mod_version: mod_version,
             mod_authors: mod_authors, mod_description: mod_description,
-            beyond_dimensions_version: beyond_dimensions_version, jei_version: jei_version]
+            beyond_dimensions_version: beyond_dimensions_version, jei_version: jei_version,
+            guideme_version: guideme_version]
     inputs.properties replaceProperties
     filteringCharset = 'UTF-8'
     from 'src/main/templates'

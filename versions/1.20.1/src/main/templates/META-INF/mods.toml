@@ -36,3 +36,10 @@ mandatory=true
 versionRange="[${jei_version},)"
 ordering="AFTER"
 side="CLIENT"
+
+[[dependencies.${mod_id}]]
+modId="guideme"
+mandatory=false
+versionRange="[${guideme_version},)"
+ordering="AFTER"
+side="CLIENT"

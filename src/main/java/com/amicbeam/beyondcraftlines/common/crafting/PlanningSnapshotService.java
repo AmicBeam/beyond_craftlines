@@ -45,6 +45,9 @@ public final class PlanningSnapshotService
 
     public static long recipeEpoch(Level level, Set<String> availableFamilies)
     {
+        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel)
+            return com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
+                    .serverRecipeEpoch(serverLevel, availableFamilies);
         long hash = offset();
         for (RecipeIdentity identity : identities(level))
             if ("crafting".equals(identity.family()) || availableFamilies.contains(identity.family()))

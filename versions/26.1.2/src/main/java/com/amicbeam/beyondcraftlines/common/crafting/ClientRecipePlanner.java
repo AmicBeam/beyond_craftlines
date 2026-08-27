@@ -139,10 +139,10 @@ public final class ClientRecipePlanner
         for (Recipe recipe : catalog.recipes())
             byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
         byOutput.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
-        State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(),
+        State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
-        state.stock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
+        state.stock.consume(target.getTypeId(), target::isSame, Long.MAX_VALUE);
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
@@ -339,7 +339,7 @@ public final class ClientRecipePlanner
         }
         state.steps++;
         long produced = SaturatingLongMath.multiply(recipe.outputCount(), crafts);
-        if (produced > remainder) state.stock.merge(output, produced - remainder, SaturatingLongMath::add);
+        if (produced > remainder) state.stock.add(output, produced - remainder);
         return true;
     }
 
@@ -484,14 +484,15 @@ public final class ClientRecipePlanner
 
     private static final class State
     {
-        private Map<IStackKey<?>, Long> stock;
+        private MatchingStock<IStackKey<?>, Identifier> stock;
         private Map<IStackKey<?>, Long> missing;
         private Map<IStackKey<?>, Long> reusableRequirements;
         private Map<IStackKey<?>, Long> usedStock;
         private int steps;
         private Map<String, Identifier> recipes;
         private Map<IngredientKey, Identifier> ingredients;
-        private State(Map<IStackKey<?>, Long> stock, Map<IStackKey<?>, Long> missing,
+        private State(MatchingStock<IStackKey<?>, Identifier> stock,
+                      Map<IStackKey<?>, Long> missing,
                       Map<IStackKey<?>, Long> reusableRequirements,
                       Map<IStackKey<?>, Long> usedStock, int steps,
                       Map<String, Identifier> recipes,
@@ -500,7 +501,7 @@ public final class ClientRecipePlanner
             this.usedStock = usedStock;
             this.steps = steps; this.recipes = recipes; this.ingredients = ingredients; }
         private State copy()
-        { return new State(new LinkedHashMap<>(stock), new LinkedHashMap<>(missing),
+        { return new State(stock.copy(), new LinkedHashMap<>(missing),
                 new LinkedHashMap<>(reusableRequirements), new LinkedHashMap<>(usedStock), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients)); }
         private void replaceWith(State state)
@@ -524,26 +525,13 @@ public final class ClientRecipePlanner
         return List.of();
     }
 
-    private static long available(Map<IStackKey<?>, Long> stock, IStackKey<?> requested)
-    {
-        long result = 0;
-        for (var entry : stock.entrySet())
-            if (requested.isSame(entry.getKey())) result = SaturatingLongMath.add(result, entry.getValue());
-        return result;
-    }
+    private static long available(MatchingStock<IStackKey<?>, Identifier> stock,
+                                  IStackKey<?> requested)
+    { return stock.available(requested.getTypeId(), requested::isSame); }
 
     private static long consume(State state, IStackKey<?> requested, long amount)
     {
-        long remaining = amount;
-        for (var entry : state.stock.entrySet())
-        {
-            if (remaining <= 0) break;
-            if (entry.getValue() <= 0 || !requested.isSame(entry.getKey())) continue;
-            long used = Math.min(remaining, entry.getValue());
-            entry.setValue(entry.getValue() - used);
-            state.usedStock.merge(entry.getKey(), used, SaturatingLongMath::add);
-            remaining -= used;
-        }
-        return amount - remaining;
+        return state.stock.consume(requested.getTypeId(), requested::isSame, amount,
+                (key, used) -> state.usedStock.merge(key, used, SaturatingLongMath::add));
     }
 }

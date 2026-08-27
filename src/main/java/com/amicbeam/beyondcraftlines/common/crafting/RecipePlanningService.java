@@ -143,7 +143,19 @@ public final class RecipePlanningService
         stock.consume(target.getTypeId(), target::isSame, Long.MAX_VALUE);
 
         Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput = new LinkedHashMap<>();
-        for (RecipeHolder<?> holder : visibleRecipes(level))
+        Iterable<RecipeHolder<?>> candidates;
+        if (mode == ResolutionMode.SEARCH) candidates = visibleRecipes(level);
+        else
+        {
+            List<RecipeHolder<?>> selected = new ArrayList<>();
+            for (ResourceLocation id : overrides.selectedRecipes())
+            {
+                RecipeHolder<?> holder = level.getRecipeManager().byKey(id).orElse(null);
+                if (holder != null) selected.add(holder);
+            }
+            candidates = selected;
+        }
+        for (RecipeHolder<?> holder : candidates)
         {
             String family = family(holder);
             if (!"crafting".equals(family) && !availableFamilies.contains(family)) continue;

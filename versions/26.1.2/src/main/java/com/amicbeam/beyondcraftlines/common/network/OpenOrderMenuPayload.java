@@ -5,7 +5,6 @@ import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
-import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import io.netty.buffer.ByteBuf;
@@ -49,9 +48,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
-            var candidates = RecipeCatalog.forLevel(player.level()).stream()
-                    .filter(holder -> requestedRecipe == null || holder.id().identifier().equals(requestedRecipe))
-                    .toList();
+            var candidates = requestedRecipe == null ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
+                    : player.level().recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
+                            net.minecraft.core.registries.Registries.RECIPE, requestedRecipe)).stream().toList();
             if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
                 showRecipeDebug(player, payload, candidates);
             DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
@@ -76,19 +75,20 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be
             // inferred generically. The recipe id, actual server family, network binding and selected
             // output above are the authoritative checks.
-            if (recipe == null)
+            if (requestedRecipe != null && recipe == null)
             {
                 player.sendSystemMessage(Component.translatable(
                         "error.beyond_craftlines.invalid_order_recipe"));
                 return;
             }
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new CraftlineOrderMenu(id, inventory, networkId, target, recipe.id().identifier(),
+                    new CraftlineOrderMenu(id, inventory, networkId, target,
+                            recipe == null ? null : recipe.id().identifier(),
                             requestedRecipe != null, availableFamilies),
                     Component.translatable("menu.beyond_craftlines.order")), buffer -> {
                         buffer.writeVarInt(networkId);
                         IStackKey.STREAM_CODEC.encode(buffer, target);
-                        buffer.writeUtf(recipe.id().identifier().toString());
+                        buffer.writeUtf(recipe == null ? "" : recipe.id().identifier().toString());
                         buffer.writeBoolean(requestedRecipe != null);
                         buffer.writeVarInt(availableFamilies.size());
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);

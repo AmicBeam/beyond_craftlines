@@ -138,6 +138,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private long planningGeneration;
     private boolean initialized;
     private boolean preferencesLoaded;
+    private boolean waitingForServerRecipeIndex;
     private String loadingStatus = "";
 
     public CraftlineOrderScreen(CraftlineOrderMenu menu, Inventory inventory, Component title)
@@ -226,10 +227,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (planningCatalogBuilder.complete())
             {
                 planningCatalog = planningCatalogBuilder.catalog();
+                waitForServerRecipeIndexOrPlan();
+            }
+            else loadingStatus = indexingRecipesText();
+        }
+        if (planningCatalog != null && waitingForServerRecipeIndex)
+        {
+            if (menu.serverRecipeIndexComplete())
+            {
+                waitingForServerRecipeIndex = false;
                 loadingStatus = "";
                 markPreviewDirty();
             }
-            else loadingStatus = indexingRecipesText();
+            else loadingStatus = serverRecipeIndexingText();
         }
         if (++refreshTicks >= 40)
         {
@@ -250,8 +260,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (planningCatalogBuilder.complete())
         {
             planningCatalog = planningCatalogBuilder.catalog();
-            loadingStatus = "";
-            markPreviewDirty();
+            waitForServerRecipeIndexOrPlan();
         }
         else loadingStatus = indexingRecipesText();
     }
@@ -259,9 +268,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void selectInitialTarget()
     {
         if (minecraft.level == null) return;
-        selected = menu.recipes().stream().filter(holder ->
-                holder.id().identifier().equals(menu.initialRecipe())).filter(holder ->
-                menu.recipeProduces(holder.id().identifier(), menu.targetToken())).findFirst().orElse(null);
+        selected = menu.initialRecipe() == null ? menu.recipeForResourceOutput(menu.initialTarget())
+                : menu.recipes().stream().filter(holder ->
+                        holder.id().identifier().equals(menu.initialRecipe())).filter(holder ->
+                        menu.recipeProduces(holder.id().identifier(), menu.targetToken())).findFirst().orElse(null);
         if (selected != null)
         {
             if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
@@ -283,6 +293,23 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         return Component.translatable("gui.beyond_craftlines.indexing_recipes",
                 menu.indexedRecipeCandidates(), menu.totalRecipeCandidates()).getString();
+    }
+
+    private String serverRecipeIndexingText()
+    {
+        return Component.translatable("gui.beyond_craftlines.indexing_server_recipes",
+                menu.indexedServerRecipeCandidates(), menu.totalServerRecipeCandidates()).getString();
+    }
+
+    private void waitForServerRecipeIndexOrPlan()
+    {
+        waitingForServerRecipeIndex = !menu.serverRecipeIndexComplete();
+        if (waitingForServerRecipeIndex) loadingStatus = serverRecipeIndexingText();
+        else
+        {
+            loadingStatus = "";
+            markPreviewDirty();
+        }
     }
 
     private void requestNetworkAmount()
@@ -599,6 +626,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             current = planningCatalogBuilder.completedRecipes();
             total = planningCatalogBuilder.totalRecipes();
+        }
+        else if (waitingForServerRecipeIndex)
+        {
+            current = menu.indexedServerRecipeCandidates();
+            total = menu.totalServerRecipeCandidates();
         }
         else return;
         int left = treeLeft() + 5;
@@ -1561,6 +1593,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         previewDirty = false;
         previewDelay = 0;
         if (selected == null || minecraft.level == null) return;
+        if (!menu.serverRecipeIndexComplete())
+        {
+            waitingForServerRecipeIndex = true;
+            loadingStatus = serverRecipeIndexingText();
+            return;
+        }
         IStackKey<?> target = menu.initialTarget();
         long nonce = previewNonce;
         boolean preferAutomaticChoices = amountOnlyPreviewChange;
@@ -1870,6 +1908,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         if (!preview.success())
         {
+            if ("server recipe index is still building".equals(preview.error()))
+            {
+                waitingForServerRecipeIndex = true;
+                loadingStatus = serverRecipeIndexingText();
+                previewError = "";
+                return;
+            }
             loadingStatus = "";
             clearPendingPreviewMetrics();
             proposalReady = false;

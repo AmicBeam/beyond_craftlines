@@ -155,6 +155,8 @@
   "gui.beyond_craftlines.network_owned_loading": "In network: …",
   "gui.beyond_craftlines.recipe_tree": "Recipe tree",
   "gui.beyond_craftlines.indexing_recipes": "Indexing recipes: %s/%s",
+  "gui.beyond_craftlines.indexing_server_recipes": "Server recipe index: %s/%s",
+  "error.beyond_craftlines.server_recipe_indexing": "The server recipe index is still being prepared",
   "gui.beyond_craftlines.capturing_recipes": "Preparing planning catalog: %s/%s",
   "gui.beyond_craftlines.loading_snapshot": "Requesting the network inventory snapshot…",
   "gui.beyond_craftlines.loading_snapshot_pages": "Receiving network inventory: page %s/%s",

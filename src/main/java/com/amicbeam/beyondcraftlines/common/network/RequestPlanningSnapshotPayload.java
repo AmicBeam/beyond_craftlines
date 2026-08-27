@@ -36,8 +36,7 @@ public record RequestPlanningSnapshotPayload(long nonce, String itemId) implemen
                 long last = player.getPersistentData().getLong(LAST_SNAPSHOT_TICK);
                 if (last > 0 && now >= last && now - last < 5) return;
                 player.getPersistentData().putLong(LAST_SNAPSHOT_TICK, now);
-                if (!menu.targetToken().equals(payload.itemId())
-                        || menu.recipeForResourceOutput(menu.initialTarget()) == null)
+                if (!menu.targetToken().equals(payload.itemId()))
                     throw new IllegalArgumentException("target is unavailable");
                 var snapshot = PlanningSnapshotService.capture(menu.networkId());
                 long recipeEpoch = PlanningSnapshotService.recipeEpoch(player.level(), menu.availableFamilies());

@@ -40,7 +40,7 @@ public final class CraftlinesConfig
     public static final ModConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
             .translation("config.beyond_craftlines.amount_preview_delay_ticks")
-            .defineInRange("amountPreviewDelayTicks", 20, 1, 1_200);
+            .defineInRange("amountPreviewDelayTicks", 5, 1, 1_200);
 
     public static final ModConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
@@ -90,6 +90,16 @@ public final class CraftlinesConfig
             .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
             .translation("config.beyond_craftlines.debug_recipe_type_mappings")
             .define("debugRecipeTypeMappings", false);
+
+    public static final ModConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
+            .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
+            .translation("config.beyond_craftlines.server_recipe_index_max_per_tick")
+            .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);
+
+    public static final ModConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK = SERVER_BUILDER
+            .comment("Main-thread time budget in milliseconds for background server recipe indexing each tick.")
+            .translation("config.beyond_craftlines.server_recipe_index_max_millis_per_tick")
+            .defineInRange("serverRecipeIndexMaxMillisPerTick", 2, 1, 50);
 
     public static final ModConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
             .comment("Maximum recursive recipe-tree depth per order.")

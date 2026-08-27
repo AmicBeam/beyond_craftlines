@@ -21,7 +21,7 @@ public final class CraftlinesConfig {
             .pop().push("planning").defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
     public static final ForgeConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
-            .defineInRange("amountPreviewDelayTicks", 20, 1, 1_200);
+            .defineInRange("amountPreviewDelayTicks", 5, 1, 1_200);
     public static final ForgeConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
@@ -46,6 +46,12 @@ public final class CraftlinesConfig {
             .pop().push("crafting")
             .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
             .define("debugRecipeTypeMappings", false);
+    public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
+            .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
+            .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);
+    public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK = SERVER_BUILDER
+            .comment("Main-thread time budget in milliseconds for background server recipe indexing each tick.")
+            .defineInRange("serverRecipeIndexMaxMillisPerTick", 2, 1, 50);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
             .defineInRange("maxPlanningDepth", 48, 1, 256);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_NODES = SERVER_BUILDER

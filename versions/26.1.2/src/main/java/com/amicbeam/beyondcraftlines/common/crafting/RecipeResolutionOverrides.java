@@ -8,6 +8,7 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Player-selected recipe and ingredient resolutions, validated again by the server planner. */
 public final class RecipeResolutionOverrides
@@ -38,6 +39,7 @@ public final class RecipeResolutionOverrides
     { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(output)))); }
     public Identifier ingredientFor(Identifier recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
+    public Set<Identifier> selectedRecipes() { return Set.copyOf(recipes.values()); }
 
     public boolean completelyResolves(RecipePlan plan)
     {

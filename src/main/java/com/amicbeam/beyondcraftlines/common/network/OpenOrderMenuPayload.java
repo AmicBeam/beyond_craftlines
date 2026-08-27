@@ -49,9 +49,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 return;
             }
             var level = player.level();
-            var candidates = (requestedRecipe == null
-                    ? level.getRecipeManager().getOrderedRecipes().stream()
-                    : level.getRecipeManager().byKey(requestedRecipe).stream()).toList();
+            var candidates = requestedRecipe == null ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
+                    : level.getRecipeManager().byKey(requestedRecipe).stream().toList();
             if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
                 showRecipeDebug(player, payload, candidates);
             DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
@@ -64,14 +63,14 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
-            if (candidates.isEmpty())
+            if (requestedRecipe != null && candidates.isEmpty())
             {
                 reject(player, payload, "not_loaded", "error.beyond_craftlines.order_recipe_not_loaded",
                         payload.recipeId());
                 return;
             }
             var supported = candidates.stream().filter(RecipePlanningService::supported).toList();
-            if (supported.isEmpty())
+            if (requestedRecipe != null && supported.isEmpty())
             {
                 reject(player, payload, "unsupported_structure",
                         "error.beyond_craftlines.order_recipe_unsupported_structure", payload.recipeId());
@@ -81,7 +80,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 String family = RecipePlanningService.family(holder);
                 return "crafting".equals(family) || availableFamilies.contains(family);
             }).toList();
-            if (familyAvailable.isEmpty())
+            if (requestedRecipe != null && familyAvailable.isEmpty())
             {
                 String family = RecipePlanningService.family(supported.getFirst());
                 reject(player, payload, "family_unavailable",
@@ -95,19 +94,20 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be
             // inferred generically. The recipe id, actual server family, network binding and selected
             // output above are the authoritative checks.
-            if (recipe == null)
+            if (requestedRecipe != null && recipe == null)
             {
                 reject(player, payload, "output_mismatch",
                         "error.beyond_craftlines.order_recipe_output_mismatch", payload.recipeId());
                 return;
             }
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new CraftlineOrderMenu(id, inventory, networkId, target, recipe.id(),
+                    new CraftlineOrderMenu(id, inventory, networkId, target,
+                            recipe == null ? null : recipe.id(),
                             requestedRecipe != null, availableFamilies),
                     Component.translatable("menu.beyond_craftlines.order")), buffer -> {
                         buffer.writeVarInt(networkId);
                         IStackKey.STREAM_CODEC.encode(buffer, target);
-                        buffer.writeUtf(recipe.id().toString());
+                        buffer.writeUtf(recipe == null ? "" : recipe.id().toString());
                         buffer.writeBoolean(requestedRecipe != null);
                         buffer.writeVarInt(availableFamilies.size());
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);

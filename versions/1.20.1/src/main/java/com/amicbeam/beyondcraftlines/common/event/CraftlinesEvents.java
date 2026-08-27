@@ -25,6 +25,7 @@ public final class CraftlinesEvents {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
+            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(event.getServer());
             NativeFurnaceRegistry.tick(event.getServer());
             RecipeOrderService.tick(event.getServer());
         }
@@ -69,8 +70,13 @@ public final class CraftlinesEvents {
     @SubscribeEvent public static void onChunkUnload(ChunkEvent.Unload event) { NativeFurnaceRegistry.onChunkUnload(event); }
     @SubscribeEvent public static void onLevelUnload(LevelEvent.Unload event) { NativeFurnaceRegistry.onLevelUnload(event); }
     @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) {
-        RecipePlanningService.clearRecipeCache();
         var server = event.getPlayerList().getServer();
+        if (event.getPlayer() == null) {
+            if (recipeAliasServer == server)
+                com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
+                        .invalidatePersistedServerIndex(server);
+            RecipePlanningService.clearRecipeCache();
+        }
         if (event.getPlayer() == null || recipeAliasServer != server
                 || com.amicbeam.beyondcraftlines.common.crafting
                 .RecipeFamilyAliasRegistry.aliases().isEmpty()) {

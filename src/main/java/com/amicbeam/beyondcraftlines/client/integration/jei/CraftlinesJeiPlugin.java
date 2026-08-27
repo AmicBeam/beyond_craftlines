@@ -120,6 +120,36 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return true;
     }
 
+    /** Opens the Craftlines order screen for the JEI ingredient currently under the mouse. */
+    public static boolean orderIngredientUnderMouse()
+    {
+        IJeiRuntime current = runtime;
+        if (current == null || orderButtonAvailability() != NetworkAvailability.AVAILABLE) return false;
+        IStackKey<?> target = ingredientUnderMouse(current);
+        if (target == null || target.isEmpty()) return false;
+        PacketDistributor.sendToServer(new OpenOrderMenuPayload(target, "", ""));
+        return true;
+    }
+
+    private static @Nullable IStackKey<?> ingredientUnderMouse(IJeiRuntime current)
+    {
+        ItemStack recipeStack = current.getRecipesGui()
+                .getIngredientUnderMouse(mezz.jei.api.constants.VanillaTypes.ITEM_STACK)
+                .orElse(ItemStack.EMPTY);
+        if (!recipeStack.isEmpty()) return orderTarget(recipeStack);
+
+        var ingredient = current.getIngredientListOverlay().getIngredientUnderMouse()
+                .or(() -> current.getBookmarkOverlay().getIngredientUnderMouse());
+        return ingredient.map(mezz.jei.api.ingredients.ITypedIngredient::getIngredient)
+                .map(CraftlinesJeiPlugin::orderTarget).orElse(null);
+    }
+
+    private static @Nullable IStackKey<?> orderTarget(Object ingredient)
+    {
+        var amount = RecipeResourceResolver.fromStack(ingredient);
+        return amount == null ? null : amount.key();
+    }
+
     private static @Nullable IStackKey<?> findOutput(IRecipeLayoutDrawable<?> layout)
     {
         return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.OUTPUT).stream()

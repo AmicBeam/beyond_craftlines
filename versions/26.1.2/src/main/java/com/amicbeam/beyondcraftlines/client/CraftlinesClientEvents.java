@@ -160,11 +160,18 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
-        public static void openRecipeTreeBeforeBdTransfer(ScreenEvent.MouseButtonPressed.Pre event)
+        public static void openOrderFromMiddleClick(ScreenEvent.MouseButtonPressed.Pre event)
         {
             if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE
-                    || !(event.getScreen() instanceof DimensionsNetGUI<?> screen)
-                    || !screen.getMenu().getCarried().isEmpty()) return;
+                    || Minecraft.getInstance().player == null
+                    || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;
+            if (com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                    .orderIngredientUnderMouse())
+            {
+                event.setCanceled(true);
+                return;
+            }
+            if (!(event.getScreen() instanceof DimensionsNetGUI<?> screen)) return;
             var level = Minecraft.getInstance().level;
             if (level == null) return;
             for (var slot : screen.getMenu().slots)

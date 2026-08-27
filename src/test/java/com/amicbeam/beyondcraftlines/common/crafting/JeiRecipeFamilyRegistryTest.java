@@ -18,7 +18,7 @@ final class JeiRecipeFamilyRegistryTest
             Map.entry("mekanism:condensentrating", Set.of("mekanism:rotary")),
             Map.entry("mekanism:decondensentrating", Set.of("mekanism:rotary")),
             Map.entry("ars_nouveau:enchantment_apparatus", Set.of("ars_nouveau:enchantment")),
-            Map.entry("actuallyadditions:empowerer", Set.of("actuallyadditions:empowering")));
+            Map.entry("actuallyadditions:empowerer", Set.of("actuallyadditions:empower")));
 
     private static JeiRecipeFamilyMappings.Resolution resolve(Set<String> types, Set<String> loaded)
     { return JeiRecipeFamilyMappings.resolve(types, loaded, ALIASES, Map.of()); }
@@ -102,9 +102,9 @@ final class JeiRecipeFamilyRegistryTest
     {
         var result = resolve(
                 Set.of("actuallyadditions:empowerer"),
-                Set.of("actuallyadditions:empowering"));
+                Set.of("actuallyadditions:empower"));
         assertEquals(Set.of("actuallyadditions:empowerer"), result.jeiTypes());
-        assertEquals(Set.of("actuallyadditions:empowering"), result.families());
+        assertEquals(Set.of("actuallyadditions:empower"), result.families());
     }
 
     @Test

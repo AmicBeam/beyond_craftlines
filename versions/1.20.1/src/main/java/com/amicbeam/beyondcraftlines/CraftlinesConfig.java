@@ -39,6 +39,9 @@ public final class CraftlinesConfig {
             .pop().push("provisioner")
             .comment("Maximum number of wireless target devices bound to one Craftline Provisioner.")
             .defineInRange("maxWirelessConnections", 16, 1, 1_024);
+    public static final ForgeConfigSpec.BooleanValue RESET_PROVISIONER_ROUND_ROBIN_ON_ACTIVATION = SERVER_BUILDER
+            .comment("Restart round-robin supply from the first wireless binding whenever a recipe request activates a provisioner. Blocking orders activate once per feeding round.")
+            .define("resetRoundRobinOnRecipeActivation", true);
     public static final ForgeConfigSpec.BooleanValue DEBUG_RECIPE_TYPE_MAPPINGS = SERVER_BUILDER
             .pop().push("crafting")
             .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")

@@ -69,6 +69,7 @@ public final class RecipeOrderSavedData extends SavedData
                             value.getIntOr("network", -1), Identifier.parse(value.getStringOr("target", "minecraft:air")),
                             value.getLongOr("requested", 0L), executions, -1,
                             value.getBooleanOr("blocking_mode", false),
+                            OrderOutputDestination.byId(value.getStringOr("output_destination", "network")),
                             RecipeOrderJob.Status.valueOf(value.getStringOr("status", "ERROR")),
                             value.getStringOr("message", ""), value.getLongOr("created", 0L),
                             value.getLongOr("finished", 0L), readReserved(value, registries));
@@ -77,6 +78,7 @@ public final class RecipeOrderSavedData extends SavedData
                         value.getIntOr("network", -1), Identifier.parse(value.getStringOr("target", "minecraft:air")),
                         value.getLongOr("requested", 0L), steps, value.getIntOr("next", 0),
                         value.getBooleanOr("blocking_mode", false),
+                        OrderOutputDestination.byId(value.getStringOr("output_destination", "network")),
                         RecipeOrderJob.Status.valueOf(value.getStringOr("status", "ERROR")), value.getStringOr("message", ""),
                         value.getLongOr("created", 0L), value.getLongOr("finished", 0L), value.getLongOr("next_crafting_tick", 0L),
                         readExternalWait(value, registries), readReserved(value, registries));
@@ -139,6 +141,7 @@ public final class RecipeOrderSavedData extends SavedData
             value.putInt("network", job.networkId()); value.putString("target", job.target().toString());
             value.putLong("requested", job.requested()); value.putInt("next", job.nextStep());
             value.putBoolean("blocking_mode", job.blockingMode());
+            value.putString("output_destination", job.outputDestination().id());
             value.putString("status", job.status().name()); value.putString("message", job.message());
             value.putLong("created", job.createdAt());
             value.putLong("finished", job.finishedAt());

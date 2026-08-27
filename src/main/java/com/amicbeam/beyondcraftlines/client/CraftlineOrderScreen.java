@@ -13,6 +13,7 @@ import com.amicbeam.beyondcraftlines.common.network.PlanningSnapshotPayload;
 import com.amicbeam.beyondcraftlines.common.network.RequestNetworkAmountPayload;
 import com.amicbeam.beyondcraftlines.common.network.RequestPlanningSnapshotPayload;
 import com.amicbeam.beyondcraftlines.common.network.SubmitOrderPayload;
+import com.amicbeam.beyondcraftlines.common.runtime.OrderOutputDestination;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -72,8 +73,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private RecipeHolder<?> selected;
     private int refreshTicks;
     private Button blockingButton;
+    private Button outputDestinationButton;
     private Button orderButton;
     private boolean blockingMode;
+    private OrderOutputDestination outputDestination = OrderOutputDestination.NETWORK;
     private String networkAmountTarget;
     private long networkAmount = -1;
     private double treeOffsetX = 18;
@@ -151,7 +154,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
         int rightX = rightPanelLeft() + 10;
         int rightWidth = rightPanelWidth() - 20;
-        amount = new EditBox(font, rightX, topPos + 84, rightWidth, 18,
+        amount = new EditBox(font, rightX, topPos + 66, rightWidth, 18,
                 Component.translatable("gui.beyond_craftlines.amount"));
         amount.setValue(retainedAmount);
         amount.setFilter(value -> value.matches("[0-9]{0,19}")
@@ -161,18 +164,28 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             rebuildTree(false);
         });
         addRenderableWidget(amount);
-        addAmountButtons(rightX, rightWidth, topPos + 103, true);
-        addAmountButtons(rightX, rightWidth, topPos + 120, false);
+        addAmountButtons(rightX, rightWidth, topPos + 85, true);
+        addAmountButtons(rightX, rightWidth, topPos + 102, false);
+        outputDestinationButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> {
+            outputDestination = outputDestination.next();
+            updateOutputDestinationButton();
+            if (!ClientPlannerPreferences.setOutputDestination(outputDestination)
+                    && minecraft.player != null)
+                minecraft.player.displayClientMessage(Component.translatable(
+                        "error.beyond_craftlines.client_planner_preference_save_failed"), true);
+        }).bounds(rightX, topPos + 120, rightWidth, 18).build());
+        outputDestinationButton.active = menu.initialTarget() instanceof ItemStackKey;
         int actionWidth = (rightWidth - 4) / 2;
         blockingButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> {
             blockingMode = !blockingMode;
             updateBlockingButton();
-        }).bounds(rightX, topPos + 138, actionWidth, 18).build());
+        }).bounds(rightX, topPos + 139, actionWidth, 18).build());
         orderButton = addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.order"), ignored -> submit())
-                .bounds(rightX + actionWidth + 4, topPos + 138,
+                .bounds(rightX + actionWidth + 4, topPos + 139,
                         rightWidth - actionWidth - 4, 18).build());
         orderButton.active = proposalReady;
         updateBlockingButton();
+        updateOutputDestinationButton();
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
@@ -329,7 +342,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selected == null || minecraft.level == null || !proposalReady) return;
         PacketDistributor.sendToServer(new SubmitOrderPayload(
                 menu.targetToken(), amountValue(), blockingMode,
-                previewNonce, proposalStockRevision, proposalRecipeEpoch));
+                outputDestination.id(), previewNonce, proposalStockRevision, proposalRecipeEpoch));
         markPreviewDirty();
     }
 
@@ -342,6 +355,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         blockingButton.setTooltip(Tooltip.create(Component.translatable(blockingMode
                 ? "tooltip.beyond_craftlines.blocking_mode_on"
                 : "tooltip.beyond_craftlines.blocking_mode_off")));
+    }
+
+    private void updateOutputDestinationButton()
+    {
+        if (outputDestinationButton == null) return;
+        outputDestinationButton.setMessage(Component.translatable(outputDestination
+                == OrderOutputDestination.NETWORK
+                ? "gui.beyond_craftlines.output_destination_network"
+                : "gui.beyond_craftlines.output_destination_inventory"));
+        outputDestinationButton.setTooltip(Tooltip.create(Component.translatable(outputDestination
+                == OrderOutputDestination.NETWORK
+                ? "tooltip.beyond_craftlines.output_destination_network"
+                : "tooltip.beyond_craftlines.output_destination_inventory")));
     }
 
     @Override
@@ -367,14 +393,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         IStackKey<?> target = menu.initialTarget();
-        target.getRender().render(graphics, target, x, topPos + 36);
+        target.getRender().render(graphics, target, x, topPos + 18);
         String name = font.plainSubstrByWidth(target.getRender().getDisplayName(target).getString(), width - 22);
-        graphics.drawString(font, name, x + 22, topPos + 39, 0x253545, false);
+        graphics.drawString(font, name, x + 22, topPos + 21, 0x253545, false);
         Component owned = networkAmount < 0
                 ? Component.translatable("gui.beyond_craftlines.network_owned_loading")
                 : Component.translatable("gui.beyond_craftlines.network_owned", networkAmount);
-        graphics.drawString(font, font.plainSubstrByWidth(owned.getString(), width), x, topPos + 56, 0x00609D, false);
-        graphics.drawString(font, Component.translatable("gui.beyond_craftlines.amount"), x, topPos + 75, 0x465564, false);
+        graphics.drawString(font, font.plainSubstrByWidth(owned.getString(), width), x, topPos + 38, 0x00609D, false);
+        graphics.drawString(font, Component.translatable("gui.beyond_craftlines.amount"), x, topPos + 57, 0x465564, false);
     }
 
     private int materialColumns() { return Math.max(1, (rightPanelWidth() - 20) / 22); }
@@ -814,6 +840,15 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         boolean[] reusable = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
                 .reusableIngredientSlots(recipe, minecraft.level, selections);
+        var fluidProxies = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
+                .bucketFluidInputs(recipe, minecraft.level, selections);
+        for (int i = 0; i < selectedInputs.size(); i++)
+        {
+            SelectedTreeInput selectedInput = selectedInputs.get(i);
+            var proxy = fluidProxies.get(selectedInput.slot());
+            if (proxy != null) selectedInputs.set(i, new SelectedTreeInput(
+                    selectedInput.slot(), selectedInput.ingredient(), proxy));
+        }
         long outputPerCraft = com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                 .outputs(recipe.value(), minecraft.level.registryAccess()).stream()
                 .filter(output -> resourceKey.isSame(output.key())).mapToLong(output -> output.amount())
@@ -1450,6 +1485,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void loadClientPreferences()
     {
         ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
+        outputDestination = snapshot.outputDestination();
+        if (!(menu.initialTarget() instanceof ItemStackKey))
+            outputDestination = OrderOutputDestination.NETWORK;
+        updateOutputDestinationButton();
         defaultRecipes.clear();
         defaultResourceRecipes.clear();
         for (var entry : snapshot.recipes().entrySet())
@@ -1719,6 +1758,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         previewError = localizedPlanningError(completedFailure.getMessage());
                         return;
                     }
+                    automaticRecipes.clear();
+                    automaticResourceRecipes.clear();
+                    completed.recipes().forEach((output, recipe) -> {
+                        automaticResourceRecipes.put(output, recipe);
+                        ResourceLocation item = itemOutputForToken(output);
+                        if (item != null) automaticRecipes.put(item, recipe);
+                    });
+                    automaticIngredients.clear();
+                    completed.ingredients().forEach((key, value) -> automaticIngredients.put(
+                            new IngredientSlotKey(key.recipe(), key.slot()), value));
                     if (!completed.craftable())
                     {
                         if (refreshSnapshotIfMissing)
@@ -1726,23 +1775,22 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
                             return;
                         }
-                        automaticRecipes.clear();
-                        automaticResourceRecipes.clear();
-                        completed.recipes().forEach((output, recipe) -> {
-                            automaticResourceRecipes.put(output, recipe);
-                            ResourceLocation item = itemOutputForToken(output);
-                            if (item != null) automaticRecipes.put(item, recipe);
-                        });
-                        automaticIngredients.clear();
-                        completed.ingredients().forEach((key, value) -> automaticIngredients.put(
-                                new IngredientSlotKey(key.recipe(), key.slot()), value));
                         showMissingMaterials(completed.missing());
                         previewError = formatMissing(completed.missing());
                         rebuildTree(false);
                         return;
                     }
-                    loadingStatus = Component.translatable("gui.beyond_craftlines.validating_plan").getString();
                     uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
+                    clearDisplayMetrics();
+                    completed.extraction().entrySet().stream().filter(entry -> !target.isSame(entry.getKey()))
+                            .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+                                    com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
+                            .forEach(entry -> extractionMaterials.put(entry.getKey(), entry.getValue()));
+                    materialSummaryReady = true;
+                    proposalReady = true;
+                    previewError = "";
+                    if (orderButton != null) orderButton.active = true;
+                    rebuildTree(false);
                 });
         });
     }

@@ -1,7 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
-import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import net.minecraft.resources.Identifier;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 
@@ -9,7 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Main-thread-only cache of the latest server-validated client proposal per player. */
+/** Main-thread-only cache of the latest fully uploaded client proposal per player. */
 final class ValidatedClientPlanCache
 {
     private static final Map<UUID, Entry> ENTRIES = new HashMap<>();
@@ -29,5 +28,5 @@ final class ValidatedClientPlanCache
     }
 
     record Entry(long nonce, int networkId, IStackKey<?> target, long count,
-                 long recipeEpoch, long expiresAt, RecipeResolutionOverrides overrides, RecipePlan plan) {}
+                 long recipeEpoch, long expiresAt, RecipeResolutionOverrides overrides) {}
 }

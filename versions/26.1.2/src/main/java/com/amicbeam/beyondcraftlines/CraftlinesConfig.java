@@ -79,6 +79,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.max_provisioner_connections")
             .defineInRange("maxWirelessConnections", 16, 1, 1_024);
 
+    public static final ModConfigSpec.BooleanValue RESET_PROVISIONER_ROUND_ROBIN_ON_ACTIVATION = SERVER_BUILDER
+            .comment("Restart round-robin supply from the first wireless binding whenever a recipe request activates a provisioner. Blocking orders activate once per feeding round.")
+            .translation("config.beyond_craftlines.reset_provisioner_round_robin_on_activation")
+            .define("resetRoundRobinOnRecipeActivation", true);
+
     public static final ModConfigSpec.BooleanValue DEBUG_RECIPE_TYPE_MAPPINGS = SERVER_BUILDER
             .pop()
             .push("crafting")

@@ -35,6 +35,7 @@ final class RecipeOrderJobStepAccessTest
                 -1, false, RecipeOrderJob.Status.QUEUED, "", 1L, 0L, List.of());
 
         assertEquals(2, job.stepCount());
+        assertEquals(OrderOutputDestination.NETWORK, job.outputDestination());
         assertSame(first, job.step(0));
         assertSame(second, job.step(1));
     }

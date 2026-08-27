@@ -29,6 +29,6 @@
     "mekanism:condensentrating": ["mekanism:rotary"],
     "mekanism:decondensentrating": ["mekanism:rotary"],
     "ars_nouveau:enchantment_apparatus": ["ars_nouveau:enchantment"],
-    "actuallyadditions:empowerer": ["actuallyadditions:empowering"]
+    "actuallyadditions:empowerer": ["actuallyadditions:empower"]
   }
 }

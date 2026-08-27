@@ -72,6 +72,12 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
         deliveryStrategy = strategy; connectionCursor = 0; syncChanged();
     }
 
+    /** Starts one independent recipe activation, or one feeding round for a blocking order. */
+    public void activateDeliverySequence() {
+        connectionCursor = ProvisionerPollingLogic.cursorOnActivation(
+                CraftlinesConfig.RESET_PROVISIONER_ROUND_ROBIN_ON_ACTIVATION.get(), connectionCursor);
+    }
+
     public ConnectionEdit toggleWirelessConnection(ResourceKey<Level> dimension, BlockPos position,
                                                    Direction face, ResourceLocation blockId,
                                                    ConnectionRole role) {
@@ -201,8 +207,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
         int size = wirelessConnections.size();
         ArrayList<Integer> order = new ArrayList<>(size);
         if (deliveryStrategy == ProvisionerDeliveryStrategy.ROUND_ROBIN) {
-            for (int offset = 0; offset < size; offset++) order.add((connectionCursor + offset) % size);
-            return order;
+            return ProvisionerPollingLogic.roundRobinOrder(size, connectionCursor);
         }
         for (int index = 0; index < size; index++) order.add(index);
         Comparator<Integer> comparator = Comparator

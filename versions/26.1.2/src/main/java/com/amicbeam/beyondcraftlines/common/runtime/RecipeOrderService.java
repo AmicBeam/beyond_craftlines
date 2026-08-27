@@ -64,6 +64,14 @@ public final class RecipeOrderService
                                                   Identifier target, long count, boolean blockingMode,
                                                   RecipePlan plan)
     {
+        return enqueueValidated(level, owner, networkId, target, count, blockingMode,
+                OrderOutputDestination.NETWORK, plan);
+    }
+
+    public static RecipeOrderJob enqueueValidated(ServerLevel level, UUID owner, int networkId,
+                                                  Identifier target, long count, boolean blockingMode,
+                                                  OrderOutputDestination outputDestination, RecipePlan plan)
+    {
         if (!plan.target().equals(target) || plan.requested() != count || !plan.craftable())
             throw new IllegalArgumentException("validated plan does not match the order");
         List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
@@ -76,7 +84,8 @@ public final class RecipeOrderService
         List<RecipePlan.ReservedMaterial> reserved = reserveInitial(
                 network.getUnifiedStorage(), plan.reserved());
         RecipeOrderJob job = RecipeOrderJob.create(UUID.randomUUID(), owner, networkId, target, count,
-                plan.steps(), blockingMode, plan.steps().isEmpty() ? RecipeOrderJob.Status.COMPLETE
+                plan.steps(), blockingMode, outputDestination,
+                plan.steps().isEmpty() ? RecipeOrderJob.Status.COMPLETE
                 : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(),
                 plan.steps().isEmpty() ? level.getGameTime() : 0, reserved);
         try { RecipeOrderSavedData.get(level.getServer()).put(job); }
@@ -145,6 +154,9 @@ public final class RecipeOrderService
             try
             {
                 RecipeOrderJob result = executeReadySteps(server, job, index);
+                if (result.status() == RecipeOrderJob.Status.COMPLETE
+                        && result.outputDestination() == OrderOutputDestination.INVENTORY)
+                    result = deliverOutputToInventory(server, result);
                 if (terminal(result.status()) && !result.reserved().isEmpty())
                 {
                     DimensionsNet network = DimensionsNet.getNetFromId(result.networkId());
@@ -185,6 +197,66 @@ public final class RecipeOrderService
                 data.put(failed.with(RecipeOrderJob.Status.ERROR, encode("execution_failed")).finishedAt(gameTime));
             }
         }
+    }
+
+    private static RecipeOrderJob deliverOutputToInventory(MinecraftServer server, RecipeOrderJob job)
+    {
+        net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(job.owner());
+        if (player == null)
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_owner_online"));
+        IStackKey<?> outputKey = null;
+        for (int step = job.stepCount() - 1; step >= 0; step--)
+            if (job.step(step).output().equals(job.target()))
+            {
+                outputKey = job.step(step).outputKey();
+                break;
+            }
+        if (!(outputKey instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey itemKey))
+            return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
+        net.minecraft.world.item.ItemStack template = itemKey.getReadOnlyStack().copyWithCount(1);
+        long capacity = inventoryCapacity(player.getInventory(), template);
+        if (capacity < job.requested())
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_inventory_space"));
+        DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+        if (network == null)
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
+        UnifiedStorage storage = network.getUnifiedStorage();
+        KeyAmount taken = storage.extract(outputKey, job.requested(), false, false);
+        if (taken.amount() != job.requested())
+        {
+            if (!taken.isEmpty()) storage.insert(taken.key(), taken.amount(), false);
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_final_output"));
+        }
+        if (!(taken.key() instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey takenItemKey))
+        {
+            storage.insert(taken.key(), taken.amount(), false);
+            return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
+        }
+        long remaining = taken.amount();
+        while (remaining > 0)
+        {
+            int count = (int) Math.min(remaining, takenItemKey.getReadOnlyStack().getMaxStackSize());
+            net.minecraft.world.item.ItemStack stack = takenItemKey.getReadOnlyStack().copyWithCount(count);
+            player.getInventory().add(stack);
+            if (!stack.isEmpty()) throw new IllegalStateException("inventory capacity changed during delivery");
+            remaining -= count;
+        }
+        return job.with(RecipeOrderJob.Status.COMPLETE, "");
+    }
+
+    private static long inventoryCapacity(net.minecraft.world.entity.player.Inventory inventory,
+                                          net.minecraft.world.item.ItemStack template)
+    {
+        long capacity = 0;
+        for (int slot = 0; slot < Math.min(36, inventory.getContainerSize()); slot++)
+        {
+            net.minecraft.world.item.ItemStack stack = inventory.getItem(slot);
+            long space = stack.isEmpty() ? template.getMaxStackSize()
+                    : net.minecraft.world.item.ItemStack.isSameItemSameComponents(stack, template)
+                    ? Math.max(0, stack.getMaxStackSize() - stack.getCount()) : 0;
+            capacity = SaturatingLongMath.add(capacity, space);
+        }
+        return capacity;
     }
 
     /** Runs every dependency-ready lane once, polling existing machine waits before new dispatches. */
@@ -316,6 +388,8 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_delivery_rolled_back"));
             }
         }
+        targets.values().stream().map(DeviceBindingRegistry.ProvisionerTarget::provisioner).distinct()
+                .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
         long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         long networkBaseline = networkAmount(job.networkId(), step.outputKey());
@@ -435,6 +509,9 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_delivery_rolled_back"));
             }
         }
+        routes.entrySet().stream().filter(entry -> provisionerGroups.contains(entry.getKey()))
+                .map(entry -> entry.getValue().getFirst().provisioner().provisioner()).distinct()
+                .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
 
         List<RecipeOrderJob.MachineLocation> occupied = new ArrayList<>();
         routes.forEach((group, endpoints) -> endpoints.forEach(endpoint -> {
@@ -520,7 +597,7 @@ public final class RecipeOrderService
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
                 level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections(),
                 job.reserved(), job.nextStep() + 1 < job.stepCount(),
-                PlanningSnapshotService.capture(job.networkId()));
+                PlanningSnapshotService.capture(job.networkId()), step.inputs());
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);

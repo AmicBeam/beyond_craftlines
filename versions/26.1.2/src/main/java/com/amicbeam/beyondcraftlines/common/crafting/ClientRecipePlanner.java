@@ -63,19 +63,39 @@ public final class ClientRecipePlanner
 
     private static Recipe captureRecipeDirection(Level level, RecipeHolder<?> holder, KeyAmount output)
     {
+        List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
+                RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
+        List<RecipePlan.IngredientSelection> baselineSelections = recipeIngredients.stream()
+                .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
+                .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
+                        itemId(ingredient.candidates().getFirst().key()))).toList();
         List<Slot> slots = new ArrayList<>();
-        for (var ingredient : RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key()))
+        for (var ingredient : recipeIngredients)
         {
-            LinkedHashMap<IStackKey<?>, Candidate> candidates = new LinkedHashMap<>();
+            LinkedHashMap<String, Candidate> candidates = new LinkedHashMap<>();
             for (KeyAmount value : ingredient.candidates())
-                candidates.putIfAbsent(value.key(), new Candidate(value.key(), value.amount()));
+            {
+                Candidate candidate = new Candidate(value.key(), value.amount());
+                if (value.key() instanceof ItemStackKey)
+                {
+                    List<RecipePlan.IngredientSelection> selections = new ArrayList<>(baselineSelections);
+                    selections.removeIf(selection -> selection.slot() == ingredient.slot());
+                    Identifier selectedItem = itemId(value.key());
+                    selections.add(new RecipePlan.IngredientSelection(ingredient.slot(), selectedItem));
+                    KeyAmount proxy = SimulatedCrafting.bucketFluidInputs(holder, level, selections)
+                            .get(ingredient.slot());
+                    if (proxy != null) candidate = new Candidate(proxy.key(), proxy.amount(), selectedItem);
+                }
+                candidates.putIfAbsent(RecipeResourceResolver.sortKey(candidate.key()) + "|"
+                        + Objects.toString(candidate.selectionItem(), ""), candidate);
+            }
             if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
                     List.copyOf(candidates.values()), false));
         }
         List<RecipePlan.IngredientSelection> baseline = slots.stream()
-                .filter(slotEntry -> slotEntry.candidates().getFirst().key() instanceof ItemStackKey)
+                .filter(slotEntry -> slotEntry.candidates().getFirst().selectionItem() != null)
                 .map(slotEntry -> new RecipePlan.IngredientSelection(
-                        slotEntry.index(), itemId(slotEntry.candidates().getFirst().key()))).toList();
+                        slotEntry.index(), slotEntry.candidates().getFirst().selectionItem())).toList();
         boolean[] reusable = SimulatedCrafting.reusableIngredientSlots(holder, level, baseline);
         slots = slots.stream().map(slotEntry -> new Slot(slotEntry.index(), slotEntry.candidates(),
                 slotEntry.index() < reusable.length && reusable[slotEntry.index()])).toList();
@@ -120,13 +140,14 @@ public final class ClientRecipePlanner
             byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
         byOutput.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
         State state = new State(new LinkedHashMap<>(suppliedStock), new LinkedHashMap<>(),
-                new LinkedHashMap<>(), 0, new LinkedHashMap<>(), new LinkedHashMap<>());
+                new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
+                new LinkedHashMap<>(), new LinkedHashMap<>());
         state.stock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
                 0, maxDepth, budget);
-        return new Proposal(state.recipes, state.ingredients, state.missing);
+        return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock);
     }
 
     private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
@@ -137,7 +158,7 @@ public final class ClientRecipePlanner
     {
         budget.checkCancellation();
         budget.visit(budgetIdentity(resource));
-        long used = consume(state.stock, resource, needed);
+        long used = consume(state, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
         if (depth >= maxDepth)
@@ -234,8 +255,8 @@ public final class ClientRecipePlanner
             if (fixed != null)
             {
                 Identifier choice = fixed;
-                candidates = slot.candidates().stream().filter(candidate -> candidate.key() instanceof ItemStackKey
-                        && itemId(candidate.key()).equals(choice)).toList();
+                candidates = slot.candidates().stream().filter(candidate ->
+                        choice.equals(candidate.selectionItem())).toList();
                 if (candidates.isEmpty()) throw new IllegalArgumentException("invalid ingredient proposal for " + key);
             }
             else
@@ -294,9 +315,9 @@ public final class ClientRecipePlanner
             Slot slot = recipe.slots().get(i);
             Candidate candidate = variant.get(i);
             IngredientKey key = new IngredientKey(recipe.id(), slot.index());
-            if (candidate.key() instanceof ItemStackKey)
+            if (candidate.selectionItem() != null)
             {
-                Identifier candidateItem = itemId(candidate.key());
+                Identifier candidateItem = candidate.selectionItem();
                 Identifier previous = state.ingredients.putIfAbsent(key, candidateItem);
                 if (previous != null && !previous.equals(candidateItem)) return false;
             }
@@ -441,18 +462,22 @@ public final class ClientRecipePlanner
             candidates = List.copyOf(candidates);
         }
     }
-    public record Candidate(IStackKey<?> key, long count)
+    public record Candidate(IStackKey<?> key, long count, Identifier selectionItem)
     {
+        public Candidate(IStackKey<?> key, long count)
+        { this(key, count, key instanceof ItemStackKey ? itemId(key) : null); }
         public Candidate { if (key == null || key.isEmpty() || count < 1) throw new IllegalArgumentException("invalid candidate"); }
     }
     public record IngredientKey(Identifier recipe, int slot) {}
     public record Proposal(Map<String, Identifier> recipes,
                            Map<IngredientKey, Identifier> ingredients,
-                           Map<IStackKey<?>, Long> missing)
+                           Map<IStackKey<?>, Long> missing,
+                           Map<IStackKey<?>, Long> extraction)
     {
         public Proposal
         {
-            recipes = Map.copyOf(recipes); ingredients = Map.copyOf(ingredients); missing = Map.copyOf(missing);
+            recipes = Map.copyOf(recipes); ingredients = Map.copyOf(ingredients);
+            missing = Map.copyOf(missing); extraction = Map.copyOf(extraction);
         }
         public boolean craftable() { return missing.isEmpty(); }
     }
@@ -462,21 +487,25 @@ public final class ClientRecipePlanner
         private Map<IStackKey<?>, Long> stock;
         private Map<IStackKey<?>, Long> missing;
         private Map<IStackKey<?>, Long> reusableRequirements;
+        private Map<IStackKey<?>, Long> usedStock;
         private int steps;
         private Map<String, Identifier> recipes;
         private Map<IngredientKey, Identifier> ingredients;
         private State(Map<IStackKey<?>, Long> stock, Map<IStackKey<?>, Long> missing,
-                      Map<IStackKey<?>, Long> reusableRequirements, int steps,
+                      Map<IStackKey<?>, Long> reusableRequirements,
+                      Map<IStackKey<?>, Long> usedStock, int steps,
                       Map<String, Identifier> recipes,
                       Map<IngredientKey, Identifier> ingredients)
         { this.stock = stock; this.missing = missing; this.reusableRequirements = reusableRequirements;
+            this.usedStock = usedStock;
             this.steps = steps; this.recipes = recipes; this.ingredients = ingredients; }
         private State copy()
         { return new State(new LinkedHashMap<>(stock), new LinkedHashMap<>(missing),
-                new LinkedHashMap<>(reusableRequirements), steps,
+                new LinkedHashMap<>(reusableRequirements), new LinkedHashMap<>(usedStock), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients)); }
         private void replaceWith(State state)
         { stock = state.stock; missing = state.missing; reusableRequirements = state.reusableRequirements;
+            usedStock = state.usedStock;
             steps = state.steps; recipes = state.recipes; ingredients = state.ingredients; }
     }
 
@@ -503,15 +532,16 @@ public final class ClientRecipePlanner
         return result;
     }
 
-    private static long consume(Map<IStackKey<?>, Long> stock, IStackKey<?> requested, long amount)
+    private static long consume(State state, IStackKey<?> requested, long amount)
     {
         long remaining = amount;
-        for (var entry : stock.entrySet())
+        for (var entry : state.stock.entrySet())
         {
             if (remaining <= 0) break;
             if (entry.getValue() <= 0 || !requested.isSame(entry.getKey())) continue;
             long used = Math.min(remaining, entry.getValue());
             entry.setValue(entry.getValue() - used);
+            state.usedStock.merge(entry.getKey(), used, SaturatingLongMath::add);
             remaining -= used;
         }
         return amount - remaining;

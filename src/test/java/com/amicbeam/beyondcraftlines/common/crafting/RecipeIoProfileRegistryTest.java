@@ -22,6 +22,18 @@ final class RecipeIoProfileRegistryTest
     }
 
     @Test
+    void shipsActuallyAdditionsEmpowererStandInputs()
+    {
+        var profile = read("actually_additions.json");
+        assertEquals(Set.of("actuallyadditions:empower"), profile.recipeTypes());
+        assertEquals(Set.of("de.ellpeck.actuallyadditions.mod.crafting.EmpowererRecipe"),
+                profile.recipeClasses());
+        assertEquals(Set.of("getInput", "getStandOne", "getStandTwo", "getStandThree", "getStandFour"),
+                profile.inputFields());
+        assertEquals(Set.of("getOutput"), profile.outputFields());
+    }
+
+    @Test
     void shipsImmersiveEngineeringCokeOvenBatchAndCreosoteMappings()
     {
         var profile = read("immersiveengineering_coke_oven.json");

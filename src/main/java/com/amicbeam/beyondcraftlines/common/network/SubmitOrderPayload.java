@@ -5,6 +5,7 @@ import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService;
+import com.amicbeam.beyondcraftlines.common.runtime.OrderOutputDestination;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -19,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public record SubmitOrderPayload(String itemId, long count, boolean blockingMode,
+                                 String outputDestination,
                                  long proposalNonce, long stockRevision, long recipeEpoch) implements CustomPacketPayload
 {
     private static final String LAST_SUBMIT_TICK = "beyond_craftlines_last_submit_tick";
@@ -33,14 +35,20 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
             ByteBufCodecs.VAR_INT, IngredientChoice::slot,
             ByteBufCodecs.stringUtf8(256), IngredientChoice::item,
             IngredientChoice::new);
+    private static final StreamCodec<ByteBuf, Options> OPTIONS_CODEC = StreamCodec.composite(
+            ByteBufCodecs.BOOL, Options::blockingMode,
+            ByteBufCodecs.stringUtf8(16), Options::outputDestination,
+            Options::new);
     public static final StreamCodec<ByteBuf, SubmitOrderPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), SubmitOrderPayload::itemId,
             ByteBufCodecs.VAR_LONG, SubmitOrderPayload::count,
-            ByteBufCodecs.BOOL, SubmitOrderPayload::blockingMode,
+            OPTIONS_CODEC, payload -> new Options(payload.blockingMode(), payload.outputDestination()),
             ByteBufCodecs.VAR_LONG, SubmitOrderPayload::proposalNonce,
             ByteBufCodecs.VAR_LONG, SubmitOrderPayload::stockRevision,
             ByteBufCodecs.VAR_LONG, SubmitOrderPayload::recipeEpoch,
-            SubmitOrderPayload::new);
+            (itemId, count, options, nonce, stockRevision, recipeEpoch) -> new SubmitOrderPayload(
+                    itemId, count, options.blockingMode(), options.outputDestination(), nonce,
+                    stockRevision, recipeEpoch));
 
     public static void handle(SubmitOrderPayload payload, IPayloadContext context)
     {
@@ -55,7 +63,6 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 int cooldown = com.amicbeam.beyondcraftlines.CraftlinesConfig.ORDER_SUBMIT_COOLDOWN_TICKS.get();
                 if (cooldown > 0 && last > 0 && now >= last && now - last < cooldown)
                     throw new IllegalStateException("orders are being submitted too quickly");
-                player.getPersistentData().putLong(LAST_SUBMIT_TICK, now);
                 long count = Math.max(1, payload.count());
                 if (!menu.targetToken().equals(payload.itemId())
                         || menu.recipeForResourceOutput(menu.initialTarget()) == null)
@@ -69,9 +76,22 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         player.level(), menu.availableFamilies());
                 if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
                     throw new IllegalStateException("recipes changed; refresh the preview");
-                var currentPlan = validated.plan();
+                var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService
+                        .capture(menu.networkId());
+                var currentPlan = RecipePlanningService.validateFixed(player.serverLevel(), menu.initialTarget(),
+                        count, snapshot, menu.availableFamilies(), validated.overrides());
+                if (!validated.overrides().completelyResolves(currentPlan))
+                    throw new IllegalArgumentException("client plan is incomplete");
+                if (!currentPlan.craftable())
+                    throw new IllegalStateException("missing: " + currentPlan.missing());
+                OrderOutputDestination outputDestination = OrderOutputDestination.byId(payload.outputDestination());
+                if (outputDestination == OrderOutputDestination.INVENTORY
+                        && !(currentPlan.targetKey() instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey))
+                    throw new IllegalArgumentException("inventory delivery is unsupported for this resource");
                 var job = RecipeOrderService.enqueueValidated(player.serverLevel(), player.getUUID(), menu.networkId(),
-                        currentPlan.target(), count, payload.blockingMode(), currentPlan);
+                        currentPlan.target(), count, payload.blockingMode(),
+                        outputDestination, currentPlan);
+                player.getPersistentData().putLong(LAST_SUBMIT_TICK, now);
                 player.displayClientMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()), false);
                 OpenOrderStatusMenuPayload.open(player, menu.networkId(), job);
@@ -101,6 +121,8 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
             return Component.translatable("error.beyond_craftlines.planning_materials_changed");
         if (error != null && error.startsWith("network has no room to return reserved resource:"))
             return Component.translatable("error.beyond_craftlines.order_network_capacity");
+        if ("inventory delivery is unsupported for this resource".equals(error))
+            return Component.translatable("error.beyond_craftlines.order_inventory_unsupported");
         if ("client plan is incomplete".equals(error)
                 || "validated plan does not match the order".equals(error))
             return Component.translatable("error.beyond_craftlines.planning_protocol_invalid");
@@ -126,4 +148,5 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
 
     public record RecipeChoice(String output, String recipe) {}
     public record IngredientChoice(String recipe, int slot, String item) {}
+    private record Options(boolean blockingMode, String outputDestination) {}
 }

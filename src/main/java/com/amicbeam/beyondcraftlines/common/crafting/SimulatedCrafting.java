@@ -1,7 +1,9 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
+import com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -9,16 +11,19 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.ShapedRecipe;
+import net.neoforged.neoforge.fluids.FluidUtil;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessage.encode;
 
@@ -30,6 +35,12 @@ public final class SimulatedCrafting
     /** Deterministic container/remaining items for one crafting operation; reusable tools are excluded. */
     public static List<ItemStack> previewRemainders(RecipeHolder<?> holder, Level level,
                                                     List<RecipePlan.IngredientSelection> selections)
+    { return previewRemainders(holder, level, selections, List.of()); }
+
+    /** Remainders visible to the network; virtual bucket containers are deliberately suppressed. */
+    public static List<ItemStack> previewRemainders(RecipeHolder<?> holder, Level level,
+                                                    List<RecipePlan.IngredientSelection> selections,
+                                                    List<RecipePlan.Material> plannedInputs)
     {
         if (!(holder.value() instanceof CraftingRecipe recipe)) return List.of();
         List<ItemStack> samples = selectedSamples(holder, selections);
@@ -41,6 +52,7 @@ public final class SimulatedCrafting
             List<ItemStack> result = new ArrayList<>();
             for (int i = 0; i < values.size(); i++)
             {
+                if (isPlannedFluidProxy(i, plannedInputs)) continue;
                 ItemStack remainder = values.get(i);
                 ItemStack source = input.getItem(i);
                 if (remainder.isEmpty() || ItemStack.isSameItem(source, remainder)) continue;
@@ -49,6 +61,45 @@ public final class SimulatedCrafting
             return List.copyOf(result);
         }
         catch (RuntimeException ignored) { return List.of(); }
+    }
+
+    /**
+     * Finds crafting slots whose selected item is a Beyond Dimensions-compatible fluid container and whose
+     * real recipe remainder is an empty bucket. The returned amount is the capability-reported fluid amount,
+     * so milk and modded buckets are handled without item or volume allowlists.
+     */
+    public static Map<Integer, KeyAmount> bucketFluidInputs(RecipeHolder<?> holder, Level level,
+                                                            List<RecipePlan.IngredientSelection> selections)
+    {
+        if (!(holder.value() instanceof CraftingRecipe recipe)) return Map.of();
+        List<ItemStack> samples = selectedSamples(holder, selections);
+        try
+        {
+            CraftingInput input = matchingInput(recipe, samples, level);
+            if (input == null) return Map.of();
+            NonNullList<ItemStack> remainders = recipe.getRemainingItems(input);
+            LinkedHashMap<Integer, KeyAmount> result = new LinkedHashMap<>();
+            for (int slot = 0; slot < Math.min(input.size(), remainders.size()); slot++)
+            {
+                ItemStack source = input.getItem(slot);
+                KeyAmount proxy = fluidProxy(source, remainders.get(slot));
+                if (proxy != null) result.put(slot, proxy);
+            }
+            return Map.copyOf(result);
+        }
+        catch (LinkageError | RuntimeException ignored) { return Map.of(); }
+    }
+
+    static KeyAmount fluidProxy(ItemStack source, ItemStack remainder)
+    {
+        if (source.isEmpty() || !remainder.is(Items.BUCKET)) return null;
+        try
+        {
+            var fluid = FluidUtil.getFluidContained(source).orElse(null);
+            return fluid == null || fluid.isEmpty() || fluid.getAmount() < 1 ? null
+                    : new KeyAmount(new FluidStackKey(fluid), fluid.getAmount());
+        }
+        catch (LinkageError | RuntimeException ignored) { return null; }
     }
 
     private static List<ItemStack> selectedSamples(RecipeHolder<?> holder,
@@ -102,14 +153,32 @@ public final class SimulatedCrafting
                                      List<RecipePlan.IngredientSelection> selections,
                                      List<RecipePlan.ReservedMaterial> orderReserved,
                                      boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot)
+    { return craftBatch(level, storage, recipeId, expectedOutput, requestedCrafts, selections,
+            orderReserved, escrowOutput, networkSnapshot, List.of()); }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, ResourceLocation recipeId,
+                                     ResourceLocation expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections,
+                                     List<RecipePlan.ReservedMaterial> orderReserved,
+                                     boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot,
+                                     List<RecipePlan.Material> plannedInputs)
     {
         if (requestedCrafts < 1) return Attempt.failed(encode("crafting_invalid_batch"));
         var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
 
-        Map<ItemStackKey, Long> reservedAmounts = reservedAmounts(orderReserved);
-        Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts, networkSnapshot);
+        Map<IStackKey<?>, Long> reservedAmounts = reservedAmounts(orderReserved);
+        Map<Integer, KeyAmount> discoveredProxies = bucketFluidInputs(holder, level, selections);
+        LinkedHashMap<Integer, KeyAmount> activeProxies = new LinkedHashMap<>();
+        for (RecipePlan.Material input : plannedInputs)
+        {
+            KeyAmount proxy = discoveredProxies.get(input.ingredientSlot());
+            if (proxy != null && input.key() instanceof FluidStackKey
+                    && input.key().isSame(proxy.key())) activeProxies.put(input.ingredientSlot(), proxy);
+        }
+        Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts,
+                networkSnapshot, activeProxies);
         if (prepared == null) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         ItemStack output;
@@ -144,14 +213,15 @@ public final class SimulatedCrafting
         Map<ItemStackKey, Long> returns = new LinkedHashMap<>();
         if (!escrowOutput) add(returns, output, batch);
         for (int i = 0; i < remainders.size(); i++)
-            add(returns, remainders.get(i), persistentSlots[i] ? 1 : batch);
+            if (!prepared.proxySlots().contains(i))
+                add(returns, remainders.get(i), persistentSlots[i] ? 1 : batch);
         for (var entry : returns.entrySet())
             if (!storage.insert(entry.getKey(), entry.getValue(), true).isEmpty())
                 return Attempt.failed(encode("crafting_network_full"));
 
-        Map<ItemStackKey, Long> consumption = consumption(prepared, persistentSlots, batch);
+        Map<IStackKey<?>, Long> consumption = consumption(prepared, persistentSlots, batch);
         List<KeyAmount> extracted = new ArrayList<>();
-        LinkedHashMap<ItemStackKey, Long> consumedReserved = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> consumedReserved = new LinkedHashMap<>();
         for (var entry : consumption.entrySet())
         {
             long fromReserved = Math.min(reservedAmounts.getOrDefault(entry.getKey(), 0L), entry.getValue());
@@ -189,23 +259,24 @@ public final class SimulatedCrafting
 
     private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level,
                                     List<RecipePlan.IngredientSelection> selections,
-                                    Map<ItemStackKey, Long> orderReserved,
-                                    PlanningSnapshotService.Snapshot networkSnapshot)
+                                    Map<IStackKey<?>, Long> orderReserved,
+                                    PlanningSnapshotService.Snapshot networkSnapshot,
+                                    Map<Integer, KeyAmount> fluidProxies)
     {
         List<Ingredient> ingredients = recipe.getIngredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
-        List<ItemStackKey> slotKeys = new ArrayList<>();
-        Map<ItemStackKey, Long> reserved = new LinkedHashMap<>();
-        LinkedHashMap<ItemStackKey, Long> combined = new LinkedHashMap<>(orderReserved);
+        List<IStackKey<?>> slotKeys = new ArrayList<>();
+        List<Long> slotAmounts = new ArrayList<>();
+        Map<IStackKey<?>, Long> reserved = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> combined = new LinkedHashMap<>(orderReserved);
         if (networkSnapshot == null)
         {
             for (KeyAmount available : storage.getStorage())
-                if (available.key() instanceof ItemStackKey key && available.amount() > 0)
-                    combined.merge(key, available.amount(), SaturatingLongMath::add);
+                if (available.amount() > 0)
+                    combined.merge(available.key(), available.amount(), SaturatingLongMath::add);
         }
         else for (PlanningSnapshotService.ComponentEntry available : networkSnapshot.componentEntries())
-            if (available.key() instanceof ItemStackKey itemKey)
-                combined.merge(itemKey, available.amount(), SaturatingLongMath::add);
+            combined.merge(available.key(), available.amount(), SaturatingLongMath::add);
         List<KeyAmount> availableStacks = combined.entrySet().stream()
                 .map(entry -> new KeyAmount(entry.getKey(), entry.getValue())).toList();
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
@@ -218,6 +289,21 @@ public final class SimulatedCrafting
             {
                 chosen.add(ItemStack.EMPTY);
                 slotKeys.add(ItemStackKey.EMPTY);
+                slotAmounts.add(0L);
+                continue;
+            }
+            KeyAmount fluidProxy = fluidProxies.get(ingredientIndex);
+            if (fluidProxy != null)
+            {
+                long alreadyReserved = reserved.getOrDefault(fluidProxy.key(), 0L);
+                if (combined.getOrDefault(fluidProxy.key(), 0L) - alreadyReserved < fluidProxy.amount())
+                    return null;
+                ItemStack sample = selectedSample(ingredient, selectedItems.get(ingredientIndex));
+                if (sample.isEmpty()) return null;
+                reserved.merge(fluidProxy.key(), fluidProxy.amount(), SaturatingLongMath::add);
+                slotKeys.add(fluidProxy.key());
+                slotAmounts.add(fluidProxy.amount());
+                chosen.add(sample);
                 continue;
             }
             ItemStackKey selected = null;
@@ -234,11 +320,21 @@ public final class SimulatedCrafting
             if (selected == null) return null;
             reserved.merge(selected, 1L, Long::sum);
             slotKeys.add(selected);
+            slotAmounts.add(1L);
             chosen.add(selected.getReadOnlyStack().copyWithCount(1));
         }
 
         CraftingInput input = matchingInput(recipe, chosen, level);
-        return input == null ? null : new Prepared(input, List.copyOf(slotKeys));
+        return input == null ? null : new Prepared(input, List.copyOf(slotKeys),
+                List.copyOf(slotAmounts), Set.copyOf(fluidProxies.keySet()));
+    }
+
+    private static ItemStack selectedSample(Ingredient ingredient, ResourceLocation selected)
+    {
+        for (ItemStack candidate : ingredient.getItems())
+            if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+                return candidate.copyWithCount(1);
+        return ItemStack.EMPTY;
     }
 
     public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
@@ -300,24 +396,24 @@ public final class SimulatedCrafting
     }
 
     private static long availableBatch(UnifiedStorage storage, PlanningSnapshotService.Snapshot networkSnapshot,
-                                       Map<ItemStackKey, Long> orderReserved,
+                                       Map<IStackKey<?>, Long> orderReserved,
                                        Prepared prepared, boolean[] persistent,
                                        long requested)
     {
-        Map<ItemStackKey, Long> fixed = new LinkedHashMap<>();
-        Map<ItemStackKey, Long> perBatch = new LinkedHashMap<>();
+        Map<IStackKey<?>, Long> fixed = new LinkedHashMap<>();
+        Map<IStackKey<?>, Long> perBatch = new LinkedHashMap<>();
         for (int i = 0; i < prepared.slotKeys().size(); i++)
         {
-            ItemStackKey key = prepared.slotKeys().get(i);
+            IStackKey<?> key = prepared.slotKeys().get(i);
             if (key == ItemStackKey.EMPTY) continue;
-            (persistent[i] ? fixed : perBatch).merge(key, 1L, Long::sum);
+            (persistent[i] ? fixed : perBatch).merge(key, prepared.slotAmounts().get(i),
+                    SaturatingLongMath::add);
         }
         long batch = requested;
-        Map<ItemStackKey, Long> snapshotAmounts = new LinkedHashMap<>();
+        Map<IStackKey<?>, Long> snapshotAmounts = new LinkedHashMap<>();
         if (networkSnapshot != null)
             for (PlanningSnapshotService.ComponentEntry value : networkSnapshot.componentEntries())
-                if (value.key() instanceof ItemStackKey itemKey)
-                    snapshotAmounts.put(itemKey, value.amount());
+                snapshotAmounts.put(value.key(), value.amount());
         for (var entry : perBatch.entrySet())
         {
             long networkAmount = networkSnapshot == null ? storage.getStackByKey(entry.getKey()).amount()
@@ -331,14 +427,16 @@ public final class SimulatedCrafting
         return batch;
     }
 
-    private static Map<ItemStackKey, Long> consumption(Prepared prepared, boolean[] persistent, long batch)
+    private static Map<IStackKey<?>, Long> consumption(Prepared prepared, boolean[] persistent, long batch)
     {
-        Map<ItemStackKey, Long> result = new LinkedHashMap<>();
+        Map<IStackKey<?>, Long> result = new LinkedHashMap<>();
         for (int i = 0; i < prepared.slotKeys().size(); i++)
         {
-            ItemStackKey key = prepared.slotKeys().get(i);
+            IStackKey<?> key = prepared.slotKeys().get(i);
             if (key == ItemStackKey.EMPTY) continue;
-            result.merge(key, persistent[i] ? 1L : batch, SaturatingLongMath::add);
+            long amount = prepared.slotAmounts().get(i);
+            result.merge(key, persistent[i] ? amount : SaturatingLongMath.multiply(amount, batch),
+                    SaturatingLongMath::add);
         }
         return result;
     }
@@ -355,15 +453,21 @@ public final class SimulatedCrafting
         extracted.forEach(value -> storage.insert(value.key(), value.amount(), false));
     }
 
-    private record Prepared(CraftingInput input, List<ItemStackKey> slotKeys) {}
+    private record Prepared(CraftingInput input, List<IStackKey<?>> slotKeys, List<Long> slotAmounts,
+                            Set<Integer> proxySlots) {}
 
-    private static Map<ItemStackKey, Long> reservedAmounts(List<RecipePlan.ReservedMaterial> reserved)
+    private static Map<IStackKey<?>, Long> reservedAmounts(List<RecipePlan.ReservedMaterial> reserved)
     {
-        LinkedHashMap<ItemStackKey, Long> result = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> result = new LinkedHashMap<>();
         for (RecipePlan.ReservedMaterial material : reserved)
-            if (material.key() instanceof ItemStackKey itemKey)
-                result.merge(itemKey, material.amount(), SaturatingLongMath::add);
+            result.merge(material.key(), material.amount(), SaturatingLongMath::add);
         return result;
+    }
+
+    private static boolean isPlannedFluidProxy(int slot, List<RecipePlan.Material> inputs)
+    {
+        return inputs.stream().anyMatch(input -> input.ingredientSlot() == slot
+                && input.key() instanceof FluidStackKey);
     }
 
     public record Attempt(boolean success, String reason, long output, long crafts,

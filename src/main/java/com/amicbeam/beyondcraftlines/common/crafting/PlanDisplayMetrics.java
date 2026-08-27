@@ -87,7 +87,7 @@ public final class PlanDisplayMetrics
             var holder = level.getRecipeManager().byKey(step.recipe()).orElse(null);
             if (holder == null) continue;
             for (ItemStack remainder : SimulatedCrafting.previewRemainders(
-                    holder, level, step.ingredientSelections()))
+                    holder, level, step.ingredientSelections(), step.inputs()))
             {
                 if (remainder.isEmpty()) continue;
                 long amount = SaturatingLongMath.multiply(remainder.getCount(), step.crafts());

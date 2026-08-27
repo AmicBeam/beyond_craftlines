@@ -337,17 +337,19 @@ public final class RecipePlanningService
                 selections.add(new RecipePlan.IngredientSelection(recipeIngredients.get(i).slot(),
                         BuiltInRegistries.ITEM.getKey(itemKey.getSource())));
         boolean[] reusableSlots = SimulatedCrafting.reusableIngredientSlots(holder, level, selections);
+        Map<Integer, KeyAmount> fluidProxies = SimulatedCrafting.bucketFluidInputs(holder, level, selections);
         for (int i = 0; i < variant.size(); i++)
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
-            KeyAmount choice = variant.get(i);
+            KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
             boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
             long inputAmount = PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
             (reusable ? reusableDependencyInputs : dependencyInputs)
                     .add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
-            dependencyIngredients.putIfAbsent(choice.key(), ingredient.itemIngredient());
+            dependencyIngredients.putIfAbsent(choice.key(), fluidProxies.containsKey(ingredient.slot())
+                    ? null : ingredient.itemIngredient());
         }
         for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
             resolve(level, dependency.getKey(), dependency.getValue(),

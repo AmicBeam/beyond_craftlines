@@ -6,6 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
+import com.amicbeam.beyondcraftlines.common.runtime.OrderOutputDestination;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import org.slf4j.Logger;
@@ -50,7 +51,7 @@ public final class ClientPlannerPreferences
         Snapshot old = load();
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
         if (recipe == null) recipes.remove(output); else recipes.put(output, recipe);
-        return write(recipes, old.ingredients());
+        return write(recipes, old.ingredients(), old.outputDestination());
     }
 
     public static synchronized boolean setIngredients(ResourceLocation recipe, Iterable<Integer> slots,
@@ -63,7 +64,13 @@ public final class ClientPlannerPreferences
             String key = ingredientKey(recipe, slot);
             if (item == null) ingredients.remove(key); else ingredients.put(key, item);
         }
-        return write(old.recipes(), ingredients);
+        return write(old.recipes(), ingredients, old.outputDestination());
+    }
+
+    public static synchronized boolean setOutputDestination(OrderOutputDestination destination)
+    {
+        Snapshot old = load();
+        return write(old.recipes(), old.ingredients(), destination);
     }
 
     public static String ingredientKey(ResourceLocation recipe, int slot)
@@ -89,12 +96,15 @@ public final class ClientPlannerPreferences
         {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             return new Snapshot(readMap(root.getAsJsonObject("recipes")),
-                    readMap(root.getAsJsonObject("ingredients")));
+                    readMap(root.getAsJsonObject("ingredients")),
+                    OrderOutputDestination.byId(root.has("output_destination")
+                            ? root.get("output_destination").getAsString() : "network"));
         }
     }
 
     private static boolean write(Map<String, ResourceLocation> recipes,
-                                 Map<String, ResourceLocation> ingredients)
+                                 Map<String, ResourceLocation> ingredients,
+                                 OrderOutputDestination outputDestination)
     {
         Path path = path();
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
@@ -103,6 +113,7 @@ public final class ClientPlannerPreferences
             Files.createDirectories(path.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("version", 1);
+            root.addProperty("output_destination", outputDestination.id());
             root.add("recipes", toJson(recipes));
             root.add("ingredients", toJson(ingredients));
             try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
@@ -146,8 +157,10 @@ public final class ClientPlannerPreferences
     { return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve(FILE_NAME); }
 
     public record Snapshot(Map<String, ResourceLocation> recipes,
-                           Map<String, ResourceLocation> ingredients)
+                           Map<String, ResourceLocation> ingredients,
+                           OrderOutputDestination outputDestination)
     {
-        private static final Snapshot EMPTY = new Snapshot(Map.of(), Map.of());
+        private static final Snapshot EMPTY = new Snapshot(
+                Map.of(), Map.of(), OrderOutputDestination.NETWORK);
     }
 }

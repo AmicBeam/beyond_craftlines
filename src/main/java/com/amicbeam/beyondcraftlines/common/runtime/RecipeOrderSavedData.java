@@ -60,12 +60,14 @@ public final class RecipeOrderSavedData extends SavedData
                     job = new RecipeOrderJob(value.getUUID("id"), value.getUUID("owner"),
                             value.getInt("network"), ResourceLocation.parse(value.getString("target")),
                             value.getLong("requested"), executions, -1, value.getBoolean("blocking_mode"),
+                            OrderOutputDestination.byId(value.getString("output_destination")),
                             RecipeOrderJob.Status.valueOf(value.getString("status")), value.getString("message"),
                             value.getLong("created"), value.getLong("finished"), readReserved(value, registries));
                 }
                 else job = new RecipeOrderJob(value.getUUID("id"), value.getUUID("owner"),
                         value.getInt("network"), ResourceLocation.parse(value.getString("target")),
                         value.getLong("requested"), steps, value.getInt("next"), value.getBoolean("blocking_mode"),
+                        OrderOutputDestination.byId(value.getString("output_destination")),
                         RecipeOrderJob.Status.valueOf(value.getString("status")), value.getString("message"),
                         value.getLong("created"), value.getLong("finished"), value.getLong("next_crafting_tick"),
                         readExternalWait(value, registries), readReserved(value, registries));
@@ -129,6 +131,7 @@ public final class RecipeOrderSavedData extends SavedData
             value.putInt("network", job.networkId()); value.putString("target", job.target().toString());
             value.putLong("requested", job.requested()); value.putInt("next", job.nextStep());
             value.putBoolean("blocking_mode", job.blockingMode());
+            value.putString("output_destination", job.outputDestination().id());
             value.putString("status", job.status().name()); value.putString("message", job.message());
             value.putLong("created", job.createdAt());
             value.putLong("finished", job.finishedAt());

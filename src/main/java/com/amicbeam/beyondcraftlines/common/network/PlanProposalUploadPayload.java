@@ -87,40 +87,11 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         if (!assembly.sequence().complete()) return;
         ASSEMBLIES.remove(playerId);
 
-        var snapshot = PlanningSnapshotService.capture(menu.networkId());
-        long recipeEpoch = PlanningSnapshotService.recipeEpoch(player.level(), menu.availableFamilies());
-        // Inventory is intentionally not compared as a whole. The proposal fixes recipe/tag choices;
-        // current component-aware materials are validated now and once more at submission.
-        if (PlanningFreshness.evaluate(header.stockRevision(), snapshot.revision(), header.recipeEpoch(),
-                recipeEpoch, true) == PlanningFreshness.Result.RECIPES_CHANGED)
-        {
-            ASSEMBLIES.remove(playerId);
-            PacketDistributor.sendToPlayer(player, PlanPreviewPayload.stale(payload.nonce(), payload.itemId()));
-            return;
-        }
         RecipeResolutionOverrides overrides = SubmitOrderPayload.overrides(
                 assembly.recipes(), assembly.ingredients());
-        RecipePlan plan = RecipePlanningService.validateFixed(player.serverLevel(), target, header.count(),
-                snapshot, menu.availableFamilies(), overrides);
-        if (!overrides.completelyResolves(plan))
-            throw new IllegalArgumentException("client proposal is incomplete");
-        if (!plan.craftable())
-        {
-            for (PlanPreviewPayload page : PlanPreviewPayload.missing(payload.nonce(), plan))
-                PacketDistributor.sendToPlayer(player, page);
-            return;
-        }
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
-                menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides, plan));
-        // Explanatory totals must follow the proposal the server just validated. Resources whose
-        // recipes were not selected (usually because network stock satisfied them) are terminal
-        // raw materials; searching beyond them can explode into an unrelated modpack recipe graph.
-        RecipePlan theoretical = RecipePlanningService.planSelectedChain(player.serverLevel(), target,
-                header.count(), menu.availableFamilies(), overrides);
-        for (PlanPreviewPayload page : PlanPreviewPayload.from(payload.nonce(), plan, theoretical,
-                player.serverLevel()))
-            PacketDistributor.sendToPlayer(player, page);
+                menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides));
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

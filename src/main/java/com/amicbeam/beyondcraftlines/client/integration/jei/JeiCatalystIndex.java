@@ -1,10 +1,12 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint;
+import com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeTypeVisibility;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -83,6 +85,19 @@ public final class JeiCatalystIndex
         return TITLES_BY_TYPE.keySet();
     }
 
+    /** Uses the synced client recipe manager to mirror the server's representative-hint validation. */
+    public static Set<ResourceLocation> recipeTypes(Set<String> loadedFamilies,
+                                                    Map<String, Set<String>> aliases,
+                                                    boolean debugMappings)
+    {
+        Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(ResourceLocation::toString)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> visible = ManualRecipeTypeVisibility.visible(
+                allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
+        return visible.stream().map(ResourceLocation::parse)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     public static List<RecipeFamilyHint> hintsFor(Set<ResourceLocation> types)
     {
         return types.stream().sorted(java.util.Comparator.comparing(ResourceLocation::toString))
@@ -125,6 +140,23 @@ public final class JeiCatalystIndex
             }
         });
         return List.copyOf(byFamily.values());
+    }
+
+    private static Map<String, Set<String>> verifiedHintFamilies()
+    {
+        var level = Minecraft.getInstance().level;
+        if (level == null) return Map.of();
+        Map<String, LinkedHashSet<String>> verified = new HashMap<>();
+        HINTS_BY_TYPE.forEach((type, hints) -> hints.forEach(hint -> {
+            ResourceLocation recipeId = ResourceLocation.tryParse(hint.recipeId());
+            if (recipeId == null) return;
+            var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
+            if (holder != null && hint.family().equals(RecipePlanningService.family(holder)))
+                verified.computeIfAbsent(type.toString(), ignored -> new LinkedHashSet<>()).add(hint.family());
+        }));
+        Map<String, Set<String>> frozen = new HashMap<>();
+        verified.forEach((type, families) -> frozen.put(type, Set.copyOf(families)));
+        return Map.copyOf(frozen);
     }
 
     private static <R extends Recipe<?>> RecipeHolder<R> holder(ResourceLocation id, R recipe)

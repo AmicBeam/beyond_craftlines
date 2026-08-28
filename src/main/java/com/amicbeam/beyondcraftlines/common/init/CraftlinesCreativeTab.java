@@ -20,6 +20,7 @@ public final class CraftlinesCreativeTab
                 .displayItems((parameters, output) -> {
                     output.accept(CraftlinesItems.NETWORK_LINKER);
                     output.accept(CraftlinesItems.CRAFTLINE_PROVISIONER);
+                    output.accept(CraftlinesItems.CRAFTLINE_DASHBOARD);
                 }).build());
     }
 

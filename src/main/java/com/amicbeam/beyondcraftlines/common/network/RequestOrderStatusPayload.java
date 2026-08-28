@@ -49,7 +49,7 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
 
             RecipeOrderSavedData data = RecipeOrderSavedData.get(player.server);
             data.removeExpiredDisplayedTerminal(player.server.overworld().getGameTime());
-            List<RecipeOrderJob> jobs = data.forOwner(player.getUUID()).stream()
+            List<RecipeOrderJob> jobs = data.all().stream()
                     .filter(job -> job.networkId() == payload.networkId())
                     .sorted(java.util.Comparator.comparingLong(RecipeOrderJob::createdAt).reversed())
                     .limit(MAX_ORDERS).toList();
@@ -100,6 +100,7 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
         value.putInt("next", (int) job.executions().stream().filter(RecipeOrderJob.StepExecution::complete).count());
         value.putInt("total", job.executions().size());
         value.putBoolean("blocking_mode", job.blockingMode());
+        value.putString("origin", job.origin().id());
         value.putString("status", job.status().name());
         value.putString("message", job.message());
 

@@ -14,6 +14,7 @@ import java.util.UUID;
 public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocation target,
                              long requested, List<StepExecution> executions, int activeStep,
                              boolean blockingMode, OrderOutputDestination outputDestination,
+                             OrderOrigin origin,
                              Status status, String message,
                              long createdAt, long finishedAt,
                              List<RecipePlan.ReservedMaterial> reserved)
@@ -26,6 +27,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         reserved = List.copyOf(reserved);
         message = message == null ? "" : message;
         outputDestination = outputDestination == null ? OrderOutputDestination.NETWORK : outputDestination;
+        origin = origin == null ? OrderOrigin.MANUAL : origin;
         if (activeStep < -1 || activeStep >= executions.size())
             throw new IllegalArgumentException("invalid active recipe step");
     }
@@ -36,7 +38,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                           long createdAt, long finishedAt, List<RecipePlan.ReservedMaterial> reserved)
     {
         this(id, owner, networkId, target, requested, executions, activeStep, blockingMode,
-                OrderOutputDestination.NETWORK, status, message, createdAt, finishedAt, reserved);
+                OrderOutputDestination.NETWORK, OrderOrigin.MANUAL, status, message,
+                createdAt, finishedAt, reserved);
     }
 
     /** Loads the pre-parallel order shape conservatively as a serial dependency chain. */
@@ -48,7 +51,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
     {
         this(id, owner, networkId, target, requested,
                 migrateLegacy(steps, nextStep, nextCraftingTick, externalWait), -1,
-                blockingMode, OrderOutputDestination.NETWORK, status, message, createdAt, finishedAt, reserved);
+                blockingMode, OrderOutputDestination.NETWORK, OrderOrigin.MANUAL,
+                status, message, createdAt, finishedAt, reserved);
     }
 
     public RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocation target,
@@ -60,7 +64,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
     {
         this(id, owner, networkId, target, requested,
                 migrateLegacy(steps, nextStep, nextCraftingTick, externalWait), -1,
-                blockingMode, outputDestination, status, message, createdAt, finishedAt, reserved);
+                blockingMode, outputDestination, OrderOrigin.MANUAL,
+                status, message, createdAt, finishedAt, reserved);
     }
 
     public static RecipeOrderJob create(UUID id, UUID owner, int networkId, ResourceLocation target,
@@ -71,7 +76,29 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
     {
         return new RecipeOrderJob(id, owner, networkId, target, requested,
                 steps.stream().map(StepExecution::pending).toList(), -1, blockingMode,
-                outputDestination, status, message, createdAt, finishedAt, reserved);
+                outputDestination, OrderOrigin.MANUAL, status, message, createdAt, finishedAt, reserved);
+    }
+
+    public static RecipeOrderJob createAutomatic(UUID id, UUID owner, int networkId, ResourceLocation target,
+                                                  long requested, List<RecipePlan.Step> steps,
+                                                  boolean blockingMode, Status status, String message,
+                                                  long createdAt, long finishedAt,
+                                                  List<RecipePlan.ReservedMaterial> reserved)
+    {
+        return createAutomatic(id, owner, networkId, target, requested, steps, blockingMode,
+                OrderOutputDestination.NETWORK, status, message, createdAt, finishedAt, reserved);
+    }
+
+    public static RecipeOrderJob createAutomatic(UUID id, UUID owner, int networkId, ResourceLocation target,
+                                                  long requested, List<RecipePlan.Step> steps,
+                                                  boolean blockingMode, OrderOutputDestination outputDestination,
+                                                  Status status, String message, long createdAt, long finishedAt,
+                                                  List<RecipePlan.ReservedMaterial> reserved)
+    {
+        return new RecipeOrderJob(id, owner, networkId, target, requested,
+                steps.stream().map(StepExecution::pending).toList(), -1, blockingMode,
+                outputDestination, OrderOrigin.AUTOMATIC,
+                status, message, createdAt, finishedAt, reserved);
     }
 
     public static RecipeOrderJob create(UUID id, UUID owner, int networkId, ResourceLocation target,
@@ -148,7 +175,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         List<StepExecution> updated = new java.util.ArrayList<>(executions);
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs(),
-                current.ingredientSelections(), current.dependencies());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextAllowedTick, null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -156,20 +183,22 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
     public RecipeOrderJob completeExternalBatch()
     {
         requireActive();
-        if (!blockingMode || executions.get(activeStep).step().crafts() <= 1) return advance();
-        List<StepExecution> updated = new java.util.ArrayList<>(executions);
         RecipePlan.Step current = executions.get(activeStep).step();
+        boolean sequential = blockingMode || current.selfIncrementSeed() > 0;
+        if (!sequential || current.crafts() <= 1) return advance();
+        List<StepExecution> updated = new java.util.ArrayList<>(executions);
         List<RecipePlan.Material> remainingInputs = new java.util.ArrayList<>();
         for (RecipePlan.Material input : current.inputs())
         {
-            long amount = input.amount() - BlockingModeLogic.amountToDispatch(
-                    true, input.amount(), current.crafts());
+            long amount = current.outputKey().isSame(input.key()) ? input.amount()
+                    : input.amount() - BlockingModeLogic.amountToDispatch(
+                            true, input.amount(), current.crafts());
             if (amount > 0) remainingInputs.add(new RecipePlan.Material(
                     input.key(), amount, input.ingredientSlot(), input.inputGroup()));
         }
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,
-                current.ingredientSelections(), current.dependencies());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextCraftingTick(), null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -206,7 +235,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                                 List<RecipePlan.ReservedMaterial> nextReserved)
     {
         return new RecipeOrderJob(id, owner, networkId, target, requested, nextExecutions, nextActive,
-                blockingMode, outputDestination, nextStatus, nextMessage,
+                blockingMode, outputDestination, origin, nextStatus, nextMessage,
                 nextCreatedAt, nextFinishedAt, nextReserved);
     }
 
@@ -221,7 +250,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                     ? java.util.stream.IntStream.range(0, i).boxed().toList() : source.dependencies();
             RecipePlan.Step step = new RecipePlan.Step(source.recipe(), source.family(), source.outputKey(),
                     source.outputPerCraft(), source.crafts(), source.inputs(),
-                    source.ingredientSelections(), dependencies);
+                    source.ingredientSelections(), dependencies, source.selfIncrementSeed());
             migrated.add(new StepExecution(step, i < nextStep,
                     i == nextStep ? nextCraftingTick : 0, i == nextStep ? externalWait : null));
         }

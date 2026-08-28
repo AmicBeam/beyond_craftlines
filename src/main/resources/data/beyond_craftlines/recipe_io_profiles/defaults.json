@@ -5,7 +5,7 @@
     "inputOne", "getInputOne", "inputTwo", "getInputTwo", "inputThree", "getInputThree",
     "leftInput", "getLeftInput", "rightInput", "getRightInput", "middleInput", "getMiddleInput",
     "primaryInput", "getPrimaryInput", "primaryInputs", "getPrimaryInputs",
-    "main", "getMain", "mainInput", "getMainInput",
+    "main", "getMain", "mainInput", "getMainInput", "catalyst", "getCatalyst",
     "activationItem", "getActivationItem", "extraInput", "getExtraInput", "extraInputs", "getExtraInputs",
     "secondaryInput", "getSecondaryInput", "secondaryInputs", "getSecondaryInputs",
     "itemInput", "getItemInput", "itemInputs", "getItemInputs",
@@ -22,6 +22,7 @@
     "gasIngredient", "getGasIngredient", "gasIngredients", "getGasIngredients",
     "spirits", "getSpirits", "offerings", "getOfferings"
   ],
+  "distinct_input_fields": ["catalyst", "getCatalyst"],
   "output_fields": [
     "getOutputDefinition", "getOutputDefinitions",
     "getGasOutputDefinition", "getChemicalOutputDefinition", "getFluidOutputDefinition",

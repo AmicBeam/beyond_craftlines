@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "facing=north": {"model":"beyond_craftlines:block/craftline_dashboard"},
+    "facing=south": {"model":"beyond_craftlines:block/craftline_dashboard","y":180},
+    "facing=west": {"model":"beyond_craftlines:block/craftline_dashboard","y":270},
+    "facing=east": {"model":"beyond_craftlines:block/craftline_dashboard","y":90},
+    "facing=up": {"model":"beyond_craftlines:block/craftline_dashboard","x":270},
+    "facing=down": {"model":"beyond_craftlines:block/craftline_dashboard","x":90}
+  }
+}

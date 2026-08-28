@@ -11,6 +11,7 @@ final class OrderOutputDestinationTest
     {
         assertEquals(OrderOutputDestination.NETWORK, OrderOutputDestination.byId(null));
         assertEquals(OrderOutputDestination.NETWORK, OrderOutputDestination.byId("unknown"));
+        assertEquals(OrderOutputDestination.CONTAINER, OrderOutputDestination.byId("container"));
     }
 
     @Test
@@ -18,5 +19,6 @@ final class OrderOutputDestinationTest
     {
         assertEquals(OrderOutputDestination.INVENTORY, OrderOutputDestination.NETWORK.next());
         assertEquals(OrderOutputDestination.NETWORK, OrderOutputDestination.INVENTORY.next());
+        assertEquals(OrderOutputDestination.NETWORK, OrderOutputDestination.CONTAINER.next());
     }
 }

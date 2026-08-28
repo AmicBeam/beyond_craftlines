@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.init;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity;
+import com.amicbeam.beyondcraftlines.common.runtime.CraftlineDashboardBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -14,6 +15,9 @@ public final class CraftlinesBlockEntities
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CraftlineProvisionerBlockEntity>> CRAFTLINE_PROVISIONER = BLOCK_ENTITIES.register(
             "craftline_provisioner", () -> new BlockEntityType<>(CraftlineProvisionerBlockEntity::new,
                     java.util.Set.of(CraftlinesBlocks.CRAFTLINE_PROVISIONER.get())));
+    public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<CraftlineDashboardBlockEntity>> CRAFTLINE_DASHBOARD = BLOCK_ENTITIES.register(
+            "craftline_dashboard", () -> new BlockEntityType<>(CraftlineDashboardBlockEntity::new,
+                    java.util.Set.of(CraftlinesBlocks.CRAFTLINE_DASHBOARD.get())));
 
     public static void register(IEventBus bus) { BLOCK_ENTITIES.register(bus); }
     private CraftlinesBlockEntities() {}

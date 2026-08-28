@@ -143,7 +143,6 @@ public final class ClientRecipePlanner
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
-        state.stock.consume(target.getTypeId(), target::isSame, Long.MAX_VALUE);
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
@@ -159,7 +158,7 @@ public final class ClientRecipePlanner
     {
         budget.checkCancellation();
         budget.visit(budgetIdentity(resource));
-        long used = consume(state, resource, needed);
+        long used = depth == 0 ? 0 : consume(state, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
         if (depth >= maxDepth)
@@ -168,7 +167,7 @@ public final class ClientRecipePlanner
             return;
         }
         if (!visiting.add(RecipeResourceResolver.sortKey(resource)))
-            throw new CyclicRecipePathException(resource);
+            throw new PlanningCycleBranch.Cycle();
         String resourceId = RecipeResourceResolver.sortKey(resource);
         try
         {
@@ -195,17 +194,13 @@ public final class ClientRecipePlanner
                     state.missing.merge(resource, remainder, SaturatingLongMath::add);
                     return;
                 }
-                try
-                {
-                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
+                State attempted = branch;
+                branch = PlanningCycleBranch.evaluate(state, () -> {
+                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), attempted,
                             manualRecipes, manualIngredients, depth, maxDepth, budget);
-                    state.replaceWith(branch);
-                }
-                catch (CyclicRecipePathException cycle)
-                {
-                    if (!resource.isSame(cycle.resource)) throw cycle;
-                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
-                }
+                    return attempted;
+                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
+                state.replaceWith(branch);
                 return;
             }
             State best = null;
@@ -216,17 +211,12 @@ public final class ClientRecipePlanner
                 State branch = state.copy();
                 ResourceLocation previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
-                try
-                {
-                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), branch,
+                State attempted = branch;
+                branch = PlanningCycleBranch.evaluate(state, () -> {
+                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), attempted,
                             manualRecipes, manualIngredients, depth, maxDepth, budget);
-                }
-                catch (CyclicRecipePathException cycle)
-                {
-                    if (!resource.isSame(cycle.resource)) throw cycle;
-                    branch = state.copy();
-                    branch.missing.merge(resource, remainder, SaturatingLongMath::add);
-                }
+                    return attempted;
+                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -310,7 +300,20 @@ public final class ClientRecipePlanner
     {
         LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
         LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
-        long crafts = SaturatingLongMath.ceilDiv(remainder, recipe.outputCount());
+        long seedPerCraft = 0;
+        long consumedSeedPerCraft = 0;
+        for (int i = 0; i < variant.size(); i++)
+        {
+            Slot slot = recipe.slots().get(i);
+            Candidate candidate = variant.get(i);
+            if (!output.isSame(candidate.key())) continue;
+            seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
+            if (!slot.reusable())
+                consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
+        }
+        SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
+                recipe.outputCount(), seedPerCraft, consumedSeedPerCraft, remainder);
+        long crafts = shape.crafts();
         for (int i = 0; i < variant.size(); i++)
         {
             Slot slot = recipe.slots().get(i);
@@ -322,16 +325,24 @@ public final class ClientRecipePlanner
                 ResourceLocation previous = state.ingredients.putIfAbsent(key, candidateItem);
                 if (previous != null && !previous.equals(candidateItem)) return false;
             }
-            long inputAmount = slot.reusable() ? candidate.count()
+            boolean selfInput = shape.selfIncrement() && output.isSame(candidate.key());
+            long inputAmount = selfInput || slot.reusable() ? candidate.count()
                     : SaturatingLongMath.multiply(crafts, candidate.count());
             (slot.reusable() ? reusableInputs : inputs)
                     .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
-            resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
-                    manualIngredients, depth + 1, maxDepth, budget);
+            if (shape.selfIncrement() && output.isSame(input.getKey()))
+                consumeLeaf(state, input.getKey(), input.getValue());
+            else resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
+                        manualIngredients, depth + 1, maxDepth, budget);
         for (var input : reusableInputs.entrySet())
         {
+            if (shape.selfIncrement() && output.isSame(input.getKey()))
+            {
+                consumeLeaf(state, input.getKey(), input.getValue());
+                continue;
+            }
             long additional = PlanningDependencyBatcher.additionalReusableAmount(
                     state.reusableRequirements, input.getKey(), input.getValue());
             if (additional > 0)
@@ -339,9 +350,15 @@ public final class ClientRecipePlanner
                         manualIngredients, depth + 1, maxDepth, budget);
         }
         state.steps++;
-        long produced = SaturatingLongMath.multiply(recipe.outputCount(), crafts);
+        long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         if (produced > remainder) state.stock.add(output, produced - remainder);
         return true;
+    }
+
+    private static void consumeLeaf(State state, IStackKey<?> key, long amount)
+    {
+        long used = consume(state, key, amount);
+        if (used < amount) state.missing.merge(key, amount - used, SaturatingLongMath::add);
     }
 
     private static int compare(State left, Recipe leftRecipe, State right, Recipe rightRecipe)
@@ -360,11 +377,13 @@ public final class ClientRecipePlanner
         return total;
     }
 
-    private static final class CyclicRecipePathException extends RuntimeException
+    private static State rejectCyclicCandidate(State baseline, IStackKey<?> resource, long remainder)
     {
-        private final IStackKey<?> resource;
-        private CyclicRecipePathException(IStackKey<?> resource) { this.resource = resource; }
-        @Override public synchronized Throwable fillInStackTrace() { return this; }
+        // Reject only this candidate. The cycle may close over an ancestor,
+        // but sibling recipes for the current resource can still be viable.
+        State rejected = baseline.copy();
+        rejected.missing.merge(resource, remainder, SaturatingLongMath::add);
+        return rejected;
     }
 
     public record Catalog(List<Recipe> recipes) { public Catalog { recipes = List.copyOf(recipes); } }

@@ -43,6 +43,13 @@ public final class CraftlinesNetwork
                 ConfigureProvisionerDeliveryStrategyPayload::handle);
         registrar.playToServer(ReturnProvisionerContentPayload.TYPE, ReturnProvisionerContentPayload.STREAM_CODEC,
                 ReturnProvisionerContentPayload::handle);
+        registrar.playToServer(ConfigureDashboardPayload.TYPE, ConfigureDashboardPayload.STREAM_CODEC, ConfigureDashboardPayload::handle);
+        registrar.playToServer(OpenDashboardRecipePayload.TYPE, OpenDashboardRecipePayload.STREAM_CODEC, OpenDashboardRecipePayload::handle);
+        registrar.playToServer(SaveDashboardRecipePayload.TYPE, SaveDashboardRecipePayload.STREAM_CODEC, SaveDashboardRecipePayload::handle);
+        registrar.playToServer(OpenDashboardStatusMenuPayload.TYPE, OpenDashboardStatusMenuPayload.STREAM_CODEC,
+                OpenDashboardStatusMenuPayload::handle);
+        registrar.playToServer(RequestDashboardStatusPayload.TYPE, RequestDashboardStatusPayload.STREAM_CODEC,
+                RequestDashboardStatusPayload::handle);
         registrar.playToServer(RequestBindingVisualsPayload.TYPE, RequestBindingVisualsPayload.STREAM_CODEC,
                 RequestBindingVisualsPayload::handle);
         registrar.playToServer(RequestJeiNetworkAvailabilityPayload.TYPE,
@@ -64,5 +71,7 @@ public final class CraftlinesNetwork
                 JeiNetworkAvailabilityPayload::handle);
         registrar.playToClient(RecipeIoProfilePayload.TYPE, RecipeIoProfilePayload.STREAM_CODEC,
                 RecipeIoProfilePayload::handle);
+        registrar.playToClient(DashboardStatusPayload.TYPE, DashboardStatusPayload.STREAM_CODEC,
+                DashboardStatusPayload::handle);
     }
 }

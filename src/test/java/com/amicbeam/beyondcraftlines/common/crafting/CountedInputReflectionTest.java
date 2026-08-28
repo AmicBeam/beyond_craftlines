@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -151,6 +152,19 @@ final class CountedInputReflectionTest
         assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("getActivationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("activationItem"));
         assertEquals("activation_item", CountedInputReflection.inputGroup("getActivationItem"));
+    }
+
+    @Test
+    void discoversGenericCatalystInput()
+    {
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("catalyst"));
+        assertTrue(RecipeIoProfileRegistry.inputMembers(null).contains("getCatalyst"));
+        assertEquals("catalyst", CountedInputReflection.inputGroup("catalyst"));
+        assertEquals("catalyst", CountedInputReflection.inputGroup("getCatalyst"));
+        assertTrue(RecipeIoProfileRegistry.distinctInputMember(null, "catalyst"));
+        assertTrue(RecipeIoProfileRegistry.distinctInputMember(null, "getCatalyst"));
+        assertFalse(RecipeResourceResolver.shouldSkipCanonicalInput(true, Set.of("same"), "same"));
+        assertTrue(RecipeResourceResolver.shouldSkipCanonicalInput(false, Set.of("same"), "same"));
     }
 
     @Test

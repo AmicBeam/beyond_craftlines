@@ -77,24 +77,32 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
 
     public record Step(Identifier recipe, String family, IStackKey<?> outputKey,
                        long outputPerCraft, long crafts, List<Material> inputs,
-                       List<IngredientSelection> ingredientSelections, List<Integer> dependencies)
+                       List<IngredientSelection> ingredientSelections, List<Integer> dependencies,
+                       long selfIncrementSeed)
     {
         public Step(Identifier recipe, String family, IStackKey<?> outputKey,
                     long outputPerCraft, long crafts, List<Material> inputs,
+                    List<IngredientSelection> ingredientSelections, List<Integer> dependencies)
+        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs,
+                ingredientSelections, dependencies, 0); }
+
+        public Step(Identifier recipe, String family, IStackKey<?> outputKey,
+                    long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections)
-        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs, ingredientSelections, List.of()); }
+        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs,
+                ingredientSelections, List.of(), 0); }
 
         public Step(Identifier recipe, String family, Identifier output,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections)
         { this(recipe, family, new ItemStackKey(new net.minecraft.world.item.ItemStack(
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(output))), outputPerCraft, crafts,
-                inputs, ingredientSelections, List.of()); }
+                inputs, ingredientSelections, List.of(), 0); }
 
         public Step
         {
             if (recipe == null || family == null || family.isBlank() || outputKey == null || outputKey.isEmpty()
-                    || outputPerCraft < 1 || crafts < 1)
+                    || outputPerCraft < 1 || crafts < 1 || selfIncrementSeed < 0)
                 throw new IllegalArgumentException("invalid recipe step");
             inputs = List.copyOf(inputs);
             ingredientSelections = List.copyOf(ingredientSelections);

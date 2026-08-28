@@ -57,6 +57,15 @@ public final class ClientPlannerPreferences
         return write(recipes, old.ingredients(), old.outputDestination());
     }
 
+    public static boolean clearRecipe(String output, Identifier legacyOutput)
+    {
+        Snapshot old = load();
+        LinkedHashMap<String, Identifier> recipes = new LinkedHashMap<>(old.recipes());
+        recipes.remove(output);
+        if (legacyOutput != null) recipes.remove(legacyOutput.toString());
+        return write(recipes, old.ingredients(), old.outputDestination());
+    }
+
     public static boolean setIngredients(Identifier recipe, Iterable<Integer> slots, Identifier item)
     {
         Snapshot old = load();

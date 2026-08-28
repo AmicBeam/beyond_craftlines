@@ -40,6 +40,11 @@ public final class RecipeResolutionOverrides
     public ResourceLocation ingredientFor(ResourceLocation recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
     public Set<ResourceLocation> selectedRecipes() { return Set.copyOf(recipes.values()); }
+    public List<RecipeChoice> recipeChoices()
+    { return recipes.entrySet().stream().map(entry -> new RecipeChoice(entry.getKey(), entry.getValue())).toList(); }
+    public List<IngredientChoice> ingredientChoices()
+    { return ingredients.entrySet().stream().map(entry -> new IngredientChoice(
+            entry.getKey().recipe(), entry.getKey().slot(), entry.getValue())).toList(); }
 
     public boolean completelyResolves(RecipePlan plan)
     {

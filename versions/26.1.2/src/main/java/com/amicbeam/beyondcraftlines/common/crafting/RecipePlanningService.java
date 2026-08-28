@@ -206,7 +206,7 @@ public final class RecipePlanningService
         }
         String resourceId = RecipeResourceResolver.sortKey(resource);
         if (!visiting.add(resourceId))
-            throw new CyclicRecipePathException(resource);
+            throw new PlanningCycleBranch.Cycle();
 
         try
         {
@@ -231,18 +231,14 @@ public final class RecipePlanningService
 
             if (!PlanningBranches.recipesRequireBranches(candidates.size()))
             {
-                PlanningState branch = state.copy();
-                try
-                {
-                    resolveRecipe(level, resource, remainder, candidates.getFirst(), byOutput,
-                            new HashSet<>(visiting), branch, overrides, mode, depth, maxDepth, budget);
-                    state.replaceWith(branch);
-                }
-                catch (CyclicRecipePathException cycle)
-                {
-                    if (!resource.isSame(cycle.resource)) throw cycle;
-                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
-                }
+                RecipeHolder<?> onlyCandidate = candidates.getFirst();
+                PlanningState branch = PlanningCycleBranch.evaluate(state, () -> {
+                    PlanningState attempted = state.copy();
+                    resolveRecipe(level, resource, remainder, onlyCandidate, byOutput,
+                            new HashSet<>(visiting), attempted, overrides, mode, depth, maxDepth, budget);
+                    return attempted;
+                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
+                state.replaceWith(branch);
                 return;
             }
             PlanningState best = null;
@@ -250,18 +246,12 @@ public final class RecipePlanningService
             for (RecipeHolder<?> holder : candidates)
             {
                 if (mode == ResolutionMode.SEARCH) budget.enterBranch();
-                PlanningState branch = state.copy();
-                try
-                {
-                    resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), branch,
+                PlanningState branch = PlanningCycleBranch.evaluate(state, () -> {
+                    PlanningState attempted = state.copy();
+                    resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), attempted,
                             overrides, mode, depth, maxDepth, budget);
-                }
-                catch (CyclicRecipePathException cycle)
-                {
-                    if (!resource.isSame(cycle.resource)) throw cycle;
-                    branch = state.copy();
-                    branch.missing.merge(resource, remainder, SaturatingLongMath::add);
-                }
+                    return attempted;
+                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
                 if (best == null || compare(branch, holder.id().identifier(), best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -453,11 +443,12 @@ public final class RecipePlanningService
     private enum ResolutionMode { SEARCH, FIXED, SELECTED_CHAIN }
 
 
-    private static final class CyclicRecipePathException extends RuntimeException
+    private static PlanningState rejectCyclicCandidate(PlanningState baseline, IStackKey<?> resource,
+                                                        long remainder)
     {
-        private final IStackKey<?> resource;
-        private CyclicRecipePathException(IStackKey<?> resource) { this.resource = resource; }
-        @Override public synchronized Throwable fillInStackTrace() { return this; }
+        PlanningState rejected = baseline.copy();
+        rejected.missing.merge(resource, remainder, SaturatingLongMath::add);
+        return rejected;
     }
 
     private static List<RecipeHolder<?>> recipesFor(Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,

@@ -72,18 +72,58 @@ public final class RecipeOrderService
                                                   ResourceLocation target, long count, boolean blockingMode,
                                                   OrderOutputDestination outputDestination, RecipePlan plan)
     {
+        return enqueueValidated(level, owner, networkId, target, count, blockingMode,
+                outputDestination, OrderOrigin.MANUAL, plan);
+    }
+
+    public static RecipeOrderJob enqueueAutomaticValidated(ServerLevel level, UUID owner, int networkId,
+                                                            ResourceLocation target, long count,
+                                                            boolean blockingMode, RecipePlan plan)
+    {
+        return enqueueAutomaticValidated(level, owner, networkId, target, count, blockingMode,
+                OrderOutputDestination.NETWORK, plan);
+    }
+
+    public static RecipeOrderJob enqueueAutomaticValidated(ServerLevel level, UUID owner, int networkId,
+                                                            ResourceLocation target, long count,
+                                                            boolean blockingMode,
+                                                            OrderOutputDestination outputDestination,
+                                                            RecipePlan plan)
+    {
+        return enqueueValidated(level, owner, networkId, target, count, blockingMode,
+                outputDestination, OrderOrigin.AUTOMATIC, plan);
+    }
+
+    private static RecipeOrderJob enqueueValidated(ServerLevel level, UUID owner, int networkId,
+                                                    ResourceLocation target, long count, boolean blockingMode,
+                                                    OrderOutputDestination outputDestination,
+                                                    OrderOrigin origin, RecipePlan plan)
+    {
         if (!plan.target().equals(target) || plan.requested() != count || !plan.craftable())
             throw new IllegalArgumentException("validated plan does not match the order");
         List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
-        if (active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get()
-                || active.stream().filter(job -> job.owner().equals(owner)).count()
-                >= CraftlinesConfig.MAX_ACTIVE_ORDERS_PER_PLAYER.get())
+        boolean orderLimitReached = active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get();
+        if (origin == OrderOrigin.AUTOMATIC)
+            orderLimitReached |= active.stream().filter(job -> job.networkId() == networkId
+                    && job.origin() == OrderOrigin.AUTOMATIC).count()
+                    >= CraftlinesConfig.MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK.get();
+        else orderLimitReached |= active.stream().filter(job -> job.owner().equals(owner)
+                    && job.origin() == OrderOrigin.MANUAL).count()
+                    >= CraftlinesConfig.MAX_ACTIVE_ORDERS_PER_PLAYER.get();
+        if (orderLimitReached)
             throw new IllegalStateException("too many active recipe orders");
         DimensionsNet network = DimensionsNet.getNetFromId(networkId);
         if (network == null) throw new IllegalStateException("network unavailable");
         List<RecipePlan.ReservedMaterial> reserved = reserveInitial(
                 network.getUnifiedStorage(), plan.reserved());
-        RecipeOrderJob job = RecipeOrderJob.create(UUID.randomUUID(), owner, networkId, target, count,
+        boolean deliveryPending = outputDestination == OrderOutputDestination.CONTAINER;
+        RecipeOrderJob job = origin == OrderOrigin.AUTOMATIC
+                ? RecipeOrderJob.createAutomatic(UUID.randomUUID(), owner, networkId, target, count,
+                plan.steps(), blockingMode, outputDestination,
+                plan.steps().isEmpty() && !deliveryPending ? RecipeOrderJob.Status.COMPLETE
+                        : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(),
+                plan.steps().isEmpty() && !deliveryPending ? level.getGameTime() : 0, reserved)
+                : RecipeOrderJob.create(UUID.randomUUID(), owner, networkId, target, count,
                 plan.steps(), blockingMode, outputDestination,
                 plan.steps().isEmpty() ? RecipeOrderJob.Status.COMPLETE
                 : RecipeOrderJob.Status.QUEUED, "", level.getGameTime(),
@@ -108,6 +148,18 @@ public final class RecipeOrderService
         data.put(job.withReserved(List.of()).with(RecipeOrderJob.Status.CANCELLED, encode("cancelled_by_owner"))
                 .finishedAt(server.overworld().getGameTime()));
         return true;
+    }
+
+    public static boolean cancel(net.minecraft.server.level.ServerPlayer player, UUID id)
+    {
+        RecipeOrderJob job = RecipeOrderSavedData.get(player.server).get(id);
+        if (job == null) return false;
+        if (job.origin() == OrderOrigin.MANUAL)
+            return cancel(player.server, player.getUUID(), id);
+        DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+        if (network == null || !(network.isOwner(player) || network.isManager(player)
+                || network.getPlayers().contains(player.getUUID()))) return false;
+        return cancel(player.server, job.owner(), id);
     }
 
     public static void tick(MinecraftServer server)
@@ -157,6 +209,9 @@ public final class RecipeOrderService
                 if (result.status() == RecipeOrderJob.Status.COMPLETE
                         && result.outputDestination() == OrderOutputDestination.INVENTORY)
                     result = deliverOutputToInventory(server, result);
+                if (result.status() == RecipeOrderJob.Status.COMPLETE
+                        && result.outputDestination() == OrderOutputDestination.CONTAINER)
+                    result = deliverOutputToDashboardContainer(server, result);
                 if (terminal(result.status()) && !result.reserved().isEmpty())
                 {
                     DimensionsNet network = DimensionsNet.getNetFromId(result.networkId());
@@ -242,6 +297,19 @@ public final class RecipeOrderService
             remaining -= count;
         }
         return job.with(RecipeOrderJob.Status.COMPLETE, "");
+    }
+
+    private static RecipeOrderJob deliverOutputToDashboardContainer(MinecraftServer server,
+                                                                     RecipeOrderJob job)
+    {
+        CraftlineDashboardBlockEntity dashboard = CraftlineDashboardIndex.active(server, job.networkId())
+                .stream().filter(value -> job.id().equals(value.activeOrder())).findFirst().orElse(null);
+        if (dashboard == null)
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_dashboard_container"));
+        DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
+        if (network == null)
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
+        return dashboard.deliverCompletedOrder(network, job);
     }
 
     private static long inventoryCapacity(net.minecraft.world.entity.player.Inventory inventory,
@@ -333,7 +401,7 @@ public final class RecipeOrderService
                                                          RecipeOrderJob job, RecipePlan.Step step,
                                                          RuntimeOrderIndex<Integer, MachineKey> index)
     {
-        List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
+        List<RecipePlan.Material> batchInputs = inputsToDispatch(sequentialDispatch(job, step), step);
         java.util.LinkedHashMap<String, DeviceBindingRegistry.ProvisionerTarget> targets =
                 new java.util.LinkedHashMap<>();
         for (String group : batchInputs.stream().map(RecipePlan.Material::inputGroup)
@@ -390,7 +458,7 @@ public final class RecipeOrderService
         }
         targets.values().stream().map(DeviceBindingRegistry.ProvisionerTarget::provisioner).distinct()
                 .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
-        long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
+        long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         long networkBaseline = networkAmount(job.networkId(), step.outputKey());
         List<RecipeOrderJob.MachineLocation> occupied = targets.entrySet().stream().map(entry -> {
@@ -419,7 +487,7 @@ public final class RecipeOrderService
                                                            RecipeOrderJob job, RecipePlan.Step step,
                                                            RuntimeOrderIndex<Integer, MachineKey> index)
     {
-        List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
+        List<RecipePlan.Material> batchInputs = inputsToDispatch(sequentialDispatch(job, step), step);
         java.util.LinkedHashMap<String, List<GroupEndpoint>> routes = new java.util.LinkedHashMap<>();
         for (String group : batchInputs.stream().map(RecipePlan.Material::inputGroup)
                 .distinct().sorted().toList())
@@ -455,9 +523,6 @@ public final class RecipeOrderService
         }
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
-        if (hasDirect && step.inputs().stream().anyMatch(input -> step.outputKey().isSame(input.key())))
-            return job.with(RecipeOrderJob.Status.ERROR, encode("shared_input_output_unsupported"));
-
         InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
                 job, step, batchInputs);
         if (selection == null)
@@ -525,7 +590,7 @@ public final class RecipeOrderService
                 .mapToLong(endpoint -> BoundMachineAutomation.countExtractable(
                         endpoint.machine().level(), endpoint.machine().binding().position(), step.outputKey()))
                 .reduce(0, SaturatingLongMath::add);
-        long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
+        long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         RecipeOrderJob.MachineLocation coordinator = occupied.stream()
                 .filter(machine -> routes.get(machine.inputGroup()).stream()
@@ -615,9 +680,6 @@ public final class RecipeOrderService
         MachineKey machineKey = new MachineKey(binding.dimension(), binding.position());
         if (index.isMachineOccupied(machineKey))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("bound_machine_busy"));
-        if (step.inputs().stream().map(RecipePlan.Material::item)
-                .anyMatch(item -> step.output().equals(item)))
-            return job.with(RecipeOrderJob.Status.ERROR, encode("shared_input_output_unsupported"));
         drainWhitelistedMachineOutputs(machine.level(), storage, step,
                 binding.position(), step.outputKey());
         long baseline = BoundMachineAutomation.countExtractable(
@@ -627,10 +689,10 @@ public final class RecipeOrderService
                     machine.level(), binding.position(), output.key()) > 0)
                 return job.with(RecipeOrderJob.Status.PAUSED,
                         encode("bound_machine_byproducts_clear"));
-        long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
+        long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
         List<RecipePlan.Material> batchInputs = subtractExistingMachineInputs(
-                machine.level(), binding.position(), inputsToDispatch(job.blockingMode(), step));
+                machine.level(), binding.position(), inputsToDispatch(sequentialDispatch(job, step), step));
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(binding.dimension(),
                 binding.position(), step.outputKey(), false, false, baseline, 0, 0, output, 0,
                 batchInputs, List.of());
@@ -650,14 +712,14 @@ public final class RecipeOrderService
         Set<ResourceLocation> inputItems = step.inputs().stream().map(RecipePlan.Material::item)
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        if (BlockingModeLogic.shouldWait(job.blockingMode(),
+        if (BlockingModeLogic.shouldWait(sequentialDispatch(job, step),
                 NativeFurnaceAutomation.containsAnyInput(furnace, inputItems)))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("blocking_native_furnace_input"));
         if (NativeFurnaceAutomation.countOutput(furnace, step.output()) > 0)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("native_furnace_output_clear"));
-        long batchCrafts = BlockingModeLogic.craftsToDispatch(job.blockingMode(), step.crafts());
+        long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
-        List<RecipePlan.Material> batchInputs = inputsToDispatch(job.blockingMode(), step);
+        List<RecipePlan.Material> batchInputs = inputsToDispatch(sequentialDispatch(job, step), step);
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(
                 nativeFurnace.level().dimension(), furnace.getBlockPos(), step.output(), true,
                 false, 0,
@@ -1127,6 +1189,9 @@ public final class RecipeOrderService
                 BlockingModeLogic.amountToDispatch(blockingMode, input.amount(), step.crafts()),
                 input.ingredientSlot(), input.inputGroup())).toList();
     }
+
+    private static boolean sequentialDispatch(RecipeOrderJob job, RecipePlan.Step step)
+    { return job.blockingMode() || step.selfIncrementSeed() > 0; }
 
     private static ItemStackKey key(ResourceLocation id)
     { return new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(id))); }

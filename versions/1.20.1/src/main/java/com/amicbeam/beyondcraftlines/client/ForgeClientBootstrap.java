@@ -34,6 +34,10 @@ public final class ForgeClientBootstrap {
             MenuScreens.register(CraftlinesMenus.ORDER.get(), CraftlineOrderScreen::new);
             MenuScreens.register(CraftlinesMenus.STATUS.get(), CraftlineStatusScreen::new);
             MenuScreens.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
+            MenuScreens.register(CraftlinesMenus.DASHBOARD.get(), DashboardConfigScreen::new);
+            MenuScreens.register(CraftlinesMenus.DASHBOARD_STATUS.get(), CraftlineDashboardStatusScreen::new);
+            net.minecraft.client.renderer.blockentity.BlockEntityRenderers.register(
+                    CraftlinesBlockEntities.CRAFTLINE_DASHBOARD.get(), CraftlineDashboardRenderer::new);
         });
     }
     private static void registerTooltipComponents(RegisterClientTooltipComponentFactoriesEvent event) {

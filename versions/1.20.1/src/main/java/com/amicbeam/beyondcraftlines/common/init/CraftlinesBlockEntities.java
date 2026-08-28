@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.init;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
 import com.amicbeam.beyondcraftlines.common.runtime.CraftlineProvisionerBlockEntity;
+import com.amicbeam.beyondcraftlines.common.runtime.CraftlineDashboardBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
@@ -13,6 +14,9 @@ public final class CraftlinesBlockEntities {
     public static final RegistryObject<BlockEntityType<CraftlineProvisionerBlockEntity>> CRAFTLINE_PROVISIONER = BLOCK_ENTITIES.register(
             "craftline_provisioner", () -> BlockEntityType.Builder.of(CraftlineProvisionerBlockEntity::new,
                     CraftlinesBlocks.CRAFTLINE_PROVISIONER.get()).build(null));
+    public static final RegistryObject<BlockEntityType<CraftlineDashboardBlockEntity>> CRAFTLINE_DASHBOARD = BLOCK_ENTITIES.register(
+            "craftline_dashboard", () -> BlockEntityType.Builder.of(CraftlineDashboardBlockEntity::new,
+                    CraftlinesBlocks.CRAFTLINE_DASHBOARD.get()).build(null));
     public static void register(IEventBus bus) { BLOCK_ENTITIES.register(bus); }
     private CraftlinesBlockEntities() {}
 }

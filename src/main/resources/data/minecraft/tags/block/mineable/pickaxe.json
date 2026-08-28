@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "beyond_craftlines:craftline_provisioner"
+    "beyond_craftlines:craftline_provisioner",
+    "beyond_craftlines:craftline_dashboard"
   ]
 }

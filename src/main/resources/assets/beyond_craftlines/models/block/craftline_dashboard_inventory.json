@@ -1,0 +1,26 @@
+{
+  "parent": "minecraft:block/block",
+  "textures": {
+    "front": "beyond_craftlines:block/craftline_dashboard_front",
+    "back": "beyond_craftlines:block/craftline_dashboard_back",
+    "left": "beyond_craftlines:block/craftline_dashboard_left",
+    "right": "beyond_craftlines:block/craftline_dashboard_right",
+    "top": "beyond_craftlines:block/craftline_dashboard_top",
+    "bottom": "beyond_craftlines:block/craftline_dashboard_bottom",
+    "particle": "beyond_craftlines:block/craftline_dashboard_back"
+  },
+  "elements": [
+    {
+      "from": [4, 4, 14],
+      "to": [12, 12, 16],
+      "faces": {
+        "north": {"uv":[4,4,12,12],"texture": "#back"},
+        "south": {"uv":[4,4,12,12],"texture": "#front"},
+        "west": {"uv":[7,4,9,12],"texture": "#right"},
+        "east": {"uv":[7,4,9,12],"texture": "#left"},
+        "up": {"uv":[4,7,12,9],"texture": "#top"},
+        "down": {"uv":[4,7,12,9],"texture": "#bottom"}
+      }
+    }
+  ]
+}

@@ -56,7 +56,9 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     {
         super(menu, inventory, title, 276, 260);
         manualFallback = menu.allowsManualRecipeSelection();
-        candidates = (manualFallback ? JeiCatalystIndex.recipeTypes() : menu.candidates()).stream()
+        candidates = (manualFallback ? JeiCatalystIndex.recipeTypes(
+                menu.manualLoadedFamilies(), menu.manualRecipeAliases(),
+                menu.debugRecipeTypeMappings()) : menu.candidates()).stream()
                 .sorted(Comparator.comparing(Identifier::toString)).toList();
         selected = new LinkedHashSet<>(menu.selected());
         availableGroups = menu.availableGroups();
@@ -362,6 +364,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         return switch (group)
         {
             case "ingredients" -> Component.translatable("gui.beyond_craftlines.provisioner.group.ingredients");
+            case "catalyst" -> Component.translatable("gui.beyond_craftlines.provisioner.group.catalyst");
             case "activation_item" -> Component.translatable(
                     "gui.beyond_craftlines.provisioner.group.activation_item");
             case "offerings" -> Component.translatable("gui.beyond_craftlines.provisioner.group.offerings");

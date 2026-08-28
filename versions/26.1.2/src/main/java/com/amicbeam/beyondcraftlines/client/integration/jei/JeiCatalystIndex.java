@@ -2,10 +2,12 @@ package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint;
+import com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeTypeVisibility;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import mezz.jei.api.runtime.IJeiRuntime;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.category.IRecipeCategory;
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -29,6 +31,7 @@ public final class JeiCatalystIndex
     private static volatile Map<Identifier, Set<Identifier>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<Identifier, Component> TITLES_BY_TYPE = Map.of();
     private static volatile Map<Identifier, List<RecipeFamilyHint>> HINTS_BY_TYPE = Map.of();
+    private static volatile Map<Identifier, RecipeHolder<?>> RECIPES_BY_ID = Map.of();
     private static volatile IJeiRuntime runtime;
 
     private JeiCatalystIndex() {}
@@ -56,6 +59,7 @@ public final class JeiCatalystIndex
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
         HINTS_BY_TYPE = Map.copyOf(hints);
+        RECIPES_BY_ID = Map.copyOf(recipes);
         RecipeCatalog.setClientRecipes(recipes.values());
     }
 
@@ -89,12 +93,26 @@ public final class JeiCatalystIndex
         return TITLES_BY_TYPE.keySet();
     }
 
+    /** Uses the synced client recipe access to mirror the server's representative-hint validation. */
+    public static Set<Identifier> recipeTypes(Set<String> loadedFamilies,
+                                              Map<String, Set<String>> aliases,
+                                              boolean debugMappings)
+    {
+        Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(Identifier::toString)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> visible = ManualRecipeTypeVisibility.visible(
+                allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
+        return visible.stream().map(Identifier::parse)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     public static void clear()
     {
         runtime = null;
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
         HINTS_BY_TYPE = Map.of();
+        RECIPES_BY_ID = Map.of();
         RecipeCatalog.clearClient();
     }
 
@@ -135,6 +153,23 @@ public final class JeiCatalystIndex
         {
             // A malformed third-party JEI recipe must not abort the entire catalyst index.
         }
+    }
+
+    private static Map<String, Set<String>> verifiedHintFamilies()
+    {
+        var level = Minecraft.getInstance().level;
+        if (level == null) return Map.of();
+        Map<String, LinkedHashSet<String>> verified = new HashMap<>();
+        HINTS_BY_TYPE.forEach((type, hints) -> hints.forEach(hint -> {
+            Identifier recipeId = Identifier.tryParse(hint.recipeId());
+            if (recipeId == null) return;
+            var holder = RECIPES_BY_ID.get(recipeId);
+            if (holder != null && hint.family().equals(RecipePlanningService.family(holder)))
+                verified.computeIfAbsent(type.toString(), ignored -> new LinkedHashSet<>()).add(hint.family());
+        }));
+        Map<String, Set<String>> frozen = new HashMap<>();
+        verified.forEach((type, families) -> frozen.put(type, Set.copyOf(families)));
+        return Map.copyOf(frozen);
     }
 
     private static <R extends Recipe<?>> RecipeHolder<R> holder(Identifier id, R recipe)

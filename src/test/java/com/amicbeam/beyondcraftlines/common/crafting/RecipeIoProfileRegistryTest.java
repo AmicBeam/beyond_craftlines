@@ -50,7 +50,9 @@ final class RecipeIoProfileRegistryTest
     {
         var profile = read("defaults.json");
         assertEquals(true, profile.inputFields().containsAll(Set.of(
-                "getFluidIngredients", "activationItem", "getActivationItem", "spirits", "getSpirits")));
+                "getFluidIngredients", "catalyst", "getCatalyst", "activationItem", "getActivationItem",
+                "spirits", "getSpirits")));
+        assertEquals(Set.of("catalyst", "getCatalyst"), profile.distinctInputFields());
         assertEquals(false, profile.inputFields().stream()
                 .anyMatch(name -> name.toLowerCase(java.util.Locale.ROOT).contains("energy")));
         assertEquals(Set.of("content", "getContent"), profile.structuralWrapperFields());
@@ -75,6 +77,7 @@ final class RecipeIoProfileRegistryTest
                   "recipe_types": ["example:pressing", "example:compressing"],
                   "include_defaults": false,
                   "input_fields": ["input", "activationItem", "invalid-name()"],
+                  "distinct_input_fields": ["input", "notAnInput"],
                   "output_fields": ["result"],
                   "input_count_semantics": {
                     "input": "batch_limit",
@@ -92,6 +95,7 @@ final class RecipeIoProfileRegistryTest
         assertEquals(Set.of("example:pressing", "example:compressing"), profile.recipeTypes());
         assertFalse(profile.includeDefaults());
         assertEquals(Set.of("input", "activationItem"), profile.inputFields());
+        assertEquals(Set.of("input"), profile.distinctInputFields());
         assertEquals(Set.of("result"), profile.outputFields());
         assertEquals(java.util.Map.of("input", RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT),
                 profile.inputCountSemantics());

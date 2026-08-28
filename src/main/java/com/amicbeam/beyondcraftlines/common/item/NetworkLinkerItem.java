@@ -115,9 +115,9 @@ public final class NetworkLinkerItem extends Item
                 com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .recipeTypesFor(catalyst));
         // Several JEI integrations (notably Mekanism 1.20.1) use the machine block id as their
-        // category id. Preserve that authoritative fallback when JEI's catalyst snapshot is late
-        // or omits a machine, and let the server validate it against loaded recipe families.
-        types.add(blockId);
+        // category id. Only use that id when JEI has no catalyst categories: adding it alongside
+        // an authoritative category leaks legacy ids such as mekanism:enrichment_chamber on 1.21.1.
+        if (types.isEmpty()) types.add(blockId);
         return Set.copyOf(types);
     }
 

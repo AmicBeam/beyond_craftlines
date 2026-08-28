@@ -50,6 +50,16 @@ public final class CraftlinesNetwork {
                 ConfigureProvisionerDeliveryStrategyPayload::handle);
         server(ReturnProvisionerContentPayload.class, ReturnProvisionerContentPayload.STREAM_CODEC,
                 ReturnProvisionerContentPayload::handle);
+        server(ConfigureDashboardPayload.class, ConfigureDashboardPayload.STREAM_CODEC,
+                ConfigureDashboardPayload::handle);
+        server(OpenDashboardRecipePayload.class, OpenDashboardRecipePayload.STREAM_CODEC,
+                OpenDashboardRecipePayload::handle);
+        server(SaveDashboardRecipePayload.class, SaveDashboardRecipePayload.STREAM_CODEC,
+                SaveDashboardRecipePayload::handle);
+        server(OpenDashboardStatusMenuPayload.class, OpenDashboardStatusMenuPayload.STREAM_CODEC,
+                OpenDashboardStatusMenuPayload::handle);
+        server(RequestDashboardStatusPayload.class, RequestDashboardStatusPayload.STREAM_CODEC,
+                RequestDashboardStatusPayload::handle);
         server(RequestBindingVisualsPayload.class, RequestBindingVisualsPayload.STREAM_CODEC, RequestBindingVisualsPayload::handle);
         server(RequestJeiNetworkAvailabilityPayload.class, RequestJeiNetworkAvailabilityPayload.STREAM_CODEC,
                 RequestJeiNetworkAvailabilityPayload::handle);
@@ -65,6 +75,8 @@ public final class CraftlinesNetwork {
                 JeiNetworkAvailabilityPayload::handle);
         client(RecipeIoProfilePayload.class, RecipeIoProfilePayload.STREAM_CODEC,
                 RecipeIoProfilePayload::handle);
+        client(DashboardStatusPayload.class, DashboardStatusPayload.STREAM_CODEC,
+                DashboardStatusPayload::handle);
     }
 
     public static void sendToServer(Object payload) { CHANNEL.sendToServer(payload); }

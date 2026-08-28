@@ -31,6 +31,9 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private final ContainerData provisionerData;
     private final boolean boundMachineConfiguration;
     private final int priority;
+    private final boolean debugRecipeTypeMappings;
+    private final Set<String> manualLoadedFamilies;
+    private final Map<String, Set<String>> manualRecipeAliases;
 
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
@@ -40,7 +43,8 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
     { this(id, inventory, options.position(), options.candidates(), options.selected(),
             options.availableGroups(), options.selectedGroups(), provisionerData,
-            options.boundMachineConfiguration(), options.priority()); }
+            options.boundMachineConfiguration(), options.priority(), options.debugRecipeTypeMappings(),
+            options.manualLoadedFamilies(), options.manualRecipeAliases()); }
 
     public ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
                                  Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
@@ -98,6 +102,18 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                                   Map<ResourceLocation, Set<String>> selectedGroups,
                                   ContainerData provisionerData, boolean boundMachineConfiguration, int priority)
     {
+        this(id, inventory, position, candidates, selected, availableGroups, selectedGroups,
+                provisionerData, boundMachineConfiguration, priority, false, Set.of(), Map.of());
+    }
+
+    private ProvisionerConfigMenu(int id, Inventory inventory, BlockPos position,
+                                  Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
+                                  Map<ResourceLocation, Set<String>> availableGroups,
+                                  Map<ResourceLocation, Set<String>> selectedGroups,
+                                  ContainerData provisionerData, boolean boundMachineConfiguration, int priority,
+                                  boolean debugRecipeTypeMappings, Set<String> manualLoadedFamilies,
+                                  Map<String, Set<String>> manualRecipeAliases)
+    {
         super(CraftlinesMenus.PROVISIONER.get(), id);
         this.position = position.immutable();
         this.candidates = Set.copyOf(candidates);
@@ -107,6 +123,9 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         this.provisionerData = provisionerData;
         this.boundMachineConfiguration = boundMachineConfiguration;
         this.priority = priority;
+        this.debugRecipeTypeMappings = debugRecipeTypeMappings;
+        this.manualLoadedFamilies = Set.copyOf(manualLoadedFamilies);
+        this.manualRecipeAliases = copyStringGroups(manualRecipeAliases);
         addDataSlots(provisionerData);
     }
 
@@ -133,6 +152,9 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     { return com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeSelectionPolicy
             .accepts(boundMachineConfiguration, candidates, selected, requested); }
     public int priority() { return priority; }
+    public boolean debugRecipeTypeMappings() { return debugRecipeTypeMappings; }
+    public Set<String> manualLoadedFamilies() { return manualLoadedFamilies; }
+    public Map<String, Set<String>> manualRecipeAliases() { return manualRecipeAliases; }
 
     public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
                                     Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
@@ -160,6 +182,18 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                                     Map<ResourceLocation, Set<String>> selectedGroups,
                                     boolean boundMachineConfiguration, int priority)
     {
+        writeOptions(buffer, position, candidates, selected, availableGroups, selectedGroups,
+                boundMachineConfiguration, priority, false, Set.of(), Map.of());
+    }
+
+    public static void writeOptions(FriendlyByteBuf buffer, BlockPos position,
+                                    Set<ResourceLocation> candidates, Set<ResourceLocation> selected,
+                                    Map<ResourceLocation, Set<String>> availableGroups,
+                                    Map<ResourceLocation, Set<String>> selectedGroups,
+                                    boolean boundMachineConfiguration, int priority,
+                                    boolean debugRecipeTypeMappings, Set<String> manualLoadedFamilies,
+                                    Map<String, Set<String>> manualRecipeAliases)
+    {
         buffer.writeBlockPos(position);
         buffer.writeBoolean(boundMachineConfiguration);
         buffer.writeInt(priority);
@@ -171,6 +205,27 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
             buffer.writeBoolean(selected.contains(type));
             writeGroups(buffer, availableGroups.getOrDefault(type, Set.of()));
             writeGroups(buffer, selectedGroups.getOrDefault(type, Set.of()));
+        }
+        buffer.writeBoolean(debugRecipeTypeMappings);
+        var families = debugRecipeTypeMappings ? java.util.List.<String>of()
+                : manualLoadedFamilies.stream().filter(ProvisionerConfigMenu::validFamily)
+                .sorted().limit(2048).toList();
+        buffer.writeVarInt(families.size());
+        families.forEach(family -> buffer.writeUtf(family, 256));
+        Set<String> sentFamilies = Set.copyOf(families);
+        var aliases = debugRecipeTypeMappings ? java.util.List.<Map.Entry<String, Set<String>>>of()
+                : manualRecipeAliases.entrySet().stream()
+                .filter(entry -> validFamily(entry.getKey()))
+                .filter(entry -> entry.getValue().stream().anyMatch(sentFamilies::contains))
+                .sorted(Map.Entry.comparingByKey()).limit(512).toList();
+        buffer.writeVarInt(aliases.size());
+        for (Map.Entry<String, Set<String>> alias : aliases)
+        {
+            buffer.writeUtf(alias.getKey(), 256);
+            var targets = alias.getValue().stream().filter(sentFamilies::contains)
+                    .filter(ProvisionerConfigMenu::validFamily).sorted().limit(32).toList();
+            buffer.writeVarInt(targets.size());
+            targets.forEach(target -> buffer.writeUtf(target, 256));
         }
     }
 
@@ -196,8 +251,32 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
             availableGroups.put(type, available);
             selectedGroups.put(type, groups);
         }
+        boolean debugRecipeTypeMappings = data.readBoolean();
+        int familyCount = Math.min(2048, Math.max(0, data.readVarInt()));
+        LinkedHashSet<String> manualLoadedFamilies = new LinkedHashSet<>();
+        for (int i = 0; i < familyCount; i++)
+        {
+            String family = data.readUtf(256);
+            if (validFamily(family)) manualLoadedFamilies.add(family);
+        }
+        int aliasCount = Math.min(512, Math.max(0, data.readVarInt()));
+        Map<String, Set<String>> manualRecipeAliases = new HashMap<>();
+        for (int i = 0; i < aliasCount; i++)
+        {
+            String alias = data.readUtf(256);
+            int targetCount = Math.min(32, Math.max(0, data.readVarInt()));
+            LinkedHashSet<String> targets = new LinkedHashSet<>();
+            for (int target = 0; target < targetCount; target++)
+            {
+                String family = data.readUtf(256);
+                if (validFamily(family)) targets.add(family);
+            }
+            if (validFamily(alias) && !targets.isEmpty()) manualRecipeAliases.put(alias, Set.copyOf(targets));
+        }
         return new Options(position, Set.copyOf(candidates), Set.copyOf(selected),
-                copyGroups(availableGroups), copyGroups(selectedGroups), boundMachineConfiguration, priority);
+                copyGroups(availableGroups), copyGroups(selectedGroups), boundMachineConfiguration, priority,
+                debugRecipeTypeMappings, Set.copyOf(manualLoadedFamilies),
+                copyStringGroups(manualRecipeAliases));
     }
 
     private static void writeGroups(FriendlyByteBuf buffer, Set<String> groups)
@@ -222,9 +301,19 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     private static boolean validGroup(String group)
     { return group != null && !group.isBlank() && group.length() <= 64; }
 
+    private static boolean validFamily(String family)
+    { return family != null && !family.isBlank() && family.length() <= 256; }
+
     private static Map<ResourceLocation, Set<String>> copyGroups(Map<ResourceLocation, Set<String>> source)
     {
         HashMap<ResourceLocation, Set<String>> result = new HashMap<>();
+        source.forEach((type, groups) -> result.put(type, Set.copyOf(groups)));
+        return Map.copyOf(result);
+    }
+
+    private static Map<String, Set<String>> copyStringGroups(Map<String, Set<String>> source)
+    {
+        HashMap<String, Set<String>> result = new HashMap<>();
         source.forEach((type, groups) -> result.put(type, Set.copyOf(groups)));
         return Map.copyOf(result);
     }
@@ -233,7 +322,9 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                            Set<ResourceLocation> selected,
                            Map<ResourceLocation, Set<String>> availableGroups,
                            Map<ResourceLocation, Set<String>> selectedGroups,
-                           boolean boundMachineConfiguration, int priority) {}
+                           boolean boundMachineConfiguration, int priority,
+                           boolean debugRecipeTypeMappings, Set<String> manualLoadedFamilies,
+                           Map<String, Set<String>> manualRecipeAliases) {}
 
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
 

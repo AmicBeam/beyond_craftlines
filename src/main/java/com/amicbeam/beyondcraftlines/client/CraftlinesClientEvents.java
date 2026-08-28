@@ -7,6 +7,7 @@ import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.OpenBoundMachineConfigPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderStatusMenuPayload;
+import com.amicbeam.beyondcraftlines.common.network.OpenDashboardStatusMenuPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
 import com.amicbeam.beyondcraftlines.client.tooltip.ClientRecipePreviewTooltip;
 import com.amicbeam.beyondcraftlines.client.tooltip.RecipePreviewTooltip;
@@ -58,12 +59,16 @@ public final class CraftlinesClientEvents
             event.register(CraftlinesMenus.ORDER.get(), CraftlineOrderScreen::new);
             event.register(CraftlinesMenus.STATUS.get(), CraftlineStatusScreen::new);
             event.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
+            event.register(CraftlinesMenus.DASHBOARD.get(), DashboardConfigScreen::new);
+            event.register(CraftlinesMenus.DASHBOARD_STATUS.get(), CraftlineDashboardStatusScreen::new);
         }
 
         @SubscribeEvent public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event)
         {
             event.registerBlockEntityRenderer(CraftlinesBlockEntities.CRAFTLINE_PROVISIONER.get(),
                     ProvisionerFallbackLabelRenderer::new);
+            event.registerBlockEntityRenderer(CraftlinesBlockEntities.CRAFTLINE_DASHBOARD.get(),
+                    CraftlineDashboardRenderer::new);
         }
 
         @SubscribeEvent public static void registerTooltipComponents(
@@ -126,7 +131,7 @@ public final class CraftlinesClientEvents
             var types = new java.util.LinkedHashSet<>(
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
-            types.add(blockId);
+            if (types.isEmpty()) types.add(blockId);
             PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
             event.setCanceled(true);
@@ -143,6 +148,14 @@ public final class CraftlinesClientEvents
             button.setTooltip(Tooltip.create(Component.translatable(
                     "tooltip.beyond_craftlines.open_crafting_status")));
             event.addListener(button);
+            IconButton dashboards = new IconButton(
+                    screen.getGuiLeft() - 18, screen.getGuiTop() + 6 + 18 * 9, 16, 16,
+                    ResourceLocation.fromNamespaceAndPath(
+                            BeyondCraftlines.MOD_ID, "widget/crafting_dashboard"),
+                    ignored -> PacketDistributor.sendToServer(new OpenDashboardStatusMenuPayload()));
+            dashboards.setTooltip(Tooltip.create(Component.translatable(
+                    "tooltip.beyond_craftlines.open_dashboard_status")));
+            event.addListener(dashboards);
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)

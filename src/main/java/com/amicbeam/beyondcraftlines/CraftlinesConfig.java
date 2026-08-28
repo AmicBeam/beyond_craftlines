@@ -131,6 +131,26 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.max_active_orders_per_player")
             .defineInRange("maxActiveOrdersPerPlayer", 64, 1, 10_000);
 
+    public static final ModConfigSpec.IntValue DASHBOARD_CHECK_INTERVAL_TICKS = SERVER_BUILDER
+            .comment("Ticks between automatic stock checks performed by a Craftline Dashboard.")
+            .translation("config.beyond_craftlines.dashboard_check_interval_ticks")
+            .defineInRange("dashboardCheckIntervalTicks", 20, 1, 72_000);
+
+    public static final ModConfigSpec.IntValue MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK = SERVER_BUILDER
+            .comment("Maximum active automatic dashboard orders on one BD network. Automatic orders do not consume a player's order limit.")
+            .translation("config.beyond_craftlines.max_active_automatic_orders_per_network")
+            .defineInRange("maxActiveAutomaticOrdersPerNetwork", 10, 1, 10_000);
+
+    public static final ModConfigSpec.IntValue MAX_DASHBOARD_RECIPE_BYTES = SERVER_BUILDER
+            .comment("Maximum estimated serialized bytes for one recipe tree stored in a Craftline Dashboard. A hard 64 KiB ceiling always applies.")
+            .translation("config.beyond_craftlines.max_dashboard_recipe_bytes")
+            .defineInRange("maxDashboardRecipeBytes", 32_768, 1_024, 65_536);
+
+    public static final ModConfigSpec.IntValue MAX_DASHBOARD_RECIPE_CHOICES = SERVER_BUILDER
+            .comment("Maximum combined recipe and ingredient choices stored in one Craftline Dashboard.")
+            .translation("config.beyond_craftlines.max_dashboard_recipe_choices")
+            .defineInRange("maxDashboardRecipeChoices", 4_096, 1, 16_384);
+
     public static final ModConfigSpec.IntValue MAX_CONCURRENT_ORDERS_PER_NETWORK = SERVER_BUILDER
             .comment("Maximum orders that may execute concurrently on one BD network when their non-crafting recipe families do not overlap. Set to one for strict FIFO execution.")
             .translation("config.beyond_craftlines.max_concurrent_orders_per_network")

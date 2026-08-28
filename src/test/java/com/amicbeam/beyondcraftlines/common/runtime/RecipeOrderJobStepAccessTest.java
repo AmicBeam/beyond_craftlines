@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 final class RecipeOrderJobStepAccessTest
@@ -40,6 +41,35 @@ final class RecipeOrderJobStepAccessTest
         assertSame(second, job.step(1));
     }
 
+    @Test
+    void selfIncrementExternalBatchKeepsSeedAndDecrementsOtherInputs() throws ReflectiveOperationException
+    {
+        assumeTrue(classPresent("net.minecraft.resources.ResourceLocation")
+                || classPresent("net.minecraft.resources.Identifier"),
+                "This unit-test runtime does not include Minecraft classes");
+        IStackKey<?> seed = key("seed");
+        IStackKey<?> other = key("other");
+        Constructor<?> stepConstructor = Arrays.stream(RecipePlan.Step.class.getDeclaredConstructors())
+                .filter(value -> value.getParameterCount() == 9).findFirst().orElseThrow();
+        Object recipe = identifier(stepConstructor.getParameterTypes()[0], "self_increment");
+        RecipePlan.Step step = (RecipePlan.Step) stepConstructor.newInstance(
+                recipe, "crafting", seed, 2L, 10L,
+                List.of(new RecipePlan.Material(seed, 1), new RecipePlan.Material(other, 10)),
+                List.of(), List.of(), 1L);
+        Constructor<?> jobConstructor = Arrays.stream(RecipeOrderJob.class.getDeclaredConstructors())
+                .filter(value -> value.getParameterCount() == 13).findFirst().orElseThrow();
+        RecipeOrderJob job = (RecipeOrderJob) jobConstructor.newInstance(
+                UUID.randomUUID(), UUID.randomUUID(), 1, recipe, 10L,
+                List.of(RecipeOrderJob.StepExecution.pending(step)), 0, false,
+                RecipeOrderJob.Status.RUNNING, "", 1L, 0L, List.of());
+        job = job.completeExternalBatch();
+
+        RecipePlan.Step remaining = job.step(0);
+        assertEquals(9, remaining.crafts());
+        assertTrue(remaining.inputs().stream().anyMatch(input -> input.key() == seed && input.amount() == 1));
+        assertTrue(remaining.inputs().stream().anyMatch(input -> input.key() == other && input.amount() == 9));
+    }
+
     private static RecipePlan.Step step(String path) throws ReflectiveOperationException
     {
         Constructor<?> constructor = Arrays.stream(RecipePlan.Step.class.getDeclaredConstructors())
@@ -61,6 +91,23 @@ final class RecipeOrderJobStepAccessTest
                 });
         return (RecipePlan.Step) constructor.newInstance(
                 recipe, "crafting", key, 1L, 1L, List.of(), List.of(), List.of());
+    }
+
+    private static IStackKey<?> key(String name)
+    {
+        return (IStackKey<?>) Proxy.newProxyInstance(
+                IStackKey.class.getClassLoader(), new Class<?>[]{IStackKey.class}, (proxy, method, args) ->
+                {
+                    return switch (method.getName())
+                    {
+                        case "isEmpty" -> false;
+                        case "isSame" -> proxy == args[0];
+                        case "hashCode" -> System.identityHashCode(proxy);
+                        case "equals" -> proxy == args[0];
+                        case "toString" -> name;
+                        default -> throw new UnsupportedOperationException(method.getName());
+                    };
+                });
     }
 
     private static Object identifier(Class<?> type, String path) throws ReflectiveOperationException

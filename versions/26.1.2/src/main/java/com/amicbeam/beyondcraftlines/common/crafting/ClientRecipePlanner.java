@@ -142,7 +142,6 @@ public final class ClientRecipePlanner
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
-        state.stock.consume(target.getTypeId(), target::isSame, Long.MAX_VALUE);
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
@@ -158,7 +157,7 @@ public final class ClientRecipePlanner
     {
         budget.checkCancellation();
         budget.visit(budgetIdentity(resource));
-        long used = consume(state, resource, needed);
+        long used = depth == 0 ? 0 : consume(state, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
         if (depth >= maxDepth)
@@ -309,7 +308,20 @@ public final class ClientRecipePlanner
     {
         LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
         LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
-        long crafts = SaturatingLongMath.ceilDiv(remainder, recipe.outputCount());
+        long seedPerCraft = 0;
+        long consumedSeedPerCraft = 0;
+        for (int i = 0; i < variant.size(); i++)
+        {
+            Slot slot = recipe.slots().get(i);
+            Candidate candidate = variant.get(i);
+            if (!output.isSame(candidate.key())) continue;
+            seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
+            if (!slot.reusable())
+                consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
+        }
+        SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
+                recipe.outputCount(), seedPerCraft, consumedSeedPerCraft, remainder);
+        long crafts = shape.crafts();
         for (int i = 0; i < variant.size(); i++)
         {
             Slot slot = recipe.slots().get(i);
@@ -321,16 +333,24 @@ public final class ClientRecipePlanner
                 Identifier previous = state.ingredients.putIfAbsent(key, candidateItem);
                 if (previous != null && !previous.equals(candidateItem)) return false;
             }
-            long inputAmount = slot.reusable() ? candidate.count()
+            boolean selfInput = shape.selfIncrement() && output.isSame(candidate.key());
+            long inputAmount = selfInput || slot.reusable() ? candidate.count()
                     : SaturatingLongMath.multiply(crafts, candidate.count());
             (slot.reusable() ? reusableInputs : inputs)
                     .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
-            resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
-                    manualIngredients, depth + 1, maxDepth, budget);
+            if (shape.selfIncrement() && output.isSame(input.getKey()))
+                consumeLeaf(state, input.getKey(), input.getValue());
+            else resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
+                        manualIngredients, depth + 1, maxDepth, budget);
         for (var input : reusableInputs.entrySet())
         {
+            if (shape.selfIncrement() && output.isSame(input.getKey()))
+            {
+                consumeLeaf(state, input.getKey(), input.getValue());
+                continue;
+            }
             long additional = PlanningDependencyBatcher.additionalReusableAmount(
                     state.reusableRequirements, input.getKey(), input.getValue());
             if (additional > 0)
@@ -338,9 +358,15 @@ public final class ClientRecipePlanner
                         manualIngredients, depth + 1, maxDepth, budget);
         }
         state.steps++;
-        long produced = SaturatingLongMath.multiply(recipe.outputCount(), crafts);
+        long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         if (produced > remainder) state.stock.add(output, produced - remainder);
         return true;
+    }
+
+    private static void consumeLeaf(State state, IStackKey<?> key, long amount)
+    {
+        long used = consume(state, key, amount);
+        if (used < amount) state.missing.merge(key, amount - used, SaturatingLongMath::add);
     }
 
     private static int compare(State left, Recipe leftRecipe, State right, Recipe rightRecipe)

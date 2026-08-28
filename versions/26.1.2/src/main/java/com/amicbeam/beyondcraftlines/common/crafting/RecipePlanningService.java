@@ -138,10 +138,6 @@ public final class RecipePlanningService
                                    ResolutionMode mode)
     {
 
-        // The requested amount is a manufacturing quantity, not a desired final stock level.
-        // Existing target items are shown to the player but never satisfy this order.
-        stock.consume(target.getTypeId(), target::isSame, Long.MAX_VALUE);
-
         Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput = new LinkedHashMap<>();
         Iterable<RecipeHolder<?>> candidates;
         if (mode == ResolutionMode.SEARCH) candidates = visibleRecipes(level);
@@ -172,7 +168,10 @@ public final class RecipePlanningService
         // A manufacturing order always creates its requested target. Even if a custom key implementation
         // or a cyclic third-party recipe exposes an equivalent target as stock later in planning, it must
         // never become a reservation that the order extracts from the network.
-        state.usedStock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
+        boolean targetIsSelfIncrementSeed = state.steps.stream().anyMatch(step ->
+                step.selfIncrementSeed() > 0 && target.isSame(step.outputKey()));
+        if (!targetIsSelfIncrementSeed)
+            state.usedStock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
         return new RecipePlan(target, amount, state.steps, state.missing.entrySet().stream()
                 .map(entry -> new RecipePlan.Material(entry.getKey(), entry.getValue())).toList(),
                 state.usedStock.entrySet().stream()
@@ -187,7 +186,9 @@ public final class RecipePlanningService
                                 PlanningBudget budget)
     {
         if (mode == ResolutionMode.SEARCH) budget.checkTime();
-        long used = state.stock.consume(resource.getTypeId(), key -> resource.isSame(key)
+        // A root order always manufactures its full amount, but its existing stock must remain
+        // available to a self-increment child as the minimum seed.
+        long used = depth == 0 ? 0 : state.stock.consume(resource.getTypeId(), key -> resource.isSame(key)
                         && (requiredIngredient == null || key instanceof ItemStackKey itemKey
                         && requiredIngredient.test(itemKey.getReadOnlyStack())), needed,
                 (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
@@ -338,7 +339,6 @@ public final class RecipePlanningService
         KeyAmount result = RecipeOutputResolver.outputs(holder.value(), level).stream()
                 .filter(value -> outputKey.isSame(value.key())).findFirst().orElseThrow();
         long perCraft = Math.max(1, result.amount());
-        long crafts = SaturatingLongMath.ceilDiv(remainder, perCraft);
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> reusableDependencyInputs = new ArrayList<>();
@@ -352,12 +352,28 @@ public final class RecipePlanningService
                         BuiltInRegistries.ITEM.getKey(itemKey.getSource())));
         boolean[] reusableSlots = SimulatedCrafting.reusableIngredientSlots(holder, level, selections);
         Map<Integer, KeyAmount> fluidProxies = SimulatedCrafting.bucketFluidInputs(holder, level, selections);
+        long seedPerCraft = 0;
+        long consumedSeedPerCraft = 0;
+        for (int i = 0; i < variant.size(); i++)
+        {
+            RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
+            KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
+            if (!outputKey.isSame(choice.key())) continue;
+            seedPerCraft = SaturatingLongMath.add(seedPerCraft, choice.amount());
+            if (!(ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]))
+                consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, choice.amount());
+        }
+        SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
+                perCraft, seedPerCraft, consumedSeedPerCraft, remainder);
+        long crafts = shape.crafts();
         for (int i = 0; i < variant.size(); i++)
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
             boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
-            long inputAmount = PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
+            boolean selfInput = shape.selfIncrement() && outputKey.isSame(choice.key());
+            long inputAmount = selfInput ? choice.amount()
+                    : PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
             (reusable ? reusableDependencyInputs : dependencyInputs)
@@ -366,11 +382,18 @@ public final class RecipePlanningService
                     ? null : ingredient.itemIngredient());
         }
         for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
-            resolve(level, dependency.getKey(), dependency.getValue(),
-                    dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
-                    overrides, mode, depth + 1, maxDepth, budget);
+            if (shape.selfIncrement() && outputKey.isSame(dependency.getKey()))
+                consumeLeaf(dependency.getKey(), dependency.getValue(), state);
+            else resolve(level, dependency.getKey(), dependency.getValue(),
+                        dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
+                        overrides, mode, depth + 1, maxDepth, budget);
         for (var dependency : PlanningDependencyBatcher.aggregate(reusableDependencyInputs).entrySet())
         {
+            if (shape.selfIncrement() && outputKey.isSame(dependency.getKey()))
+            {
+                consumeLeaf(dependency.getKey(), dependency.getValue(), state);
+                continue;
+            }
             long additional = PlanningDependencyBatcher.additionalReusableAmount(
                     state.reusableRequirements, dependency.getKey(), dependency.getValue());
             if (additional > 0)
@@ -381,8 +404,8 @@ public final class RecipePlanningService
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id().identifier(), family(holder), outputKey,
-                perCraft, crafts, inputs, selections, dependencies));
-        long produced = SaturatingLongMath.multiply(perCraft, crafts);
+                perCraft, crafts, inputs, selections, dependencies, shape.seed()));
+        long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);
     }

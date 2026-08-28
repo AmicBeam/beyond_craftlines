@@ -70,6 +70,7 @@ public final class RecipeOrderSavedData extends SavedData
                             value.getLongOr("requested", 0L), executions, -1,
                             value.getBooleanOr("blocking_mode", false),
                             OrderOutputDestination.byId(value.getStringOr("output_destination", "network")),
+                            OrderOrigin.byId(value.getStringOr("origin", "manual")),
                             RecipeOrderJob.Status.valueOf(value.getStringOr("status", "ERROR")),
                             value.getStringOr("message", ""), value.getLongOr("created", 0L),
                             value.getLongOr("finished", 0L), readReserved(value, registries));
@@ -142,6 +143,7 @@ public final class RecipeOrderSavedData extends SavedData
             value.putLong("requested", job.requested()); value.putInt("next", job.nextStep());
             value.putBoolean("blocking_mode", job.blockingMode());
             value.putString("output_destination", job.outputDestination().id());
+            value.putString("origin", job.origin().id());
             value.putString("status", job.status().name()); value.putString("message", job.message());
             value.putLong("created", job.createdAt());
             value.putLong("finished", job.finishedAt());
@@ -182,6 +184,7 @@ public final class RecipeOrderSavedData extends SavedData
         tag.put("output_key", outputKey);
         tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
+        tag.putLong("self_increment_seed", step.selfIncrementSeed());
         ListTag inputs = new ListTag();
         for (RecipePlan.Material input : step.inputs())
         {
@@ -234,7 +237,8 @@ public final class RecipeOrderSavedData extends SavedData
         int[] dependencies = tag.getIntArray("dependencies").orElse(new int[0]);
         return new RecipePlan.Step(Identifier.parse(tag.getStringOr("recipe", "minecraft:air")), tag.getStringOr("family", ""),
                 output, tag.getLongOr("per", 0L), tag.getLongOr("crafts", 0L), inputs, selections,
-                java.util.Arrays.stream(dependencies).boxed().toList());
+                java.util.Arrays.stream(dependencies).boxed().toList(),
+                tag.getLongOr("self_increment_seed", 0L));
     }
 
     private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,

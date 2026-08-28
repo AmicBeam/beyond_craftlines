@@ -56,6 +56,9 @@ public final class RecipeIoProfileRegistry
     public static InputCountSemantics inputCountSemantics(Recipe<?> recipe, String member)
     { return resolved(recipe).inputCountSemantics().getOrDefault(member, InputCountSemantics.REQUIRED); }
 
+    static boolean distinctInputMember(Object recipe, String member)
+    { return resolved(recipe).distinctInputFields().contains(member); }
+
     public static List<OutputMapping> outputMappings(Recipe<?> recipe)
     { return resolved(recipe).outputMappings(); }
 
@@ -133,6 +136,10 @@ public final class RecipeIoProfileRegistry
         Set<String> recipeClassPrefixes = strings(object.getAsJsonArray("recipe_class_prefixes"), CLASS_NAME, 64);
         boolean includeDefaults = !object.has("include_defaults") || object.get("include_defaults").getAsBoolean();
         Set<String> inputFields = strings(object.getAsJsonArray("input_fields"), MEMBER_NAME, 128);
+        Set<String> distinctInputFields = strings(
+                object.getAsJsonArray("distinct_input_fields"), MEMBER_NAME, 128);
+        distinctInputFields = distinctInputFields.stream().filter(inputFields::contains)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
         Set<String> outputFields = strings(object.getAsJsonArray("output_fields"), MEMBER_NAME, 64);
         Set<String> representationFields = strings(object.getAsJsonArray("representation_fields"), MEMBER_NAME, 64);
         Set<String> structuralWrappers = strings(object.getAsJsonArray("structural_wrapper_fields"), MEMBER_NAME, 32);
@@ -144,7 +151,7 @@ public final class RecipeIoProfileRegistry
         List<DirectionRule> directions = parseDirections(object.getAsJsonArray("directions"));
         List<MultiplierRule> multipliers = parseMultipliers(object.getAsJsonArray("input_multipliers"));
         return new Profile(recipeTypes, recipeClasses, recipeClassPrefixes, includeDefaults,
-                inputFields, outputFields, representationFields, structuralWrappers, outputWrappers,
+                inputFields, distinctInputFields, outputFields, representationFields, structuralWrappers, outputWrappers,
                 countSemantics, outputMappings, countedWrappers, directions, multipliers);
     }
 
@@ -154,6 +161,7 @@ public final class RecipeIoProfileRegistry
                 .filter(profile -> matchesProfile(recipe, profile)).toList();
         boolean excludeDefaults = matching.stream().anyMatch(profile -> profile.scoped() && !profile.includeDefaults());
         LinkedHashSet<String> inputs = new LinkedHashSet<>();
+        LinkedHashSet<String> distinctInputs = new LinkedHashSet<>();
         LinkedHashSet<String> outputs = new LinkedHashSet<>();
         LinkedHashSet<String> representations = new LinkedHashSet<>();
         LinkedHashSet<String> structuralWrappers = new LinkedHashSet<>();
@@ -167,6 +175,7 @@ public final class RecipeIoProfileRegistry
         {
             if (excludeDefaults && !profile.scoped()) continue;
             inputs.addAll(profile.inputFields());
+            distinctInputs.addAll(profile.distinctInputFields());
             outputs.addAll(profile.outputFields());
             representations.addAll(profile.representationFields());
             structuralWrappers.addAll(profile.structuralWrapperFields());
@@ -177,7 +186,7 @@ public final class RecipeIoProfileRegistry
             profile.directions().forEach(value -> addDistinct(directions, value));
             profile.multipliers().forEach(value -> addDistinct(multipliers, value));
         }
-        return new ResolvedProfile(List.copyOf(inputs), List.copyOf(outputs), List.copyOf(representations),
+        return new ResolvedProfile(List.copyOf(inputs), Set.copyOf(distinctInputs), List.copyOf(outputs), List.copyOf(representations),
                 List.copyOf(structuralWrappers), List.copyOf(outputWrappers), Map.copyOf(countSemantics),
                 List.copyOf(outputMappings), List.copyOf(countedWrappers), List.copyOf(directions),
                 List.copyOf(multipliers));
@@ -391,7 +400,7 @@ public final class RecipeIoProfileRegistry
 
     public record Profile(Set<String> recipeTypes, Set<String> recipeClasses,
                           Set<String> recipeClassPrefixes, boolean includeDefaults,
-                          Set<String> inputFields, Set<String> outputFields,
+                          Set<String> inputFields, Set<String> distinctInputFields, Set<String> outputFields,
                           Set<String> representationFields, Set<String> structuralWrapperFields,
                           Set<String> outputWrapperFields,
                           Map<String, InputCountSemantics> inputCountSemantics,
@@ -402,7 +411,8 @@ public final class RecipeIoProfileRegistry
         { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty(); }
     }
 
-    private record ResolvedProfile(List<String> inputFields, List<String> outputFields,
+    private record ResolvedProfile(List<String> inputFields, Set<String> distinctInputFields,
+                                   List<String> outputFields,
                                    List<String> representationFields, List<String> structuralWrapperFields,
                                    List<String> outputWrapperFields,
                                    Map<String, InputCountSemantics> inputCountSemantics,

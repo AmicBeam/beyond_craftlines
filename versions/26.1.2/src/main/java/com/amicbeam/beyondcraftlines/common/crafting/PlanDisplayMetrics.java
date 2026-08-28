@@ -20,8 +20,10 @@ public final class PlanDisplayMetrics
     public static Summary summarize(ServerLevel level, RecipePlan actual, RecipePlan theoretical)
     {
         LinkedHashMap<IStackKey<?>, Long> extraction = new LinkedHashMap<>();
+        boolean targetIsSelfIncrementSeed = actual.steps().stream().anyMatch(step ->
+                step.selfIncrementSeed() > 0 && actual.targetKey().isSame(step.outputKey()));
         for (RecipePlan.ReservedMaterial material : actual.reserved())
-            if (!actual.targetKey().isSame(material.key()))
+            if (targetIsSelfIncrementSeed || !actual.targetKey().isSame(material.key()))
                 extraction.merge(material.key(), material.amount(), SaturatingLongMath::add);
 
         LinkedHashMap<IStackKey<?>, Long> totalCost = new LinkedHashMap<>();
@@ -35,7 +37,7 @@ public final class PlanDisplayMetrics
         for (RecipePlan.Step step : theoretical.steps())
         {
             IStackKey<?> outputKey = step.outputKey();
-            long output = SaturatingLongMath.multiply(step.outputPerCraft(), step.crafts());
+            long output = displayedOutput(step);
             produced.merge(outputKey, output, SaturatingLongMath::add);
             MutableNode node = theoreticalNodes.computeIfAbsent(outputKey, ignored -> new MutableNode(step.recipe()));
             node.produced = SaturatingLongMath.add(node.produced, output);
@@ -49,7 +51,7 @@ public final class PlanDisplayMetrics
         {
             MutableNode node = actualNodes.computeIfAbsent(step.outputKey(), ignored -> new MutableNode(step.recipe()));
             node.produced = SaturatingLongMath.add(node.produced,
-                    SaturatingLongMath.multiply(step.outputPerCraft(), step.crafts()));
+                    displayedOutput(step));
             node.crafts = SaturatingLongMath.add(node.crafts, step.crafts());
         }
 
@@ -104,6 +106,14 @@ public final class PlanDisplayMetrics
                 java.util.Comparator.comparing(RecipeResourceResolver::sortKey)))
                 .forEach(entry -> result.put(entry.getKey(), entry.getValue()));
         return Collections.unmodifiableMap(result);
+    }
+
+    private static long displayedOutput(RecipePlan.Step step)
+    {
+        long perCraft = step.selfIncrementSeed() > 0
+                ? Math.max(1, step.outputPerCraft() - step.selfIncrementSeed())
+                : step.outputPerCraft();
+        return SaturatingLongMath.multiply(perCraft, step.crafts());
     }
 
     private static ItemStackKey itemKey(Identifier item)

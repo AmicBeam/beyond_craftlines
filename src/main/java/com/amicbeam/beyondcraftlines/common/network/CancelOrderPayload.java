@@ -23,7 +23,7 @@ public record CancelOrderPayload(UUID orderId) implements CustomPacketPayload
     {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player)
-                RecipeOrderService.cancel(player.server, player.getUUID(), payload.orderId());
+                RecipeOrderService.cancel(player, payload.orderId());
         });
     }
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

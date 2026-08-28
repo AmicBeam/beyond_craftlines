@@ -128,6 +128,7 @@ public final class RecipeResourceResolver
         {
             RecipeIoProfileRegistry.InputCountSemantics countSemantics =
                     RecipeIoProfileRegistry.inputCountSemantics(recipe, methodName);
+            boolean distinctInput = RecipeIoProfileRegistry.distinctInputMember(recipe, methodName);
             Object rawInput = RecipeReflection.readPublicMember(recipe, methodName);
             for (Object input : CountedInputReflection.flatten(recipe, rawInput))
             {
@@ -145,7 +146,8 @@ public final class RecipeResourceResolver
                     List<KeyAmount> candidates = itemCandidates(ingredient, multiplier, countSemantics);
                     if (candidates.isEmpty()) continue;
                     seen.add(input);
-                    if (canonicalSignatures.contains(signature(candidates))) continue;
+                    if (shouldSkipCanonicalInput(distinctInput, canonicalSignatures,
+                            signature(candidates))) continue;
                     result.add(new ResourceIngredient(slot++, candidates, ingredient,
                             CountedInputReflection.inputGroup(methodName)));
                     continue;
@@ -164,13 +166,18 @@ public final class RecipeResourceResolver
                 }
                 if (candidates.isEmpty()) continue;
                 seen.add(input);
-                if (canonicalSignatures.contains(signature(List.copyOf(candidates.values())))) continue;
+                if (shouldSkipCanonicalInput(distinctInput, canonicalSignatures,
+                        signature(List.copyOf(candidates.values())))) continue;
                 result.add(new ResourceIngredient(slot++, List.copyOf(candidates.values()), null,
                         CountedInputReflection.inputGroup(methodName)));
             }
         }
         return List.copyOf(result);
     }
+
+    static boolean shouldSkipCanonicalInput(boolean distinctInput, Set<String> canonicalSignatures,
+                                            String candidateSignature)
+    { return !distinctInput && canonicalSignatures.contains(candidateSignature); }
 
     static long interpretedInputAmount(long representedAmount, long wrapperMultiplier,
                                        RecipeIoProfileRegistry.InputCountSemantics semantics)

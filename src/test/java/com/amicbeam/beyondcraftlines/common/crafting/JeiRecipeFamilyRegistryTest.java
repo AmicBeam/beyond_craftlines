@@ -122,6 +122,18 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
+    void manualSelectionHidesVirtualCategoriesUnlessMappingDebugIsEnabled()
+    {
+        Set<String> categories = Set.of("minecraft:anvil", "minecraft:smelting", "create:packing");
+        Set<String> loaded = Set.of("smelting", "create:compacting");
+
+        assertEquals(Set.of("minecraft:smelting", "create:packing"),
+                ManualRecipeTypeVisibility.visible(categories, loaded, ALIASES, Map.of(), false));
+        assertEquals(categories,
+                ManualRecipeTypeVisibility.visible(categories, loaded, ALIASES, Map.of(), true));
+    }
+
+    @Test
     void verifiedRecipeSampleCanSupplyAPreviouslyUnknownMapping()
     {
         var result = JeiRecipeFamilyMappings.resolve(Set.of("example:press"),

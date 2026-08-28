@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "redstone",
+  "pattern": ["IRI", "GPG", "IRI"],
+  "key": {
+    "I": {"tag": "c:ingots/iron"},
+    "R": {"tag": "c:dusts/redstone"},
+    "G": {"item": "minecraft:glass_pane"},
+    "P": {"item": "beyonddimensions:space_time_stable_frame"}
+  },
+  "result": {"id": "beyond_craftlines:craftline_dashboard", "count": 1}
+}

@@ -61,6 +61,7 @@ public final class RecipeOrderSavedData extends SavedData
                             value.getInt("network"), ResourceLocation.parse(value.getString("target")),
                             value.getLong("requested"), executions, -1, value.getBoolean("blocking_mode"),
                             OrderOutputDestination.byId(value.getString("output_destination")),
+                            OrderOrigin.byId(value.getString("origin")),
                             RecipeOrderJob.Status.valueOf(value.getString("status")), value.getString("message"),
                             value.getLong("created"), value.getLong("finished"), readReserved(value, registries));
                 }
@@ -132,6 +133,7 @@ public final class RecipeOrderSavedData extends SavedData
             value.putLong("requested", job.requested()); value.putInt("next", job.nextStep());
             value.putBoolean("blocking_mode", job.blockingMode());
             value.putString("output_destination", job.outputDestination().id());
+            value.putString("origin", job.origin().id());
             value.putString("status", job.status().name()); value.putString("message", job.message());
             value.putLong("created", job.createdAt());
             value.putLong("finished", job.finishedAt());
@@ -172,6 +174,7 @@ public final class RecipeOrderSavedData extends SavedData
         tag.put("output_key", outputKey);
         tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
+        tag.putLong("self_increment_seed", step.selfIncrementSeed());
         ListTag inputs = new ListTag();
         for (RecipePlan.Material input : step.inputs())
         {
@@ -224,7 +227,8 @@ public final class RecipeOrderSavedData extends SavedData
                         ResourceLocation.parse(tag.getString("output")))));
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
                 output, tag.getLong("per"), tag.getLong("crafts"), inputs, selections,
-                java.util.Arrays.stream(tag.getIntArray("dependencies")).boxed().toList());
+                java.util.Arrays.stream(tag.getIntArray("dependencies")).boxed().toList(),
+                tag.getLong("self_increment_seed"));
     }
 
     private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,

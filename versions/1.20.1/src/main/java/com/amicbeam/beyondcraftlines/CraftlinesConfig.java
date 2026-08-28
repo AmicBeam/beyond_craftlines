@@ -66,6 +66,18 @@ public final class CraftlinesConfig {
             .defineInRange("maxActiveOrders", 1_024, 1, 100_000);
     public static final ForgeConfigSpec.IntValue MAX_ACTIVE_ORDERS_PER_PLAYER = SERVER_BUILDER
             .defineInRange("maxActiveOrdersPerPlayer", 64, 1, 10_000);
+    public static final ForgeConfigSpec.IntValue DASHBOARD_CHECK_INTERVAL_TICKS = SERVER_BUILDER
+            .comment("Ticks between automatic stock checks performed by a Craftline Dashboard.")
+            .defineInRange("dashboardCheckIntervalTicks", 20, 1, 72_000);
+    public static final ForgeConfigSpec.IntValue MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK = SERVER_BUILDER
+            .comment("Maximum active automatic dashboard orders on one BD network.")
+            .defineInRange("maxActiveAutomaticOrdersPerNetwork", 10, 1, 10_000);
+    public static final ForgeConfigSpec.IntValue MAX_DASHBOARD_RECIPE_BYTES = SERVER_BUILDER
+            .comment("Maximum estimated serialized bytes for one dashboard recipe tree.")
+            .defineInRange("maxDashboardRecipeBytes", 32_768, 1_024, 65_536);
+    public static final ForgeConfigSpec.IntValue MAX_DASHBOARD_RECIPE_CHOICES = SERVER_BUILDER
+            .comment("Maximum combined choices in one dashboard recipe tree.")
+            .defineInRange("maxDashboardRecipeChoices", 4_096, 1, 16_384);
     public static final ForgeConfigSpec.IntValue MAX_CONCURRENT_ORDERS_PER_NETWORK = SERVER_BUILDER
             .comment("Maximum orders that may execute concurrently on one BD network when their non-crafting recipe families do not overlap. Set to one for strict FIFO execution.")
             .defineInRange("maxConcurrentOrdersPerNetwork", 4, 1, 1_024);

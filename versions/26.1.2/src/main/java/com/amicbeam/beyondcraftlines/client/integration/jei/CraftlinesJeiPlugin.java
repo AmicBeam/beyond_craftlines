@@ -20,6 +20,7 @@ import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import mezz.jei.api.registration.IAdvancedRegistration;
+import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -65,6 +66,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             }
         });
     }
+    @Override public void registerGuiHandlers(IGuiHandlerRegistration registration){registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.DashboardConfigScreen.class,new DashboardGhostIngredientHandler());}
 
     @Override
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)
@@ -234,8 +236,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         {
             if (orderButtonAvailability() != NetworkAvailability.AVAILABLE) return false;
             if (!input.isSimulate())
+            {
                 ClientPacketDistributor.sendToServer(new OpenOrderMenuPayload(
                         target, recipe.toString(), recipeType.toString()));
+            }
             return true;
         }
 

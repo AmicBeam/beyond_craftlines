@@ -1,0 +1,7 @@
+{
+  "jei_type": "touhou_little_maid:altar",
+  "recipe_types": [
+    "touhou_little_maid:altar_crafting",
+    "touhou_little_maid:altar_recipe"
+  ]
+}

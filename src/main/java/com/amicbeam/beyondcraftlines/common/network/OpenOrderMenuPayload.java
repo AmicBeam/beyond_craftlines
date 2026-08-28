@@ -111,6 +111,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                         buffer.writeBoolean(requestedRecipe != null);
                         buffer.writeVarInt(availableFamilies.size());
                         availableFamilies.stream().sorted().forEach(buffer::writeUtf);
+                        buffer.writeBoolean(false);
+                        buffer.writeBoolean(false);
+                        buffer.writeVarLong(1);
+                        buffer.writeUtf("network", 16);
                     });
         });
     }

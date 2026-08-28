@@ -20,6 +20,7 @@ import mezz.jei.api.gui.inputs.IJeiUserInput;
 import mezz.jei.api.recipe.RecipeIngredientRole;
 import mezz.jei.api.recipe.advanced.IRecipeButtonControllerFactory;
 import mezz.jei.api.registration.IAdvancedRegistration;
+import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -64,6 +65,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                         : new OrderButtonController(target, recipe, recipeType, scaledIcon);
             }
         });
+    }
+
+    @Override public void registerGuiHandlers(IGuiHandlerRegistration registration)
+    {
+        registration.addGhostIngredientHandler(
+                com.amicbeam.beyondcraftlines.client.DashboardConfigScreen.class,
+                new DashboardGhostIngredientHandler());
     }
 
     @Override
@@ -142,6 +150,12 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 .or(() -> current.getBookmarkOverlay().getIngredientUnderMouse());
         return ingredient.map(mezz.jei.api.ingredients.ITypedIngredient::getIngredient)
                 .map(CraftlinesJeiPlugin::orderTarget).orElse(null);
+    }
+
+    public static @Nullable IStackKey<?> ingredientUnderMouseKey()
+    {
+        IJeiRuntime current = runtime;
+        return current == null ? null : ingredientUnderMouse(current);
     }
 
     private static @Nullable IStackKey<?> orderTarget(Object ingredient)
@@ -239,8 +253,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             // JEI first simulates input routing and then performs the click. Visibility and activity are
             // already refreshed every tick; re-running the asynchronous network check here can make the
             // real click lose a race with its own availability response on Forge 1.20.1.
-            if (!input.isSimulate()) PacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                    target, recipe.toString(), recipeType.toString()));
+            if (!input.isSimulate())
+            {
+                PacketDistributor.sendToServer(new OpenOrderMenuPayload(
+                        target, recipe.toString(), recipeType.toString()));
+            }
             return true;
         }
 

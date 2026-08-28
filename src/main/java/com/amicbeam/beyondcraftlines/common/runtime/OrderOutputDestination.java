@@ -3,7 +3,9 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 public enum OrderOutputDestination
 {
     NETWORK("network"),
-    INVENTORY("inventory");
+    INVENTORY("inventory"),
+    /** Internal destination used by automatic dashboard orders. */
+    CONTAINER("container");
 
     private final String id;
 

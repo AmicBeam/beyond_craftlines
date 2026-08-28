@@ -53,7 +53,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         if (initial != null)
         {
             orders = List.of(new OrderView(initial.id(), initial.target(), initial.requested(), 0, 0,
-                    initial.blockingMode(), "QUEUED", "", 0, List.of()));
+                    initial.blockingMode(), "manual", "QUEUED", "", 0, List.of()));
             selectedOrder = initial.id();
         }
     }
@@ -123,7 +123,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             }
             cached.put(id, new OrderView(id, value.getString("target"), value.getLong("requested"),
                     value.getInt("next"), value.getInt("total"), value.getBoolean("blocking_mode"),
-                    value.getString("status"), value.getString("message"), value.getLong("revision"),
+                    value.getString("origin"), value.getString("status"), value.getString("message"), value.getLong("revision"),
                     List.copyOf(steps)));
         }
 
@@ -229,7 +229,8 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             if (!target.isEmpty()) graphics.renderItem(target, leftPos + 28, y + 8);
             int textX = leftPos + 50;
             String targetName = target.isEmpty() ? order.target() : target.getHoverName().getString();
-            graphics.drawString(font, font.plainSubstrByWidth(targetName + " ×" + order.requested(),
+            String origin = Component.translatable("gui.beyond_craftlines.order_origin." + order.origin()).getString();
+            graphics.drawString(font, font.plainSubstrByWidth("[" + origin + "] " + targetName + " ×" + order.requested(),
                     imageWidth - 180), textX, y + 6, statusColor(order.status()), false);
             Component status = Component.translatable("gui.beyond_craftlines.status."
                     + order.status().toLowerCase(Locale.ROOT));
@@ -349,7 +350,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     }
 
     private record OrderView(UUID id, String target, long requested, int next, int total,
-                             boolean blockingMode, String status, String message, long revision,
+                             boolean blockingMode, String origin, String status, String message, long revision,
                              List<StepView> steps)
     {
         boolean active() { return status.equals("QUEUED") || status.equals("RUNNING") || status.equals("PAUSED"); }

@@ -195,6 +195,22 @@ public final class BoundMachineAutomation
         return best;
     }
 
+    public static long countPresent(ServerLevel level, BlockPos position, Direction side, IStackKey<?> key)
+    {
+        long best = 0;
+        for (BdResourceHandler handler : resourceHandlers(level, position, side))
+            if (handler.type().equals(key.getTypeId())) best = Math.max(best, handler.present(key));
+        return best;
+    }
+
+    public static boolean supportsResource(ServerLevel level, BlockPos position,
+                                           Direction side, IStackKey<?> key)
+    {
+        if (key == null || key.isEmpty()) return false;
+        return resourceHandlers(level, position, side).stream()
+                .anyMatch(handler -> handler.type().equals(key.getTypeId()));
+    }
+
     public static List<KeyAmount> extractStacks(ServerLevel level, BlockPos position,
                                                 IStackKey<?> key, long amount)
     {

@@ -18,6 +18,7 @@ import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 
 import java.util.List;
@@ -56,17 +57,31 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private final Set<String> availableFamilies;
     private final RecipeIndex recipeIndex;
     private final RecipeHolder<?> initialRecipeHolder;
+    private final BlockPos dashboardPosition;
+    private final boolean initialBlockingMode;
+    private final long initialDashboardDesired;
+    private final String initialDashboardStockMode;
     private final SimpleContainerData serverIndexProgress = new SimpleContainerData(2);
 
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
         this(id, inventory, data.readVarInt(), IStackKey.STREAM_CODEC.decode((RegistryFriendlyByteBuf) data),
-                optionalId(data.readUtf()), data.readBoolean(), readFamilies(data));
+                optionalId(data.readUtf()), data.readBoolean(), readFamilies(data),
+                data.readBoolean() ? data.readBlockPos() : null, data.readBoolean(),
+                data.readVarLong(), data.readUtf(16));
     }
 
     public CraftlineOrderMenu(int id, Inventory inventory, int networkId, IStackKey<?> initialTarget,
                               Identifier initialRecipe, boolean initialRecipePinned,
                               Set<String> availableFamilies)
+    { this(id, inventory, networkId, initialTarget, initialRecipe, initialRecipePinned,
+            availableFamilies, null, false, 1, "network"); }
+
+    public CraftlineOrderMenu(int id, Inventory inventory, int networkId, IStackKey<?> initialTarget,
+                              Identifier initialRecipe, boolean initialRecipePinned,
+                              Set<String> availableFamilies, BlockPos dashboardPosition,
+                              boolean initialBlockingMode, long initialDashboardDesired,
+                              String initialDashboardStockMode)
     {
         super(CraftlinesMenus.ORDER.get(), id);
         this.player = inventory.player;
@@ -75,6 +90,10 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialRecipe = initialRecipe;
         this.initialRecipePinned = initialRecipePinned;
         this.availableFamilies = Set.copyOf(availableFamilies);
+        this.dashboardPosition = dashboardPosition == null ? null : dashboardPosition.immutable();
+        this.initialBlockingMode = initialBlockingMode;
+        this.initialDashboardDesired = Math.max(1, initialDashboardDesired);
+        this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         var level = player.level();
         List<RecipeHolder<?>> candidates;
         if (level instanceof ServerLevel serverLevel)
@@ -109,6 +128,11 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public boolean initialRecipePinned() { return initialRecipePinned; }
     public RecipeHolder<?> initialRecipeHolder() { return initialRecipeHolder; }
     public Set<String> availableFamilies() { return availableFamilies; }
+    public boolean dashboardConfiguration() { return dashboardPosition != null; }
+    public BlockPos dashboardPosition() { return dashboardPosition; }
+    public boolean initialBlockingMode() { return initialBlockingMode; }
+    public long initialDashboardDesired() { return initialDashboardDesired; }
+    public String initialDashboardStockMode() { return initialDashboardStockMode; }
     public List<RecipeHolder<?>> recipes()
     { ensureRecipeIndexForServer(); return available(recipeIndex.recipes()); }
     public RecipeHolder<?> recipeForOutput(Identifier output)
@@ -235,6 +259,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         private final CompletableFuture<PersistedIndex> cacheLoad;
         private boolean cacheChecked;
         private boolean cachePersisted;
+        private boolean buildAnnounced;
 
         private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level)
         { this(candidates, candidates.size(), level, null); }
@@ -254,6 +279,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         {
             if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
             if (!loadCacheIfReady()) return;
+            announceBuildStarted();
             int end = (int) Math.min(totalCandidates, (long) next + recipeBudget);
             int minimum = Math.min(1, recipeBudget);
             int processed = 0;
@@ -382,7 +408,20 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                     byRecipe.put(recipe.toString(), List.copyOf(tokens)));
             PersistedIndex persisted = new PersistedIndex(1, totalCandidates,
                     Map.copyOf(byOutput), Map.copyOf(byRecipe), epochAccumulator.snapshot());
-            CompletableFuture.runAsync(() -> writePersistedIndex(cachePath, persisted), INDEX_IO);
+            MinecraftServer server = ((ServerLevel) level).getServer();
+            CompletableFuture.supplyAsync(() -> writePersistedIndex(cachePath, persisted), INDEX_IO)
+                    .thenAccept(success -> server.execute(() -> broadcastToPlayers(server,
+                            success ? "message.beyond_craftlines.server_recipe_index_complete"
+                                    : "error.beyond_craftlines.server_recipe_index_persist_failed",
+                            persisted.totalRecipes())));
+        }
+
+        private void announceBuildStarted()
+        {
+            if (buildAnnounced || cachePath == null || !(level instanceof ServerLevel serverLevel)) return;
+            buildAnnounced = true;
+            broadcastToPlayers(serverLevel.getServer(),
+                    "message.beyond_craftlines.server_recipe_index_started", totalCandidates);
         }
 
         private synchronized long epoch(Set<String> availableFamilies)
@@ -430,7 +469,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
     }
 
-    private static void writePersistedIndex(Path path, PersistedIndex persisted)
+    private static boolean writePersistedIndex(Path path, PersistedIndex persisted)
     {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
@@ -443,9 +482,19 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             catch (java.nio.file.AtomicMoveNotSupportedException ignored)
             { Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING); }
             LOGGER.info("Persisted Craftlines server recipe index with {} recipes", persisted.totalRecipes());
+            return true;
         }
         catch (Exception exception)
-        { LOGGER.warn("Unable to persist Craftlines recipe index to {}", path, exception); }
+        {
+            LOGGER.warn("Unable to persist Craftlines recipe index to {}", path, exception);
+            return false;
+        }
+    }
+
+    private static void broadcastToPlayers(MinecraftServer server, String translationKey, int recipeCount)
+    {
+        var message = net.minecraft.network.chat.Component.translatable(translationKey, recipeCount);
+        for (var player : server.getPlayerList().getPlayers()) player.sendSystemMessage(message);
     }
 
     private record PersistedIndex(int format, int totalRecipes,
@@ -474,5 +523,11 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     { return value == null || value.isBlank() ? null : Identifier.tryParse(value); }
 
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
-    @Override public boolean stillValid(Player player) { return canAccessNetwork(player); }
+    @Override public boolean stillValid(Player player)
+    {
+        return canAccessNetwork(player) && (dashboardPosition == null
+                || player.blockPosition().distSqr(dashboardPosition) <= 64
+                && player.level().getBlockEntity(dashboardPosition)
+                instanceof com.amicbeam.beyondcraftlines.common.runtime.CraftlineDashboardBlockEntity);
+    }
 }

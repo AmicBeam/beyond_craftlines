@@ -31,6 +31,14 @@ final class RecipeOutputResolverTest
     }
 
     @Test
+    void readsMekanismSawingMainAndSecondaryOutputDefinitions()
+    {
+        assertEquals(List.of("birch_planks", "sawdust"),
+                RecipeOutputResolver.reflectiveOutputValues(new SawmillLikeRecipe(),
+                        List.of("getMainOutputDefinition", "getSecondaryOutputDefinition")));
+    }
+
+    @Test
     void unwrapsMekanismElectrolysisOutputRecord()
     {
         assertEquals(List.of("hydrogen", "oxygen"),
@@ -147,6 +155,12 @@ final class RecipeOutputResolverTest
     {
         public List<String> getChemicalOutputDefinition() { return List.of("chemical"); }
         public List<String> getFluidOutputDefinition() { return List.of("fluid"); }
+    }
+
+    private static final class SawmillLikeRecipe
+    {
+        public List<String> getMainOutputDefinition() { return List.of("birch_planks"); }
+        public List<String> getSecondaryOutputDefinition() { return List.of("sawdust"); }
     }
 
     private static final class ElectrolysisLikeRecipe

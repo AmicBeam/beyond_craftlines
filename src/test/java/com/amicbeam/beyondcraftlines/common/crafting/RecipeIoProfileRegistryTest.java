@@ -70,6 +70,15 @@ final class RecipeIoProfileRegistryTest
     }
 
     @Test
+    void shipsMekanismSawingMainAndSecondaryOutputs()
+    {
+        var profile = read("mekanism_sawing.json");
+        assertEquals(Set.of("mekanism:sawing"), profile.recipeTypes());
+        assertEquals(Set.of("getMainOutputDefinition", "getSecondaryOutputDefinition"),
+                profile.outputFields());
+    }
+
+    @Test
     void parsesScopedFieldsRulesAndRejectsInvalidNames()
     {
         var profile = RecipeIoProfileRegistry.parse(JsonParser.parseString("""

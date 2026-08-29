@@ -130,7 +130,11 @@ public final class CraftlinesClientEvents
             var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             boolean provisioner = state.is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks
                     .CRAFTLINE_PROVISIONER.get());
-            if (!provisioner && !ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId)) return;
+            if (!provisioner && !ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId))
+            {
+                event.setCanceled(true);
+                return;
+            }
             var types = new java.util.LinkedHashSet<>(
                     provisioner ? java.util.Set.<ResourceLocation>of()
                             : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex

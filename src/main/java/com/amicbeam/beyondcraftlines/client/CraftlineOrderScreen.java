@@ -323,11 +323,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         else if (menu.initialRecipe() == null)
         {
-            targetRecipeSearchPending = true;
-            targetRecipeSearchDelay = 1;
-            loadingStatus = Component.translatable(
-                    "gui.beyond_craftlines.middle_click_recipe_search").getString();
-            previewError = "";
+            if (menu.initialError().isBlank())
+            {
+                targetRecipeSearchPending = true;
+                targetRecipeSearchDelay = 1;
+                loadingStatus = Component.translatable(
+                        "gui.beyond_craftlines.middle_click_recipe_search").getString();
+                previewError = "";
+            }
+            else
+            {
+                targetRecipeSearchPending = false;
+                loadingStatus = "";
+                previewError = localizedPlanningError(menu.initialError());
+            }
         }
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                 "{} client screen initial target={} initialRecipe={} pinned={} selected={} searchPending={}",
@@ -679,6 +688,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         treeLeft() + 5, treeBottom() - 24, BD_CYAN, false);
                 renderLoadingProgress(graphics);
             }
+            if (!previewError.isBlank())
+                graphics.drawString(font, font.plainSubstrByWidth(
+                                previewError, treeRight() - treeLeft() - 10),
+                        treeLeft() + 5, treeBottom() - (loadingStatus.isBlank() ? 24 : 36),
+                        0xFFFF6677, true);
             return;
         }
         List<GraphNode> nodes = treeNodes;

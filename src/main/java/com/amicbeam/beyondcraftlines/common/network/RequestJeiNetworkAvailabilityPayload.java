@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -22,8 +23,13 @@ public record RequestJeiNetworkAvailabilityPayload() implements CustomPacketPayl
     {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player)
-                PacketDistributor.sendToPlayer(player, new JeiNetworkAvailabilityPayload(
-                        DimensionsNet.getPrimaryNetFromPlayer(player) != null));
+            {
+                DimensionsNet network = DimensionsNet.getPrimaryNetFromPlayer(player);
+                var types = network == null ? java.util.List.<String>of()
+                        : DeviceBindingRegistry.availableFamilies(player.getServer(), network.getId())
+                        .stream().sorted().toList();
+                PacketDistributor.sendToPlayer(player, new JeiNetworkAvailabilityPayload(network != null, types));
+            }
         });
     }
 

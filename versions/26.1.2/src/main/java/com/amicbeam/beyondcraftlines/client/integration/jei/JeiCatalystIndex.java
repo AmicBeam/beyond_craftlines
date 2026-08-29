@@ -2,9 +2,8 @@ package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
-import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeTypeWarmupTracker;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
-import mezz.jei.api.recipe.IFocus;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -18,11 +17,9 @@ import net.minecraft.world.item.crafting.RecipeHolder;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -38,11 +35,8 @@ public final class JeiCatalystIndex
     private static volatile Map<Identifier, Set<String>> INPUT_GROUPS_BY_TYPE = Map.of();
     private static volatile Map<Identifier, IRecipeCategory<?>> CATEGORIES_BY_TYPE = Map.of();
     private static final Map<Identifier, RecipeHolder<?>> RECIPES_BY_ID = new LinkedHashMap<>();
-    private static final ArrayDeque<SearchTask> SEARCH_QUEUE = new ArrayDeque<>();
-    private static final ArrayDeque<SearchTask> GROUP_QUEUE = new ArrayDeque<>();
-    private static final Set<String> REQUESTED_OUTPUTS = new HashSet<>();
-    private static final Set<Identifier> REQUESTED_GROUP_TYPES = new HashSet<>();
-    private static final Set<Identifier> COMPLETE_GROUP_TYPES = new HashSet<>();
+    private static final ArrayDeque<SearchTask> TYPE_QUEUE = new ArrayDeque<>();
+    private static final RecipeTypeWarmupTracker<Identifier> TYPE_STATE = new RecipeTypeWarmupTracker<>();
     private static volatile IJeiRuntime runtime;
     private static boolean recipesDirty;
 
@@ -51,15 +45,13 @@ public final class JeiCatalystIndex
     /** Runtime startup only records category metadata. Recipe layouts are materialized on demand. */
     public static void rebuild(IJeiRuntime runtime)
     {
+        Set<Identifier> previousActiveTypes = TYPE_STATE.activeTypes();
         JeiCatalystIndex.runtime = runtime;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(
                 net.minecraft.client.Minecraft.getInstance().getResourceManager());
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
-        SEARCH_QUEUE.clear();
-        GROUP_QUEUE.clear();
-        REQUESTED_OUTPUTS.clear();
-        REQUESTED_GROUP_TYPES.clear();
-        COMPLETE_GROUP_TYPES.clear();
+        TYPE_QUEUE.clear();
+        TYPE_STATE.clear();
         RECIPES_BY_ID.clear();
         recipesDirty = false;
         RecipeCatalog.clearClient();
@@ -91,6 +83,8 @@ public final class JeiCatalystIndex
         TITLES_BY_TYPE = Map.copyOf(titles);
         CATEGORIES_BY_TYPE = Map.copyOf(categories);
         INPUT_GROUPS_BY_TYPE = Map.of();
+        enqueueRecipeTypes(TYPE_STATE.activate(previousActiveTypes.stream()
+                .filter(CATEGORIES_BY_TYPE::containsKey).toList()));
     }
 
     public static void refresh()
@@ -99,33 +93,69 @@ public final class JeiCatalystIndex
         if (current != null) rebuild(current);
     }
 
+    public static void prewarmRecipeTypes(java.util.Collection<String> types)
+    {
+        Set<Identifier> parsed = knownRecipeTypes(types);
+        enqueueRecipeTypes(TYPE_STATE.activate(parsed));
+    }
+
+    public static boolean recipeTypesReady(java.util.Collection<String> types)
+    { return runtime == null || TYPE_STATE.ready(knownRecipeTypes(types)); }
+
+    private static Set<Identifier> knownRecipeTypes(java.util.Collection<String> types)
+    {
+        LinkedHashSet<Identifier> parsed = new LinkedHashSet<>();
+        for (String value : types)
+        {
+            Identifier type = recipeTypeId(value);
+            if (type != null && CATEGORIES_BY_TYPE.containsKey(type)) parsed.add(type);
+        }
+        Identifier crafting = Identifier.fromNamespaceAndPath("minecraft", "crafting");
+        if (CATEGORIES_BY_TYPE.containsKey(crafting)) parsed.add(crafting);
+        return parsed;
+    }
+
+    private static Identifier recipeTypeId(String value)
+    {
+        if (value == null || value.isBlank()) return null;
+        if ("crafting".equals(value)) return Identifier.fromNamespaceAndPath("minecraft", "crafting");
+        Identifier parsed = Identifier.tryParse(value);
+        if (parsed != null) return parsed;
+        return Identifier.tryParse("minecraft:" + value);
+    }
+
+    private static void requestRecipeTypes(java.util.Collection<Identifier> types)
+    { enqueueRecipeTypes(TYPE_STATE.request(types)); }
+
+    private static void enqueueRecipeTypes(java.util.Collection<Identifier> types)
+    {
+        for (Identifier type : types)
+        {
+            IRecipeCategory<?> category = CATEGORIES_BY_TYPE.get(type);
+            if (category == null) TYPE_STATE.complete(type);
+            else TYPE_QUEUE.addLast(new SearchTask(category, type));
+        }
+    }
+
     public static boolean requestRecipesFor(IStackKey<?> output)
     {
-        IJeiRuntime current = runtime;
-        if (current == null || output == null || output.isEmpty()) return false;
-        String token = RecipeResourceResolver.sortKey(output);
-        if (!REQUESTED_OUTPUTS.add(token)) return true;
-        var typed = current.getIngredientManager().createTypedIngredient(output.getReadOnlyStack(), false);
-        if (typed.isEmpty()) return false;
-        IFocus<?> focus = current.getJeiHelpers().getFocusFactory().createFocus(
-                mezz.jei.api.recipe.RecipeIngredientRole.OUTPUT, typed.get());
-        CATEGORIES_BY_TYPE.values().forEach(category -> SEARCH_QUEUE.addLast(new SearchTask(category, focus)));
+        if (runtime == null || output == null || output.isEmpty()) return false;
+        Set<Identifier> activeTypes = TYPE_STATE.activeTypes();
+        if (activeTypes.isEmpty())
+        {
+            enqueueRecipeTypes(TYPE_STATE.activate(CATEGORIES_BY_TYPE.keySet()));
+        }
+        else requestRecipeTypes(activeTypes);
         return true;
     }
 
     public static void requestInputGroupsFor(Set<Identifier> types)
     {
-        for (Identifier type : types)
-        {
-            if (!REQUESTED_GROUP_TYPES.add(type)) continue;
-            IRecipeCategory<?> category = CATEGORIES_BY_TYPE.get(type);
-            if (category == null) COMPLETE_GROUP_TYPES.add(type);
-            else GROUP_QUEUE.addLast(new SearchTask(category, type));
-        }
+        enqueueRecipeTypes(TYPE_STATE.activate(types));
     }
 
     public static boolean inputGroupsReady(Set<Identifier> types)
-    { return COMPLETE_GROUP_TYPES.containsAll(types); }
+    { return TYPE_STATE.ready(types); }
 
     public static void tick()
     {
@@ -133,27 +163,25 @@ public final class JeiCatalystIndex
         if (current == null) return;
         int remaining = Math.min(MAX_LAYOUTS_PER_FRAME, CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get());
         long deadline = System.nanoTime() + MAX_INDEX_NANOS_PER_FRAME;
-        while (remaining > 0 && (!SEARCH_QUEUE.isEmpty() || !GROUP_QUEUE.isEmpty())
-                && System.nanoTime() < deadline)
+        while (remaining > 0 && !TYPE_QUEUE.isEmpty() && System.nanoTime() < deadline)
         {
-            ArrayDeque<SearchTask> queue = SEARCH_QUEUE.isEmpty() ? GROUP_QUEUE : SEARCH_QUEUE;
-            SearchTask task = queue.peekFirst();
+            SearchTask task = TYPE_QUEUE.peekFirst();
             boolean processed = task.advance(current);
             if (task.complete())
             {
-                queue.removeFirst();
-                if (task.groupType() != null) COMPLETE_GROUP_TYPES.add(task.groupType());
+                TYPE_QUEUE.removeFirst();
+                TYPE_STATE.complete(task.recipeType());
             }
             if (processed) remaining--;
         }
-        if (SEARCH_QUEUE.isEmpty() && recipesDirty)
+        if (TYPE_QUEUE.isEmpty() && recipesDirty)
         {
             recipesDirty = false;
             RecipeCatalog.setClientRecipes(RECIPES_BY_ID.values());
         }
     }
 
-    public static boolean idle() { return SEARCH_QUEUE.isEmpty() && !recipesDirty; }
+    public static boolean idle() { return TYPE_QUEUE.isEmpty() && !recipesDirty; }
 
     public static Set<Identifier> recipeTypesFor(ItemStack catalyst)
     {
@@ -182,11 +210,8 @@ public final class JeiCatalystIndex
     {
         runtime = null;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
-        SEARCH_QUEUE.clear();
-        GROUP_QUEUE.clear();
-        REQUESTED_OUTPUTS.clear();
-        REQUESTED_GROUP_TYPES.clear();
-        COMPLETE_GROUP_TYPES.clear();
+        TYPE_QUEUE.clear();
+        TYPE_STATE.clear();
         RECIPES_BY_ID.clear();
         recipesDirty = false;
         TYPES_BY_CATALYST = Map.of();
@@ -198,18 +223,14 @@ public final class JeiCatalystIndex
     }
 
     private static void captured(Identifier type, IRecipeCategory<Object> category,
-                                 Object displayedRecipe, JeiVirtualRecipeLayouts.Captured captured,
-                                 boolean recursive)
+                                 Object displayedRecipe, JeiVirtualRecipeLayouts.Captured captured)
     {
-        if (recursive) rememberServerRecipe(category, displayedRecipe);
-        if (recursive && !JeiRecipeExecutionSource.usesServerRecipe(displayedRecipe))
+        rememberServerRecipe(category, displayedRecipe);
+        if (!JeiRecipeExecutionSource.usesServerRecipe(displayedRecipe))
             JeiVirtualRecipeLayouts.register(captured);
         mergeInputGroups(type, captured.inputs().stream().map(
                 com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload.VirtualInput::inputGroup)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
-        if (recursive)
-            for (var input : captured.inputs())
-                for (var candidate : input.candidates()) requestRecipesFor(candidate.key());
     }
 
     private static void rememberServerRecipe(IRecipeCategory<Object> category, Object displayedRecipe)
@@ -241,18 +262,13 @@ public final class JeiCatalystIndex
     private static final class SearchTask
     {
         private final IRecipeCategory<Object> category;
-        private final IFocus<?> focus;
-        private final Identifier groupType;
+        private final Identifier recipeType;
         private Iterator<Object> recipes;
         private boolean complete;
 
         @SuppressWarnings("unchecked")
-        private SearchTask(IRecipeCategory<?> category, IFocus<?> focus)
-        { this.category = (IRecipeCategory<Object>) category; this.focus = focus; this.groupType = null; }
-
-        @SuppressWarnings("unchecked")
-        private SearchTask(IRecipeCategory<?> category, Identifier groupType)
-        { this.category = (IRecipeCategory<Object>) category; this.focus = null; this.groupType = groupType; }
+        private SearchTask(IRecipeCategory<?> category, Identifier recipeType)
+        { this.category = (IRecipeCategory<Object>) category; this.recipeType = recipeType; }
 
         private boolean advance(IJeiRuntime runtime)
         {
@@ -263,18 +279,15 @@ public final class JeiCatalystIndex
                 {
                     var lookup = runtime.getRecipeManager().createRecipeLookup(category.getRecipeType())
                             .includeHidden();
-                    if (focus != null) lookup.limitFocus(List.of(focus));
                     recipes = lookup.get().iterator();
                 }
                 if (!recipes.hasNext()) { complete = true; return false; }
                 Object recipe = recipes.next();
-                var focuses = focus == null ? runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup()
-                        : runtime.getJeiHelpers().getFocusFactory().createFocusGroup(List.of(focus));
-                runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe, focuses)
+                runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
+                                runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup())
                         .ifPresent(layout -> {
                             var value = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
-                            if (value != null) captured(category.getRecipeType().getUid(), category, recipe, value,
-                                    groupType == null);
+                            if (value != null) captured(category.getRecipeType().getUid(), category, recipe, value);
                         });
                 if (!recipes.hasNext()) complete = true;
                 return true;
@@ -288,6 +301,6 @@ public final class JeiCatalystIndex
         }
 
         private boolean complete() { return complete; }
-        private Identifier groupType() { return groupType; }
+        private Identifier recipeType() { return recipeType; }
     }
 }

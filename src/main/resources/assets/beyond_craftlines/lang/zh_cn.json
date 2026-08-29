@@ -161,6 +161,7 @@
   "gui.beyond_craftlines.network_owned_loading": "网络已有：…",
   "gui.beyond_craftlines.recipe_tree": "配方树",
   "gui.beyond_craftlines.indexing_recipes": "正在索引配方：%s/%s",
+  "gui.beyond_craftlines.indexing_jei_types": "正在载入已启用的配方类型……",
   "gui.beyond_craftlines.indexing_server_recipes": "服务端正在索引配方：%s/%s",
   "error.beyond_craftlines.server_recipe_indexing": "服务端配方索引仍在准备中",
   "gui.beyond_craftlines.capturing_recipes": "正在准备规划目录：%s/%s",

@@ -25,8 +25,6 @@ import java.util.UUID;
 public final class VirtualProvisionerRecipeRegistry
 {
     private static final int MAX_RECIPES = 16_384;
-    private static final java.util.concurrent.atomic.AtomicLong GENERATION =
-            new java.util.concurrent.atomic.AtomicLong();
     private static final Map<Identifier, RecipeHolder<?>> RECIPES = Collections.synchronizedMap(
             new LinkedHashMap<>(64, 0.75F, true)
             {
@@ -49,7 +47,6 @@ public final class VirtualProvisionerRecipeRegistry
         RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
         RECIPES.put(id, holder);
         DESCRIPTORS.put(recipe, descriptor);
-        GENERATION.incrementAndGet();
         return holder;
     }
 
@@ -62,14 +59,10 @@ public final class VirtualProvisionerRecipeRegistry
     public static Descriptor descriptor(Recipe<?> recipe)
     { return DESCRIPTORS.get(recipe); }
 
-    /** Changes whenever the client-visible virtual recipe catalog may need a new index. */
-    public static long generation() { return GENERATION.get(); }
-
     public static void clear()
     {
         RECIPES.clear();
         DESCRIPTORS.clear();
-        GENERATION.incrementAndGet();
     }
 
     @SuppressWarnings("unchecked")

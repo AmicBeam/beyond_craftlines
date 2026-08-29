@@ -89,8 +89,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)
     {
         runtime = jeiRuntime;
-        JeiNetworkAvailabilityPayload.clientReceiver = available -> networkAvailability = available
-                ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
+        JeiNetworkAvailabilityPayload.clientReceiver = payload -> {
+            networkAvailability = payload.available()
+                    ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
+            JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
+        };
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         requestNetworkAvailability();
@@ -174,6 +177,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             return;
         }
         pendingOrder = new PendingOrder(payload);
+        if (!payload.jeiRecipeType().isBlank())
+            JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
         JeiCatalystIndex.requestRecipesFor(payload.target());
         clientFrame();
     }
@@ -278,8 +283,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     private static void requestNetworkAvailability()
     {
-        if (runtime == null || !CraftlinesConfig.SHOW_JEI_ORDER_BUTTON_EVERYWHERE.get()
-                || Minecraft.getInstance().player == null) return;
+        if (runtime == null || Minecraft.getInstance().player == null) return;
         long now = System.nanoTime();
         if (now >= nextNetworkCheckNanos)
         {

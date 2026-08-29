@@ -205,10 +205,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
+        JeiCatalystIndex.prewarmRecipeTypes(menu.availableFamilies());
         if (!initialized)
         {
             initialized = true;
-            if (menu.recipeIndexComplete()) finishRecipeIndex();
+            if (!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
+                loadingStatus = jeiTypeIndexingText();
+            else if (menu.recipeIndexComplete()) finishRecipeIndex();
             else loadingStatus = recipeLookupIndexingText();
         }
     }
@@ -231,12 +234,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
+        boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
         if (!menu.recipeIndexComplete())
         {
             menu.advanceRecipeIndex(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
             loadingStatus = recipeLookupIndexingText();
-            if (menu.recipeIndexComplete()) finishRecipeIndex();
+            if (menu.recipeIndexComplete() && jeiTypesReady) finishRecipeIndex();
         }
+        if (!jeiTypesReady)
+        {
+            loadingStatus = jeiTypeIndexingText();
+            return;
+        }
+        if (!preferencesLoaded && menu.recipeIndexComplete()) finishRecipeIndex();
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
             planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
@@ -309,6 +319,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return Component.translatable("gui.beyond_craftlines.indexing_recipes",
                 menu.indexedRecipeCandidates(), menu.totalRecipeCandidates()).getString();
     }
+
+    private String jeiTypeIndexingText()
+    { return Component.translatable("gui.beyond_craftlines.indexing_jei_types").getString(); }
 
     private String serverRecipeIndexingText()
     {

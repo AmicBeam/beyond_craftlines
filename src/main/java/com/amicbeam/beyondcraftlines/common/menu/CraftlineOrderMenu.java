@@ -41,7 +41,7 @@ import com.google.gson.Gson;
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
     private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
-    private static final Map<Object, ClientRecipeIndex> CLIENT_RECIPE_INDEX_CACHE = new WeakHashMap<>();
+    private static final Map<Object, RecipeIndex> CLIENT_RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
             java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private static final Gson INDEX_GSON = new Gson();
@@ -227,25 +227,23 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private static RecipeIndex clientIndex(net.minecraft.world.level.Level level)
     {
         Object source = level.getRecipeManager();
-        long generation = com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.generation();
         synchronized (CLIENT_RECIPE_INDEX_CACHE)
         {
-            ClientRecipeIndex cached = CLIENT_RECIPE_INDEX_CACHE.get(source);
-            if (cached == null || cached.virtualGeneration() != generation)
-            {
-                cached = new ClientRecipeIndex(generation, new RecipeIndex(displayRecipes(level), level));
-                CLIENT_RECIPE_INDEX_CACHE.put(source, cached);
-            }
-            return cached.index();
+            return CLIENT_RECIPE_INDEX_CACHE.computeIfAbsent(source,
+                    ignored -> new RecipeIndex(baseClientRecipes(level), level));
         }
+    }
+
+    /** Stable native base; JEI-only recipes are already keyed and cached separately by the planning catalog. */
+    private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
+    {
+        return RecipePlanningService.visibleRecipes(level).stream()
+                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))).toList();
     }
 
     private static List<RecipeHolder<?>> displayRecipes(net.minecraft.world.level.Level level)
     {
-        List<RecipeHolder<?>> crafting = RecipePlanningService.visibleRecipes(level).stream()
-                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))).toList();
-        return mergeRecipes(crafting, com.amicbeam.beyondcraftlines.common.crafting
+        return mergeRecipes(baseClientRecipes(level), com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.recipes());
     }
 
@@ -543,8 +541,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                                   Map<String, List<String>> recipesByOutput,
                                   Map<String, List<String>> outputsByRecipe,
                                   com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.Snapshot epoch) {}
-
-    private record ClientRecipeIndex(long virtualGeneration, RecipeIndex index) {}
 
     public boolean canAccessNetwork(Player player)
     {

@@ -3,6 +3,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 import com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection;
 
 import java.util.Comparator;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Pure endpoint preference shared by grouped direct-machine and provisioner dispatch. */
@@ -46,4 +47,17 @@ final class InputGroupRouteLogic
 
     static <T> ResourceChannel<T> resourceChannel(T endpoint, Object stackType)
     { return new ResourceChannel<>(endpoint, String.valueOf(stackType)); }
+
+    /** Stable intersection used to keep wildcard input groups on one common machine when possible. */
+    static <T> List<T> commonEndpoints(List<List<T>> routes)
+    {
+        if (routes.isEmpty()) return List.of();
+        List<T> common = new ArrayList<>(routes.getFirst());
+        for (int index = 1; index < routes.size(); index++)
+        {
+            List<T> route = routes.get(index);
+            common.removeIf(endpoint -> !route.contains(endpoint));
+        }
+        return List.copyOf(common);
+    }
 }

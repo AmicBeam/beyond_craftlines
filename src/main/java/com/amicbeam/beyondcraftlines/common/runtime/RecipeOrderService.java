@@ -40,7 +40,6 @@ import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessa
 
 public final class RecipeOrderService
 {
-    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final String RETURN_AFTER_ERROR = encode("execution_failed_returning");
     private static final Set<String> NATIVE_FURNACE_FAMILIES = Set.of("smelting", "blasting", "smoking");
     private RecipeOrderService() {}
@@ -102,11 +101,6 @@ public final class RecipeOrderService
     {
         if (!plan.target().equals(target) || plan.requested() != count || !plan.craftable())
             throw new IllegalArgumentException("validated plan does not match the order");
-        if (LOGGER.isDebugEnabled()) LOGGER.debug("Craftlines validated order: network={}, target={}, steps={}",
-                networkId, RecipeResourceResolver.sortKey(plan.targetKey()), plan.steps().stream().map(step ->
-                        step.family() + "=" + step.inputs().stream().map(input -> input.inputGroup() + ":"
-                                + RecipeResourceResolver.sortKey(input.key()) + "@" + input.amount()).toList())
-                        .toList());
         List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
         boolean orderLimitReached = active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get();
         if (origin == OrderOrigin.AUTOMATIC)
@@ -536,6 +530,7 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("input_group_unassigned", group));
             routes.put(group, selected);
         }
+        preferCohesiveDirectMachine(server, routes, batchInputs);
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
         InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
@@ -791,9 +786,6 @@ public final class RecipeOrderService
                     server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
                 dispatch = dispatchableInputsAcross(
                         server, directLocations, wait.remainingInputs(), selection.chunks());
-            if (selection == null || dispatch.isEmpty())
-                debugFeedingStall(server, working, step, wait, directLocations,
-                        selection == null ? "selection_missing" : "no_insert_capacity");
             if (!dispatch.isEmpty())
             {
                 // Extract every network-backed chunk before touching the machine. A stock change can
@@ -1470,35 +1462,29 @@ public final class RecipeOrderService
         return List.copyOf(remaining);
     }
 
-    private static void debugFeedingStall(MinecraftServer server, RecipeOrderJob job,
-                                          RecipePlan.Step step, RecipeOrderJob.ExternalWait wait,
-                                          List<RecipeOrderJob.MachineLocation> machines, String reason)
+    private static void preferCohesiveDirectMachine(
+            MinecraftServer server, java.util.LinkedHashMap<String, List<GroupEndpoint>> routes,
+            List<RecipePlan.Material> requested)
     {
-        if (!LOGGER.isDebugEnabled() || server.overworld().getGameTime() % 20 != 0) return;
-        List<String> remaining = wait.remainingInputs().stream().map(material -> material.inputGroup()
-                + ":" + RecipeResourceResolver.sortKey(material.key()) + "@" + material.amount()).toList();
-        List<String> reserved = job.reserved().stream().map(material ->
-                RecipeResourceResolver.sortKey(material.key()) + "@" + material.amount()).toList();
-        List<String> capacities = new ArrayList<>();
-        java.util.LinkedHashSet<String> contents = new java.util.LinkedHashSet<>();
-        for (RecipePlan.Material material : wait.remainingInputs())
-            for (RecipeOrderJob.MachineLocation machine : machines)
-            {
-                if (!machine.inputGroup().isBlank()
-                        && !machine.inputGroup().equals(material.inputGroup())) continue;
-                ServerLevel level = server.getLevel(machine.dimension());
-                if (level == null) continue;
-                capacities.add(machine.position().toShortString() + "/" + material.inputGroup()
-                        + "=" + BoundMachineAutomation.insertCapacity(level, machine.position(),
-                        material.key(), material.amount()) + "/present="
-                        + BoundMachineAutomation.countPresent(level, machine.position(), material.key()));
-                contents.add(machine.position().toShortString() + "="
-                        + BoundMachineAutomation.visibleCapabilityStacks(level, machine.position()).stream()
-                        .map(value -> RecipeResourceResolver.sortKey(value.key()) + "@" + value.amount()).toList());
-            }
-        LOGGER.debug("Craftlines feeding stall: order={}, step={}/{}, family={}, reason={}, remaining={}, "
-                        + "reserved={}, capacities={}, contents={}", job.id(), job.nextStep() + 1, job.stepCount(),
-                step.family(), reason, remaining, reserved, capacities, contents);
+        List<List<MachineKey>> routeKeys = routes.values().stream().map(endpoints -> endpoints.stream()
+                .filter(endpoint -> endpoint.machine() != null).map(GroupEndpoint::key).toList()).toList();
+        for (MachineKey common : InputGroupRouteLogic.commonEndpoints(routeKeys))
+        {
+            boolean acceptsAll = requested.stream().allMatch(material -> {
+                GroupEndpoint endpoint = routes.getOrDefault(material.inputGroup(), List.of()).stream()
+                        .filter(value -> value.machine() != null && value.key().equals(common)).findFirst().orElse(null);
+                if (endpoint == null) return false;
+                ServerLevel level = server.getLevel(common.dimension());
+                return level != null && (BoundMachineAutomation.insertCapacity(
+                        level, common.position(), material.key(), material.amount()) >= material.amount()
+                        || BoundMachineAutomation.countPresent(
+                        level, common.position(), material.key()) >= material.amount());
+            });
+            if (!acceptsAll) continue;
+            routes.replaceAll((group, endpoints) -> endpoints.stream()
+                    .filter(endpoint -> endpoint.machine() == null || endpoint.key().equals(common)).toList());
+            return;
+        }
     }
 
     /** Returns stale same-channel inputs that prevent a bound machine from starting the next recipe step. */

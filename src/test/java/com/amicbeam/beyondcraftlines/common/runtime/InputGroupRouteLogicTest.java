@@ -72,6 +72,16 @@ final class InputGroupRouteLogicTest
         assertEquals(item, anotherItem);
     }
 
+    @Test
+    void wildcardGroupsPreferTheFirstCommonMachine()
+    {
+        assertEquals(List.of("machine-a", "machine-b"), InputGroupRouteLogic.commonEndpoints(List.of(
+                List.of("machine-a", "machine-b", "item-only"),
+                List.of("machine-a", "machine-b", "chemical-only"))));
+        assertEquals(List.of(), InputGroupRouteLogic.commonEndpoints(List.of(
+                List.of("item-only"), List.of("chemical-only"))));
+    }
+
     private static InputGroupRouteLogic.Candidate<String> direct(String id, int priority)
     { return direct(id, priority, 0); }
 

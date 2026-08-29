@@ -71,7 +71,7 @@ public final class BoundMachineAutomation
         return false;
     }
 
-    /** Diagnostic view of every non-empty native BD capability slot, including input-only tanks. */
+    /** Snapshot of every non-empty native BD capability slot, including input-only tanks. */
     public static List<KeyAmount> visibleCapabilityStacks(ServerLevel level, BlockPos position)
     {
         List<KeyAmount> result = new ArrayList<>();

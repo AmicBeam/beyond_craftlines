@@ -115,6 +115,8 @@ public final class CraftlinesClientEvents
     @EventBusSubscriber(modid = BeyondCraftlines.MOD_ID, value = Dist.CLIENT)
     public static final class GameBus
     {
+        private static PendingBoundConfig pendingBoundConfig;
+
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
         {
             ClientBindingVisuals.onLoggingIn(event);
@@ -123,6 +125,7 @@ public final class CraftlinesClientEvents
 
         @SubscribeEvent public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event)
         {
+            pendingBoundConfig = null;
             ClientBindingVisuals.onLoggingOut(event);
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingOut();
         }
@@ -142,6 +145,7 @@ public final class CraftlinesClientEvents
         {
             ClientBindingVisuals.render(event);
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
+            sendPendingBoundConfigIfReady();
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -162,6 +166,7 @@ public final class CraftlinesClientEvents
             LinkerAttackPolicy.Action action = LinkerAttackPolicy.decide(
                     provisioner, knownBound, ClientBindingVisuals.bindingSnapshotReady());
             if (action == LinkerAttackPolicy.Action.IGNORE) return;
+            pendingBoundConfig = null;
             if (action == LinkerAttackPolicy.Action.VERIFY_WITH_SERVER)
             {
                 sendBoundConfig(hit.getBlockPos(), java.util.Set.of());
@@ -179,10 +184,22 @@ public final class CraftlinesClientEvents
             }
             if (!types.isEmpty() && !com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                     .inputGroupsReady(types))
+            {
                 com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .requestInputGroupsFor(types);
-            sendBoundConfig(hit.getBlockPos(), types);
+                pendingBoundConfig = new PendingBoundConfig(hit.getBlockPos().immutable(), Set.copyOf(types));
+            }
+            else sendBoundConfig(hit.getBlockPos(), types);
             event.setCanceled(action == LinkerAttackPolicy.Action.OPEN_AND_CANCEL_ATTACK);
+        }
+
+        private static void sendPendingBoundConfigIfReady()
+        {
+            PendingBoundConfig pending = pendingBoundConfig;
+            if (pending == null || !com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    .inputGroupsReady(pending.types())) return;
+            pendingBoundConfig = null;
+            sendBoundConfig(pending.position(), pending.types());
         }
 
         private static void sendBoundConfig(net.minecraft.core.BlockPos position,
@@ -193,6 +210,9 @@ public final class CraftlinesClientEvents
                             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                                     .inputGroupsFor(types))));
         }
+
+        private record PendingBoundConfig(net.minecraft.core.BlockPos position,
+                                          Set<net.minecraft.resources.Identifier> types) {}
 
         @SubscribeEvent public static void addStatusButton(ScreenEvent.Init.Post event)
         {

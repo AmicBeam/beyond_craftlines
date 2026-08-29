@@ -39,6 +39,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -101,6 +102,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Map<IngredientSlotKey, ResourceLocation> ingredientOverrides = new LinkedHashMap<>();
     private final Map<ResourceLocation, ResourceLocation> automaticRecipes = new LinkedHashMap<>();
     private final Map<String, ResourceLocation> automaticResourceRecipes = new LinkedHashMap<>();
+    private final Map<String, com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule> resourceMatchRules = new LinkedHashMap<>();
     private final Map<IngredientSlotKey, ResourceLocation> automaticIngredients = new LinkedHashMap<>();
     private final Map<ResourceLocation, ResourceLocation> defaultRecipes = new LinkedHashMap<>();
     private final Map<String, ResourceLocation> defaultResourceRecipes = new LinkedHashMap<>();
@@ -134,6 +136,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean proposalReady;
     private boolean targetRecipeSearchPending;
     private int targetRecipeSearchDelay;
+    private boolean matchSettingsOpen;
+    private GraphNode matchSettingsNode;
+    private int matchSettingsScroll;
     private boolean submitWhenReady;
     private boolean planningSnapshotValid;
     private long planningSnapshotCapturedAt;
@@ -409,7 +414,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         String target = menu.targetToken();
         if (!target.equals(networkAmountTarget)) networkAmount = -1;
         networkAmountTarget = target;
-        PacketDistributor.sendToServer(new RequestNetworkAmountPayload(networkAmountTarget));
+        PacketDistributor.sendToServer(new RequestNetworkAmountPayload(networkAmountTarget,
+                matchRule(menu.initialTarget(),selected).encode()));
     }
 
     private void receiveNetworkAmount(String itemId, Long value)
@@ -525,6 +531,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         renderTarget(graphics);
         renderMaterials(graphics, mouseX, mouseY);
         renderTree(graphics, mouseX, mouseY);
+        renderMatchSettings(graphics, mouseX, mouseY);
         renderIngredientPicker(graphics, mouseX, mouseY);
         if (!pickerOpen()) renderTooltip(graphics, mouseX, mouseY);
     }
@@ -670,6 +677,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void renderTree(GuiGraphics graphics, int mouseX, int mouseY)
     {
         if (minecraft.level == null) return;
+        renderMatchGear(graphics, mouseX, mouseY);
         if (treeRoot == null)
         {
             if (!loadingStatus.isBlank())
@@ -736,6 +744,71 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (!previewError.isBlank())
             graphics.drawString(font, font.plainSubstrByWidth(previewError, treeRight() - treeLeft() - 10),
                     treeLeft() + 5, treeBottom() - (loadingStatus.isBlank() ? 24 : 36), 0xFFFF6677, true);
+    }
+
+    private int matchGearX() { return treeLeft() + 5; }
+    private int matchGearY() { return treeTop() + 5; }
+
+    private void renderMatchGear(GuiGraphics graphics, int mouseX, int mouseY)
+    {
+        int x=matchGearX(),y=matchGearY();boolean hovered=mouseX>=x&&mouseX<x+16&&mouseY>=y&&mouseY<y+16;
+        graphics.fill(x,y,x+16,y+16,hovered?0xFF38546A:0xFF243746);graphics.renderOutline(x,y,16,16,BD_CYAN);
+        graphics.drawCenteredString(font,"⚙",x+8,y+4,0xFFFFFFFF);
+    }
+
+    private String matchRuleKey(GraphNode node)
+    { return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key)
+            + "@" + (node.recipe == null ? "" : node.recipe.id()); }
+
+    private com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRule(GraphNode node)
+    { return resourceMatchRules.getOrDefault(matchRuleKey(node),com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT); }
+
+    private com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRule(String output,ResourceLocation recipe)
+    {return resourceMatchRules.getOrDefault(output+"@"+recipe,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT);}
+    private com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRule(IStackKey<?> output,RecipeHolder<?> recipe){return recipe==null?com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT:matchRule(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(output),recipe.id());}
+    private Map<String,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule> activeMatchRules(){LinkedHashMap<String,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule> result=new LinkedHashMap<>();resourceMatchRules.forEach((key,rule)->{int at=key.lastIndexOf('@');if(at>0)result.put(key.substring(0,at),rule);});return Map.copyOf(result);}
+
+    private List<String> matchDifferences(GraphNode node)
+    {
+        if(node==null||node.recipe==null||minecraft.level==null)return List.of();
+        var template=com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver.outputs(
+                node.recipe.value(),minecraft.level.registryAccess()).stream()
+                .filter(value->node.key.isSame(value.key())||value.key().isSame(node.key)).findFirst().orElse(null);
+        return template==null?List.of():com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule
+                .differences(node.key,template.key());
+    }
+
+    private void openMatchSettings()
+    {
+        closeIngredientPicker();
+        matchSettingsOpen=true;matchSettingsScroll=0;
+        matchSettingsNode=treeNodes.stream().filter(node->node.recipe!=null).findFirst().orElse(treeRoot);
+    }
+
+    private void setMatchMode(com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode mode)
+    {
+        if(matchSettingsNode==null||matchSettingsNode.recipe==null)return;
+        Set<String> paths=mode==com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.IGNORE_PATHS
+                ?new LinkedHashSet<>(matchDifferences(matchSettingsNode)):Set.of();
+        resourceMatchRules.put(matchRuleKey(matchSettingsNode),new com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule(mode,paths));
+        ClientPlannerPreferences.setMatchRule(matchRuleKey(matchSettingsNode),matchRule(matchSettingsNode));
+        markPreviewDirty();rebuildTree(false);
+    }
+
+    private void renderMatchSettings(GuiGraphics graphics,int mouseX,int mouseY)
+    {
+        if(!matchSettingsOpen)return;int x=treeLeft()+24,y=treeTop()+5,w=Math.min(330,treeRight()-x-5),h=Math.min(230,treeBottom()-y-5);
+        graphics.fill(treeLeft(),treeTop(),treeRight(),treeBottom(),0xA0101724);graphics.fill(x-2,y-2,x+w+2,y+h+2,PANEL_SHADOW);graphics.fill(x,y,x+w,y+h,0xFF202A36);graphics.renderOutline(x,y,w,h,BD_CYAN);
+        graphics.drawString(font,Component.translatable("gui.beyond_craftlines.match_settings"),x+6,y+6,0xFFFFFFFF,false);
+        if(matchSettingsNode==null){graphics.drawString(font,Component.translatable("gui.beyond_craftlines.match_no_recipe"),x+6,y+24,0xFFFF7777,false);return;}
+        graphics.drawString(font,matchSettingsNode.key.getRender().getDisplayName(matchSettingsNode.key),x+6,y+21,0xFFD8F3FF,false);
+        graphics.drawString(font,"<",x+w-42,y+21,0xFFFFFFFF,false);graphics.drawString(font,">",x+w-22,y+21,0xFFFFFFFF,false);
+        var current=matchRule(matchSettingsNode).mode();String[] labels={"strict","paths","item"};
+        for(int i=0;i<3;i++){int bx=x+6+i*(w-18)/3,by=y+38,bw=(w-24)/3;var mode=com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.values()[i];graphics.fill(bx,by,bx+bw,by+16,current==mode?BD_BLUE:0xFF344554);graphics.renderOutline(bx,by,bw,16,0xFF6E8799);graphics.drawCenteredString(font,Component.translatable("gui.beyond_craftlines.match_mode."+labels[i]),bx+bw/2,by+4,0xFFFFFFFF);}
+        List<String> paths=matchDifferences(matchSettingsNode);Set<String> ignored=matchRule(matchSettingsNode).ignoredPaths();int rowY=y+60;graphics.drawString(font,Component.translatable("gui.beyond_craftlines.match_paths",paths.size()),x+6,rowY,0xFFB8C8D8,false);rowY+=14;
+        for(int i=matchSettingsScroll;i<Math.min(paths.size(),matchSettingsScroll+7);i++){String path=paths.get(i);graphics.drawString(font,(ignored.contains(path)?"[x] ":"[ ] ")+font.plainSubstrByWidth(path,w-18),x+8,rowY+(i-matchSettingsScroll)*18,ignored.contains(path)?0xFF6FE3A1:0xFFD0D8E0,false);}
+        if(current==com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.ITEM_ONLY)graphics.drawString(font,Component.translatable("gui.beyond_craftlines.match_item_warning"),x+8,y+h-18,0xFFFF7777,false);
+        graphics.drawString(font,"×",x+w-14,y+5,0xFFFF9999,false);
     }
 
     private void renderLoadingProgress(GuiGraphics graphics)
@@ -966,7 +1039,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         // demand when another branch produces an equivalent intermediate; treating that as the
         // node's available stock incorrectly expands a fully stocked node as partially crafted.
         long stockUsed = cyclic || depth <= 0 || effectiveNeeded == 0
-                ? 0 : stock.consume(resourceKey, effectiveNeeded);
+                ? 0 : stock.consume(resourceKey, effectiveNeeded,matchRule(resourceKey,recipe));
         long unresolved = effectiveNeeded - stockUsed;
         boolean stockSatisfied = depth > 0 && unresolved == 0;
         GraphNode node = new GraphNode(resourceKey, stack.copyWithCount(1), itemId,
@@ -1162,6 +1235,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().equals(selectedId)) return candidate;
+        ResourceLocation configuredId=manualId!=null?manualId:automaticId;
+        if(configuredId!=null)
+        {
+            RecipeHolder<?> planned=menu.recipe(configuredId);
+            var rule=resourceMatchRules.getOrDefault(token+"@"+configuredId,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT);
+            if(planned!=null&&com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver.outputs(planned.value(),minecraft.level.registryAccess()).stream().anyMatch(value->rule.matches(output,value.key())))return planned;
+        }
         NodeMetric metric = nodeMetric(output);
         ResourceLocation plannedId = metric == null ? null : metric.recipe();
         // The server preview keys node metrics by the complete resource, so unlike the coarse
@@ -1671,6 +1751,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button)
     {
+        if(matchSettingsOpen)return clickMatchSettings(mouseX,mouseY,button);
+        if(button==0&&mouseX>=matchGearX()&&mouseX<matchGearX()+16&&mouseY>=matchGearY()&&mouseY<matchGearY()+16){openMatchSettings();return true;}
         if (pickerOpen())
         {
             if (clickIngredientPicker(mouseX, mouseY, button)) return true;
@@ -1716,6 +1798,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private boolean clickMatchSettings(double mouseX,double mouseY,int button)
+    {
+        if(button!=0)return true;int x=treeLeft()+24,y=treeTop()+5,w=Math.min(330,treeRight()-x-5);
+        if(mouseX>=x+w-18&&mouseX<x+w&&mouseY>=y&&mouseY<y+18){matchSettingsOpen=false;return true;}
+        if(mouseY>=y+18&&mouseY<y+36&&mouseX>=x+w-52){List<GraphNode> nodes=treeNodes.stream().filter(node->node.recipe!=null).toList();if(!nodes.isEmpty()){int index=Math.max(0,nodes.indexOf(matchSettingsNode));index=(index+(mouseX<x+w-30?-1:1)+nodes.size())%nodes.size();matchSettingsNode=nodes.get(index);matchSettingsScroll=0;}return true;}
+        if(mouseY>=y+38&&mouseY<y+54){for(int i=0;i<3;i++){int bx=x+6+i*(w-18)/3,bw=(w-24)/3;if(mouseX>=bx&&mouseX<bx+bw){setMatchMode(com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.values()[i]);return true;}}}
+        if(matchSettingsNode!=null&&mouseY>=y+74&&mouseY<y+74+7*18){List<String> paths=matchDifferences(matchSettingsNode);int index=matchSettingsScroll+((int)mouseY-(y+74))/18;if(index<paths.size()){String path=paths.get(index);var old=matchRule(matchSettingsNode);LinkedHashSet<String> selected=new LinkedHashSet<>(old.mode()==com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.IGNORE_PATHS?old.ignoredPaths():Set.of());if(!selected.add(path))selected.remove(path);resourceMatchRules.put(matchRuleKey(matchSettingsNode),new com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule(com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.Mode.IGNORE_PATHS,selected));ClientPlannerPreferences.setMatchRule(matchRuleKey(matchSettingsNode),matchRule(matchSettingsNode));markPreviewDirty();rebuildTree(false);return true;}}
+        return true;
+    }
+
     private void centerTreeOn(GraphNode node)
     {
         treeViewAdjusted = true;
@@ -1747,6 +1839,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void loadClientPreferences()
     {
         ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
+        resourceMatchRules.clear();snapshot.matchRules().forEach((key,value)->resourceMatchRules.put(key,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(value)));
         outputDestination = snapshot.outputDestination();
         if (!(menu.initialTarget() instanceof ItemStackKey))
             outputDestination = OrderOutputDestination.NETWORK;
@@ -1999,13 +2092,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         cancelPlanningTask();
         loadingStatus = Component.translatable("gui.beyond_craftlines.planning_tree").getString();
         long generation = planningGeneration;
+        Map<String,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule> activeRules=activeMatchRules();
         planningTask = PLANNING_EXECUTOR.submit(() -> {
             ClientRecipePlanner.Proposal proposal = null;
             RuntimeException failure = null;
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
-            try { proposal = ClientRecipePlanner.plan(planningCatalog,
+            try { proposal = ClientRecipePlanner.planWithMatchRules(planningCatalog,
                     stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
+                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,activeRules); }
             catch (RuntimeException exception) { failure = exception; }
             boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
@@ -2014,9 +2108,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 try
                 {
-                    ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
+                    ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.planWithMatchRules(planningCatalog,
                             stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos,activeRules);
                     searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
@@ -2032,9 +2126,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 try
                 {
-                    ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
+                    ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.planWithMatchRules(planningCatalog,
                             stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos,activeRules);
                     searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
@@ -2052,9 +2146,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     // Candidate optimization is bounded, but the already-visible tree must still be
                     // validated deterministically. This preserves a craftable current choice instead
                     // of replacing it with the incomplete branch that happened to hit the budget.
-                    proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
+                    proposal = ClientRecipePlanner.planWithMatchRules(planningCatalog, stock, target, count,
                             fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes,
-                            ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS);
+                            ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,activeRules);
                     failure = null;
                 }
                 catch (RuntimeException exception) { failure = exception; }
@@ -2228,7 +2322,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         List<SubmitOrderPayload.RecipeChoice> recipes = proposal.recipes().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
-                        entry.getKey(), entry.getValue().toString())).toList();
+                        entry.getKey(), entry.getValue().toString(),matchRule(entry.getKey(),entry.getValue()).encode())).toList();
         List<SubmitOrderPayload.IngredientChoice> ingredients = proposal.ingredients().entrySet().stream()
                 .sorted(java.util.Comparator.comparing((Map.Entry<ClientRecipePlanner.IngredientKey, ResourceLocation> entry)
                                 -> entry.getKey().recipe().toString()).thenComparingInt(entry -> entry.getKey().slot()))
@@ -2313,6 +2407,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             ResourceLocation output = itemOutputForToken(choice.output());
             ResourceLocation recipe = ResourceLocation.tryParse(choice.recipe());
             if (recipe != null) automaticResourceRecipes.put(choice.output(), recipe);
+            if(recipe!=null)resourceMatchRules.put(choice.output()+"@"+recipe,
+                    com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(choice.matchRule()));
             if (output != null && recipe != null) automaticRecipes.put(output, recipe);
         }
         for (SubmitOrderPayload.IngredientChoice choice : preview.ingredientChoices())
@@ -2412,6 +2508,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY)
     {
+        if(matchSettingsOpen){int max=Math.max(0,matchDifferences(matchSettingsNode).size()-7);matchSettingsScroll=Math.max(0,Math.min(max,matchSettingsScroll+(scrollY<0?1:-1)));return true;}
         if (overMaterials(mouseX, mouseY) && visibleMaterials().size() > materialPageSize())
         {
             int columns = materialColumns();
@@ -2600,15 +2697,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return positive;
         }
 
-        private long consume(IStackKey<?> requested, long amount)
+        private long consume(IStackKey<?> requested, long amount,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule)
         {
             long left = Math.max(0, amount);
             long consumed = 0;
             for (var entry : remaining.entrySet())
             {
                 if (left == 0) break;
-                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
-                        .exact(requested, entry.getKey())) continue;
+                if (!rule.matches(requested,entry.getKey())) continue;
                 long take = Math.min(left, entry.getValue());
                 if (take == 0) continue;
                 entry.setValue(entry.getValue() - take);

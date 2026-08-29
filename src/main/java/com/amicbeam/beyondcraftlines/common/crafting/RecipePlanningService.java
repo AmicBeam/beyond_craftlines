@@ -199,7 +199,8 @@ public final class RecipePlanningService
         if (mode == ResolutionMode.SEARCH) budget.checkTime();
         // A root order always manufactures its full amount, but its existing stock must remain
         // available to a self-increment child as the minimum seed.
-        long used = depth == 0 ? 0 : state.stock.consume(resource.getTypeId(), key -> resource.isSame(key)
+        ResourceMatchRule stockRule=overrides.recipeFor(resource)==null?ResourceMatchRule.ITEM_ONLY:overrides.matchRuleFor(resource);
+        long used = depth == 0 ? 0 : state.stock.consume(resource.getTypeId(), key -> stockRule.matches(resource,key)
                         && (requiredIngredient == null || key instanceof ItemStackKey itemKey
                         && requiredIngredient.test(itemKey.getReadOnlyStack())), needed,
                 (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
@@ -337,8 +338,9 @@ public final class RecipePlanningService
     {
         int dependencyStart = state.steps.size();
         List<KeyAmount> recipeOutputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
+        ResourceMatchRule outputRule=overrides.matchRuleFor(outputKey);
         KeyAmount result = recipeOutputs.stream()
-                .filter(value -> StackKeyMatch.exact(outputKey, value.key())).findFirst()
+                .filter(value -> outputRule.matches(outputKey,value.key())).findFirst()
                 // Explicit JEI roots can represent dynamic assemble() output more precisely than
                 // Recipe#getResultItem. Retain item-family fallback only for that execution shape.
                 .orElseGet(() -> recipeOutputs.stream()
@@ -409,7 +411,7 @@ public final class RecipePlanningService
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id(), family(holder), outputKey,
-                perCraft, crafts, inputs, selections, dependencies, shape.seed()));
+                perCraft, crafts, inputs, selections, dependencies, shape.seed(),outputRule));
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);

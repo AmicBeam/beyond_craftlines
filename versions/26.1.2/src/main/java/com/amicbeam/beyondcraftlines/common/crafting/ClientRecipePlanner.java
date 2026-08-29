@@ -26,6 +26,7 @@ import java.util.WeakHashMap;
  */
 public final class ClientRecipePlanner
 {
+    private static final ThreadLocal<Map<String,ResourceMatchRule>> ACTIVE_MATCH_RULES=ThreadLocal.withInitial(Map::of);
     /** Wall-clock window shared by the preferred and fallback candidate searches. */
     public static final long SEARCH_TIME_LIMIT_NANOS = 3_000_000_000L;
     private static final Map<Level, Map<Identifier, List<Recipe>>> CATALOG_CACHE =
@@ -116,6 +117,7 @@ public final class ClientRecipePlanner
                 new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(target))), requested,
                 converted, manualIngredients, maxDepth, maxNodes);
     }
+    public static Proposal planWithMatchRules(Catalog catalog,Map<IStackKey<?>,Long> stock,IStackKey<?> target,long requested,Map<String,Identifier> recipes,Map<IngredientKey,Identifier> ingredients,int maxDepth,int maxNodes,long nanos,Map<String,ResourceMatchRule> rules){Map<String,ResourceMatchRule> previous=ACTIVE_MATCH_RULES.get();ACTIVE_MATCH_RULES.set(rules==null?Map.of():Map.copyOf(rules));try{return plan(catalog,stock,target,requested,recipes,ingredients,maxDepth,maxNodes,nanos);}finally{ACTIVE_MATCH_RULES.set(previous);}}
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
                                 IStackKey<?> target, long requested,
@@ -547,11 +549,11 @@ public final class ClientRecipePlanner
 
     private static long available(MatchingStock<IStackKey<?>, Identifier> stock,
                                   IStackKey<?> requested)
-    { return stock.available(requested.getTypeId(), requested::isSame); }
+    {ResourceMatchRule rule=ACTIVE_MATCH_RULES.get().getOrDefault(RecipeResourceResolver.resolutionKey(requested),ResourceMatchRule.ITEM_ONLY);return stock.available(requested.getTypeId(),key->rule.matches(requested,key));}
 
     private static long consume(State state, IStackKey<?> requested, long amount)
     {
-        return state.stock.consume(requested.getTypeId(), requested::isSame, amount,
+        ResourceMatchRule rule=ACTIVE_MATCH_RULES.get().getOrDefault(RecipeResourceResolver.resolutionKey(requested),ResourceMatchRule.ITEM_ONLY);return state.stock.consume(requested.getTypeId(),key->rule.matches(requested,key), amount,
                 (key, used) -> state.usedStock.merge(key, used, SaturatingLongMath::add));
     }
 }

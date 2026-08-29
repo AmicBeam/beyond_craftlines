@@ -15,16 +15,16 @@ public final class RecipeResolutionOverrides
 {
     public static final RecipeResolutionOverrides EMPTY = new RecipeResolutionOverrides(List.of(), List.of());
 
-    private final Map<String, Identifier> recipes;
+    private final Map<String, RecipeSelection> recipes;
     private final Map<IngredientSlot, Identifier> ingredients;
 
     public RecipeResolutionOverrides(List<RecipeChoice> recipeChoices, List<IngredientChoice> ingredientChoices)
     {
         if (recipeChoices.size() > 16_384 || ingredientChoices.size() > 16_384)
             throw new IllegalArgumentException("too many recipe resolutions");
-        SharedResolutionMap<String, Identifier> recipes = new SharedResolutionMap<>();
+        SharedResolutionMap<String, RecipeSelection> recipes = new SharedResolutionMap<>();
         for (RecipeChoice choice : recipeChoices)
-            recipes.put(choice.output(), choice.recipe(), "duplicate recipe resolution for " + choice.output());
+            recipes.put(choice.output(), new RecipeSelection(choice.recipe(), choice.matchRule()), "duplicate recipe resolution for " + choice.output());
         SharedResolutionMap<IngredientSlot, Identifier> ingredients = new SharedResolutionMap<>();
         for (IngredientChoice choice : ingredientChoices)
             ingredients.put(new IngredientSlot(choice.recipe(), choice.slot()), choice.item(),
@@ -35,16 +35,16 @@ public final class RecipeResolutionOverrides
 
     public Identifier recipeFor(IStackKey<?> output)
     {
-        Identifier exact = recipes.get(RecipeResourceResolver.resolutionKey(output));
-        return exact == null ? recipes.get(RecipeResourceResolver.sortKey(output)) : exact;
+        RecipeSelection exact=recipes.get(RecipeResourceResolver.resolutionKey(output));RecipeSelection selected=exact==null?recipes.get(RecipeResourceResolver.sortKey(output)):exact;return selected==null?null:selected.recipe();
     }
+    public ResourceMatchRule matchRuleFor(IStackKey<?> output){RecipeSelection exact=recipes.get(RecipeResourceResolver.resolutionKey(output));RecipeSelection selected=exact==null?recipes.get(RecipeResourceResolver.sortKey(output)):exact;return selected==null?ResourceMatchRule.STRICT:selected.matchRule();}
     public Identifier recipeFor(Identifier output)
     { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(output)))); }
     public Identifier ingredientFor(Identifier recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
-    public Set<Identifier> selectedRecipes() { return Set.copyOf(recipes.values()); }
+    public Set<Identifier> selectedRecipes(){return recipes.values().stream().map(RecipeSelection::recipe).collect(java.util.stream.Collectors.toUnmodifiableSet());}
     public List<RecipeChoice> recipeChoices()
-    { return recipes.entrySet().stream().map(entry -> new RecipeChoice(entry.getKey(), entry.getValue())).toList(); }
+    {return recipes.entrySet().stream().map(entry->new RecipeChoice(entry.getKey(),entry.getValue().recipe(),entry.getValue().matchRule())).toList();}
     public List<IngredientChoice> ingredientChoices()
     { return ingredients.entrySet().stream().map(entry -> new IngredientChoice(
             entry.getKey().recipe(), entry.getKey().slot(), entry.getValue())).toList(); }
@@ -60,13 +60,16 @@ public final class RecipeResolutionOverrides
         return true;
     }
 
-    public record RecipeChoice(String output, Identifier recipe)
+    public record RecipeChoice(String output, Identifier recipe, ResourceMatchRule matchRule)
     {
+        public RecipeChoice(String output,Identifier recipe){this(output,recipe,ResourceMatchRule.STRICT);}
         public RecipeChoice
         {
             if (output == null || recipe == null) throw new IllegalArgumentException("invalid recipe resolution");
+            matchRule=matchRule==null?ResourceMatchRule.STRICT:matchRule;
         }
     }
+    private record RecipeSelection(Identifier recipe,ResourceMatchRule matchRule){}
 
     public record IngredientChoice(Identifier recipe, int slot, Identifier item)
     {

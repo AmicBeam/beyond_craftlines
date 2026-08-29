@@ -172,7 +172,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
         List<StepExecution> updated = new java.util.ArrayList<>(executions);
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs(),
-                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(),current.matchRule());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextAllowedTick, null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -195,7 +195,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
         }
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,
-                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(),current.matchRule());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextCraftingTick(), null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -247,7 +247,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
                     ? java.util.stream.IntStream.range(0, i).boxed().toList() : source.dependencies();
             RecipePlan.Step step = new RecipePlan.Step(source.recipe(), source.family(), source.outputKey(),
                     source.outputPerCraft(), source.crafts(), source.inputs(),
-                    source.ingredientSelections(), dependencies, source.selfIncrementSeed());
+                    source.ingredientSelections(), dependencies, source.selfIncrementSeed(),source.matchRule());
             migrated.add(new StepExecution(step, i < nextStep,
                     i == nextStep ? nextCraftingTick : 0, i == nextStep ? externalWait : null));
         }

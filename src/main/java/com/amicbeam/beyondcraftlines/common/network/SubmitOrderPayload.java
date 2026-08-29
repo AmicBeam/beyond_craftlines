@@ -29,6 +29,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
     static final StreamCodec<ByteBuf, RecipeChoice> RECIPE_CHOICE_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), RecipeChoice::output,
             ByteBufCodecs.stringUtf8(256), RecipeChoice::recipe,
+            ByteBufCodecs.stringUtf8(16_384), RecipeChoice::matchRule,
             RecipeChoice::new);
     static final StreamCodec<ByteBuf, IngredientChoice> INGREDIENT_CHOICE_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), IngredientChoice::recipe,
@@ -162,7 +163,8 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
     {
         List<RecipeResolutionOverrides.RecipeChoice> recipes = recipeChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.RecipeChoice(
-                        choice.output(), ResourceLocation.parse(choice.recipe())))
+                        choice.output(), ResourceLocation.parse(choice.recipe()),
+                        com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(choice.matchRule())))
                 .toList();
         List<RecipeResolutionOverrides.IngredientChoice> ingredients = ingredientChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.IngredientChoice(
@@ -172,7 +174,11 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
         return new RecipeResolutionOverrides(recipes, ingredients);
     }
 
-    public record RecipeChoice(String output, String recipe) {}
+    public record RecipeChoice(String output, String recipe, String matchRule)
+    {
+        public RecipeChoice(String output, String recipe)
+        { this(output, recipe, com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT.encode()); }
+    }
     public record IngredientChoice(String recipe, int slot, String item) {}
     private record Options(boolean blockingMode, String outputDestination) {}
 }

@@ -236,6 +236,7 @@
   "tooltip.beyond_craftlines.cancel": "取消不会追回已送入机器、供给器或已由完成步骤消耗的材料。",
   "gui.beyond_craftlines.order_message.bound_machine_byproducts_clear": "正在等待绑定机器中的旧副产物清空",
   "message.beyond_craftlines.server_recipe_index_started": "正在后台拉取配方并建立存档索引（共 %s 个配方），请稍候。",
+  "command.beyond_craftlines.recipe_index_rebuild_started": "已清除旧配方索引，开始强制重建。",
   "message.beyond_craftlines.server_recipe_index_complete": "服务端配方索引已建立并成功写入存档（共 %s 个配方）。",
   "error.beyond_craftlines.server_recipe_index_persist_failed": "服务端配方索引已建立，但写入存档失败（共 %s 个配方）。",
   "block.beyond_craftlines.craftline_dashboard": "合成链仪表盘",

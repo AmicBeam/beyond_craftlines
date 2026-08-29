@@ -10,6 +10,7 @@ import com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.OnDatapackSyncEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.level.ChunkEvent;
@@ -29,6 +30,21 @@ public final class CraftlinesEvents {
             NativeFurnaceRegistry.tick(event.getServer());
             RecipeOrderService.tick(event.getServer());
         }
+    }
+
+    @SubscribeEvent
+    public static void onRegisterCommands(RegisterCommandsEvent event) {
+        event.getDispatcher().register(net.minecraft.commands.Commands.literal("craftlines")
+                .requires(source -> source.hasPermission(2))
+                .then(net.minecraft.commands.Commands.literal("rebuild_recipe_index")
+                        .executes(context -> {
+                            var server = context.getSource().getServer();
+                            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
+                                    .rebuildServerRecipeIndex(server);
+                            context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.translatable(
+                                    "command.beyond_craftlines.recipe_index_rebuild_started"), true);
+                            return 1;
+                        })));
     }
 
     @SubscribeEvent

@@ -236,6 +236,7 @@
   "tooltip.beyond_craftlines.cancel": "Cancellation does not recover materials already sent to machines or providers, or consumed by completed steps.",
   "gui.beyond_craftlines.order_message.bound_machine_byproducts_clear": "Waiting for pre-existing bound-machine byproducts to clear",
   "message.beyond_craftlines.server_recipe_index_started": "Building and saving the server recipe index in the background (%s recipes).",
+  "command.beyond_craftlines.recipe_index_rebuild_started": "Cleared the old recipe index and started a forced rebuild.",
   "message.beyond_craftlines.server_recipe_index_complete": "Server recipe index saved successfully (%s recipes).",
   "error.beyond_craftlines.server_recipe_index_persist_failed": "Server recipe indexing finished, but the index could not be saved (%s recipes).",
   "block.beyond_craftlines.craftline_dashboard": "Craftline Dashboard",

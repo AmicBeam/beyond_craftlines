@@ -13,6 +13,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 @EventBusSubscriber(modid = "beyond_craftlines")
 public final class CraftlinesEvents
@@ -27,6 +28,23 @@ public final class CraftlinesEvents
         com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(server);
         com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.tick(server);
         com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService.tick(server);
+    }
+
+    @SubscribeEvent
+    public static void onRegisterCommands(RegisterCommandsEvent event)
+    {
+        event.getDispatcher().register(net.minecraft.commands.Commands.literal("craftlines")
+                .requires(source -> source.permissions().hasPermission(
+                        net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                .then(net.minecraft.commands.Commands.literal("rebuild_recipe_index")
+                        .executes(context -> {
+                            var server = context.getSource().getServer();
+                            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
+                                    .rebuildServerRecipeIndex(server);
+                            context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.translatable(
+                                    "command.beyond_craftlines.recipe_index_rebuild_started"), true);
+                            return 1;
+                        })));
     }
 
     @SubscribeEvent

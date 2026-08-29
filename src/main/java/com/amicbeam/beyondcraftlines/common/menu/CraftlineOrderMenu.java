@@ -41,6 +41,8 @@ import com.google.gson.Gson;
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
     private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
+    private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
+            java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private static final Gson INDEX_GSON = new Gson();
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final ExecutorService INDEX_IO = Executors.newSingleThreadExecutor(runnable -> {
@@ -204,7 +206,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         {
             return RECIPE_INDEX_CACHE.computeIfAbsent(level.getRecipeManager(), ignored -> {
                 Collection<RecipeHolder<?>> recipes = level.getRecipeManager().getRecipes();
-                return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()));
+                return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()),
+                        FORCED_SERVER_INDEX_REBUILDS.remove(level.getServer()));
             });
         }
     }
@@ -224,6 +227,17 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public static void clearRecipeIndexCache()
     {
         synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
+    }
+
+    public static void rebuildServerRecipeIndex(MinecraftServer server)
+    {
+        invalidatePersistedServerIndex(server);
+        synchronized (RECIPE_INDEX_CACHE)
+        {
+            FORCED_SERVER_INDEX_REBUILDS.add(server);
+            RecipePlanningService.clearRecipeCache();
+        }
+        tickServerRecipeIndex(server);
     }
 
     private static final class RecipeIndex
@@ -249,16 +263,16 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         private boolean buildAnnounced;
 
         private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level)
-        { this(candidates, candidates.size(), level, null); }
+        { this(candidates, candidates.size(), level, null, false); }
 
         private RecipeIndex(Iterable<RecipeHolder<?>> candidates, int totalCandidates,
-                            net.minecraft.world.level.Level level, Path cachePath)
+                            net.minecraft.world.level.Level level, Path cachePath, boolean skipCacheLoad)
         {
             this.candidates = candidates.iterator();
             this.totalCandidates = totalCandidates;
             this.level = level;
             this.cachePath = cachePath;
-            this.cacheLoad = cachePath == null ? null : CompletableFuture.supplyAsync(
+            this.cacheLoad = cachePath == null || skipCacheLoad ? null : CompletableFuture.supplyAsync(
                     () -> readPersistedIndex(cachePath), INDEX_IO);
         }
 

@@ -117,6 +117,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int materialScroll;
     private boolean materialSummaryReady;
     private boolean materialSummaryMissing;
+    private boolean materialSummaryTheoretical;
     private int snapshotNextPage;
     private final Map<Identifier, Long> planningStock = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> planningResources = new LinkedHashMap<>();
@@ -549,6 +550,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         int y = topPos + 176;
         graphics.text(font, Component.translatable(materialSummaryMissing
                         ? "gui.beyond_craftlines.material_summary_missing"
+                        : materialSummaryTheoretical ? "gui.beyond_craftlines.summary_total"
                         : "gui.beyond_craftlines.summary_extraction"),
                 x, topPos + 157, materialSummaryMissing ? 0xB23A48 : 0x465564, false);
         if (!materialSummaryReady)
@@ -596,9 +598,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             tooltip.add(materialSummaryMissing
                     ? Component.translatable("gui.beyond_craftlines.material_missing_amount", hovered.getValue())
                     .withStyle(ChatFormatting.RED)
-                    : Component.translatable("gui.beyond_craftlines.material_amounts",
-                    hovered.getValue(), available).withStyle(available >= hovered.getValue()
-                    ? ChatFormatting.GREEN : ChatFormatting.RED));
+                    : Component.translatable(materialSummaryTheoretical
+                                    ? "gui.beyond_craftlines.material_total_amount"
+                                    : "gui.beyond_craftlines.material_amounts",
+                            hovered.getValue(), available).withStyle(available >= hovered.getValue()
+                            ? ChatFormatting.GREEN : ChatFormatting.RED));
             graphics.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
         }
     }
@@ -1758,6 +1762,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         submitWhenReady = false;
         proposalReady = false;
         clearDisplayMetrics();
+        showCurrentTreeTotals();
         if (orderButton != null) orderButton.active = canQueueOrder();
     }
 
@@ -1765,6 +1770,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         materialSummaryReady = false;
         materialSummaryMissing = false;
+        materialSummaryTheoretical = false;
         missingMaterials.clear();
         extractionMaterials.clear();
         nodeMetrics.clear();
@@ -1786,6 +1792,35 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 .forEach(entry -> missingMaterials.put(entry.getKey(), entry.getValue()));
         materialSummaryMissing = true;
         materialSummaryReady = true;
+    }
+
+    private void showCurrentTreeTotals()
+    {
+        if (selected == null || minecraft.level == null) return;
+        IStackKey<?> rootKey = menu.initialTarget();
+        RecipeHolder<?> rootRecipe = selectedResourceRecipe(rootKey, selected);
+        ItemStack rootStack = rootKey instanceof ItemStackKey itemKey
+                ? itemKey.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY;
+        Identifier rootItem = rootKey instanceof ItemStackKey itemKey
+                ? BuiltInRegistries.ITEM.getKey(itemKey.getSource()) : null;
+        GraphNode theoretical = buildTree(rootKey, rootStack, rootItem, rootRecipe,
+                null, -1, 0, amountValue(), false, false,
+                new HashSet<>(), new TreeStock(Map.of()));
+        collectCurrentTreeTotals(theoretical, extractionMaterials);
+        materialSummaryTheoretical = true;
+        materialSummaryReady = true;
+    }
+
+    private static void collectCurrentTreeTotals(GraphNode node, Map<IStackKey<?>, Long> totals)
+    {
+        if (node.depth > 0 && node.children.isEmpty() && node.recipe == null
+                && !node.stockSatisfied && !node.cyclic)
+        {
+            totals.merge(node.key, node.needed,
+                    com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath::add);
+            return;
+        }
+        for (GraphNode child : node.children) collectCurrentTreeTotals(child, totals);
     }
 
     private void requestPlanPreview()

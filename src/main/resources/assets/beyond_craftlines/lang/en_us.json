@@ -43,6 +43,7 @@
   "message.beyond_craftlines.bound_machine_configured": "The bound machine configuration was saved automatically.",
   "error.beyond_craftlines.bound_machine_config_failed": "Save failed. The machine must remain bound and you must have network manager permission.",
   "error.beyond_craftlines.provisioner_selection_failed": "Cannot select this provisioner; ensure it is bound to your current managed network.",
+  "error.beyond_craftlines.provisioner_connection_no_recipes": "Cannot edit wireless connections; first enable at least one recipe type on this provisioner.",
   "menu.beyond_craftlines.provisioner": "Craftline Provisioner",
   "menu.beyond_craftlines.bound_machine": "Bound Machine Configuration",
   "gui.beyond_craftlines.provisioner.choose": "Select recipe types (no subgroup selected means all)",

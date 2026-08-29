@@ -364,18 +364,21 @@ public final class DeviceBindingRegistry
         return true;
     }
 
-    public static boolean selectProvisionerConnections(Player player, BlockPos position)
+    public static ProvisionerConnectionSelectionResult selectProvisionerConnections(Player player,
+                                                                                     BlockPos position)
     {
         if (!(player.level() instanceof ServerLevel level) || level.getServer() == null
                 || !(level.getBlockEntity(position) instanceof CraftlineProvisionerBlockEntity provisioner))
-            return false;
+            return ProvisionerConnectionSelectionResult.INVALID_NETWORK;
         DimensionsNet network = DimensionsNet.getNetFromId(provisioner.getNetId());
-        if (network == null || !network.isManager(player)
-                || BindingSavedData.get(level.getServer())
-                .recipeTypesForProvisioner(level.dimension(), position).isEmpty()) return false;
+        if (network == null || !network.isManager(player))
+            return ProvisionerConnectionSelectionResult.INVALID_NETWORK;
+        if (BindingSavedData.get(level.getServer())
+                .recipeTypesForProvisioner(level.dimension(), position).isEmpty())
+            return ProvisionerConnectionSelectionResult.NO_ENABLED_RECIPE_TYPES;
         PROVISIONER_SELECTIONS.put(player.getUUID(), new ProvisionerSelection(
                 level.dimension(), position.immutable(), network.getId(), SelectionMode.DEVICE_CONNECTION));
-        return true;
+        return ProvisionerConnectionSelectionResult.SELECTED;
     }
 
     public static boolean hasProvisionerConnectionSelection(Player player)

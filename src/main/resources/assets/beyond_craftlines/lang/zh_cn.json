@@ -43,6 +43,7 @@
   "message.beyond_craftlines.bound_machine_configured": "已绑定机器的配置已自动保存。",
   "error.beyond_craftlines.bound_machine_config_failed": "保存失败：机器必须仍处于绑定状态，且需要当前网络的管理权限。",
   "error.beyond_craftlines.provisioner_selection_failed": "无法选择此供给器：请确认它已绑定到你管理的当前网络。",
+  "error.beyond_craftlines.provisioner_connection_no_recipes": "无法编辑无线连接：请先为此供给器启用至少一种承接配方。",
   "menu.beyond_craftlines.provisioner": "合成链供给器",
   "menu.beyond_craftlines.bound_machine": "已绑定机器配置",
   "gui.beyond_craftlines.provisioner.choose": "选择承接的配方类型（未选子标签则全部支持）",

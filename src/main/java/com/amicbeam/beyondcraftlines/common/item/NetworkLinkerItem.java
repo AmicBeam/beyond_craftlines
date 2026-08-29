@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.item;
 
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.data.ProvisionerConnectionSelectionResult;
 import com.amicbeam.beyondcraftlines.common.network.BindMachinePayload;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -59,13 +60,15 @@ public final class NetworkLinkerItem extends Item
             if (!context.getLevel().isClientSide())
             {
                 boolean connectionMode = !context.getPlayer().isShiftKeyDown();
-                boolean selected = connectionMode
-                        ? DeviceBindingRegistry.selectProvisionerConnections(context.getPlayer(), context.getClickedPos())
-                        : DeviceBindingRegistry.selectProvisioner(context.getPlayer(), context.getClickedPos());
-                context.getPlayer().displayClientMessage(Component.translatable(selected
-                        ? connectionMode ? "message.beyond_craftlines.provisioner_connection_mode_selected"
-                        : "message.beyond_craftlines.provisioner_selected"
-                        : "error.beyond_craftlines.provisioner_selection_failed"), false);
+                ProvisionerConnectionSelectionResult connectionResult = connectionMode
+                        ? DeviceBindingRegistry.selectProvisionerConnections(
+                        context.getPlayer(), context.getClickedPos()) : null;
+                boolean recipeScanSelected = !connectionMode
+                        && DeviceBindingRegistry.selectProvisioner(context.getPlayer(), context.getClickedPos());
+                String message = connectionMode ? connectionResult.messageKey()
+                        : recipeScanSelected ? "message.beyond_craftlines.provisioner_selected"
+                        : "error.beyond_craftlines.provisioner_selection_failed";
+                context.getPlayer().displayClientMessage(Component.translatable(message), false);
                 if (context.getPlayer() instanceof net.minecraft.server.level.ServerPlayer serverPlayer)
                     com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload.sendTo(serverPlayer);
             }

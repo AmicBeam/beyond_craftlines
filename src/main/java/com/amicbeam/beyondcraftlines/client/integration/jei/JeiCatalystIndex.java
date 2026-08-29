@@ -103,7 +103,7 @@ public final class JeiCatalystIndex
         if (TITLES_BY_TYPE.isEmpty()) refresh();
         Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(ResourceLocation::toString)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        Set<String> visible = ManualRecipeTypeVisibility.visible(
+        Set<String> visible = ManualRecipeTypeVisibility.visibleOrAllWhenUnresolved(
                 allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
         return visible.stream().map(ResourceLocation::parse)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());

@@ -134,6 +134,25 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
+    void manualSelectionFallsBackToJeiCategoriesWhenSyncedMappingIsEmpty()
+    {
+        Set<String> categories = Set.of("minecraft:crafting", "example:machine");
+
+        assertEquals(categories, ManualRecipeTypeVisibility.visibleOrAllWhenUnresolved(
+                categories, Set.of(), Map.of(), Map.of(), false));
+    }
+
+    @Test
+    void manualSelectionKeepsFilteringWhenAnyCategoryCanBeMapped()
+    {
+        Set<String> categories = Set.of("minecraft:crafting", "example:virtual");
+
+        assertEquals(Set.of("minecraft:crafting"),
+                ManualRecipeTypeVisibility.visibleOrAllWhenUnresolved(
+                        categories, Set.of("crafting"), Map.of(), Map.of(), false));
+    }
+
+    @Test
     void verifiedRecipeSampleCanSupplyAPreviouslyUnknownMapping()
     {
         var result = JeiRecipeFamilyMappings.resolve(Set.of("example:press"),

@@ -25,4 +25,17 @@ final class JeiSlotInputGroupTest
         assertTrue(JeiSlotInputGroup.isValid("altar_item"));
         assertFalse(JeiSlotInputGroup.isValid("bad|group"));
     }
+
+    @Test void localizesGeneratedIngredientTypeGroupsWithoutChangingTheirIds()
+    {
+        assertEquals("item", JeiSlotInputGroup.resourceType(
+                "input_net.minecraft.world.item.itemstack"));
+        assertEquals("fluid", JeiSlotInputGroup.resourceType(
+                "input_net.neoforged.neoforge.fluids.fluidstack"));
+        assertEquals("chemical", JeiSlotInputGroup.resourceType(
+                "input_mekanism.api.chemical.chemicalstack"));
+        assertEquals("chemical", JeiSlotInputGroup.resourceType(
+                "input_mekanism.api.chemical.gas.gasstack"));
+        assertEquals("", JeiSlotInputGroup.resourceType("catalyst"));
+    }
 }

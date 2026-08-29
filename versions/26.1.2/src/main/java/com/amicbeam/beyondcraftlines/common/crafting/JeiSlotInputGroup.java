@@ -24,4 +24,18 @@ public final class JeiSlotInputGroup
     public static boolean isValid(String group)
     { return group != null && !group.isBlank() && group.length() <= MAX_LENGTH
             && group.matches("[a-z0-9_.-]+"); }
+
+    /** Resolves generated JEI ingredient-type group IDs without changing their routing identity. */
+    public static String resourceType(String group)
+    {
+        if (group == null || group.isBlank()) return "";
+        String value = group.toLowerCase(Locale.ROOT);
+        if (value.startsWith("input_")) value = value.substring("input_".length());
+        String compact = value.replace("_", "").replace("-", "").replace(".", "");
+        if (value.equals("item") || value.equals("items") || compact.endsWith("itemstack")) return "item";
+        if (value.equals("fluid") || value.equals("fluids") || compact.endsWith("fluidstack")) return "fluid";
+        if (value.equals("chemical") || value.equals("chemicals")
+                || value.startsWith("mekanism.api.chemical.") && compact.endsWith("stack")) return "chemical";
+        return "";
+    }
 }

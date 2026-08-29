@@ -47,7 +47,6 @@ public final class VirtualProvisionerRecipeRegistry
         RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
         RECIPES.put(id, holder);
         DESCRIPTORS.put(recipe, descriptor);
-        RecipePlanningService.clearRecipeCache();
         return holder;
     }
 
@@ -64,7 +63,6 @@ public final class VirtualProvisionerRecipeRegistry
     {
         RECIPES.clear();
         DESCRIPTORS.clear();
-        RecipePlanningService.clearRecipeCache();
     }
 
     @SuppressWarnings("unchecked")

@@ -29,13 +29,18 @@ public final class RecipePlanningService
 
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
-        return VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager -> java.util.stream.Stream
-                .concat(manager.getRecipes().stream(), VirtualProvisionerRecipeRegistry.recipes().stream())
+        List<RecipeHolder<?>> base = VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager ->
+                manager.getRecipes().stream()
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> !RecipeOutputResolver.outputs(
                         holder.value(), level.registryAccess()).isEmpty())
                 .sorted(Comparator.comparing(holder -> holder.id().toString()))
                 .toList());
+        return java.util.stream.Stream.concat(base.stream(), VirtualProvisionerRecipeRegistry.recipes().stream()
+                        .filter(RecipePlanningService::supported)
+                        .filter(holder -> !RecipeOutputResolver.outputs(
+                                holder.value(), level.registryAccess()).isEmpty()))
+                .sorted(Comparator.comparing(holder -> holder.id().toString())).toList();
     }
 
     public static void clearRecipeCache()
@@ -51,9 +56,12 @@ public final class RecipePlanningService
     public static Set<String> loadedFamilies(Level level)
     {
         RecipeManager manager = level.getRecipeManager();
-        return LOADED_FAMILY_CACHE.computeIfAbsent(manager, ignored -> java.util.stream.Stream
-                .concat(manager.getRecipes().stream(), VirtualProvisionerRecipeRegistry.recipes().stream())
+        Set<String> base = LOADED_FAMILY_CACHE.computeIfAbsent(manager, ignored -> manager.getRecipes().stream()
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toUnmodifiableSet()));
+        java.util.HashSet<String> families = new java.util.HashSet<>(base);
+        VirtualProvisionerRecipeRegistry.recipes().stream().map(RecipePlanningService::family)
+                .filter(java.util.Objects::nonNull).forEach(families::add);
+        return Set.copyOf(families);
     }
 
     public static RecipePlan plan(ServerLevel level, int networkId, ResourceLocation target, long amount)

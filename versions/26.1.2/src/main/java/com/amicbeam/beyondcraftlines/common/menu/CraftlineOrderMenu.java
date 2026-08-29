@@ -105,9 +105,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
         else
         {
-            candidates = java.util.stream.Stream.concat(RecipeCatalog.forLevel(level).stream(),
-                    com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                            .recipes().stream())
+            candidates = RecipeCatalog.forLevel(level).stream()
                     .sorted(java.util.Comparator.comparing(holder -> holder.id().identifier().toString())).toList();
             synchronized (RECIPE_INDEX_CACHE)
             {
@@ -115,10 +113,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                         new RecipeIndex(candidates, level));
             }
         }
-        this.initialRecipeHolder = initialRecipe == null ? null : (level instanceof ServerLevel
-                ? findRecipe(level, initialRecipe)
-                : candidates.stream().filter(holder -> holder.id().identifier().equals(initialRecipe))
-                        .findFirst().orElse(null));
+        this.initialRecipeHolder = initialRecipe == null ? null : findRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
         updateServerIndexProgress();
     }
@@ -137,34 +132,75 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public long initialDashboardDesired() { return initialDashboardDesired; }
     public String initialDashboardStockMode() { return initialDashboardStockMode; }
     public List<RecipeHolder<?>> recipes()
-    { ensureRecipeIndexForServer(); return available(recipeIndex.recipes()); }
+    {
+        ensureRecipeIndexForServer();
+        return mergeRecipes(available(recipeIndex.recipes()), available(com.amicbeam.beyondcraftlines
+                .common.crafting.VirtualProvisionerRecipeRegistry.recipes()));
+    }
     public RecipeHolder<?> recipeForOutput(Identifier output)
     { return recipesForOutput(output).stream().findFirst().orElse(null); }
     public List<RecipeHolder<?>> recipesForOutput(Identifier output)
-    { ensureRecipeIndexForServer(); return available(recipeIndex.recipesForOutput(output)); }
+    {
+        ensureRecipeIndexForServer();
+        List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
+                .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
+                        .anyMatch(value -> value.key() instanceof ItemStackKey item
+                                && net.minecraft.core.registries.BuiltInRegistries.ITEM
+                                .getKey(item.getSource()).equals(output))).toList();
+        return mergeRecipes(available(recipeIndex.recipesForOutput(output)), virtual);
+    }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
         ensureRecipeIndexForServer();
-        return available(recipeIndex.recipesForResourceOutput(output));
+        List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
+                .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
+                        .anyMatch(value -> output.isSame(value.key()))).toList();
+        return mergeRecipes(available(recipeIndex.recipesForResourceOutput(output)), virtual);
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public RecipeHolder<?> recipe(Identifier id)
     {
         ensureRecipeIndexForServer();
-        RecipeHolder<?> holder = recipeIndex.recipe(id);
+        RecipeHolder<?> holder = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.find(id).orElseGet(() -> recipeIndex.recipe(id));
         return holder != null && available(holder) ? holder : null;
     }
     public Identifier itemOutputForToken(String token)
-    { ensureRecipeIndexForServer(); return recipeIndex.itemOutputForToken(token); }
+    {
+        ensureRecipeIndexForServer();
+        Identifier indexed = recipeIndex.itemOutputForToken(token);
+        if (indexed != null) return indexed;
+        return com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.recipes().stream()
+                .flatMap(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream())
+                .filter(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeResourceResolver.sortKey(value.key())))
+                .filter(value -> value.key() instanceof ItemStackKey).map(value ->
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM
+                                .getKey(((ItemStackKey) value.key()).getSource())).findFirst().orElse(null);
+    }
     public boolean recipeProduces(Identifier recipe, String token)
     {
         ensureRecipeIndexForServer();
-        return recipe(recipe) != null && recipeIndex.recipeProduces(recipe, token);
+        RecipeHolder<?> holder = recipe(recipe);
+        return holder != null && RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
+                .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeResourceResolver.sortKey(value.key())));
     }
 
     private List<RecipeHolder<?>> available(List<RecipeHolder<?>> holders)
     { return holders.stream().filter(this::available).toList(); }
+
+    private static List<RecipeHolder<?>> mergeRecipes(List<RecipeHolder<?>> first, List<RecipeHolder<?>> second)
+    {
+        LinkedHashMap<Identifier, RecipeHolder<?>> merged = new LinkedHashMap<>();
+        first.forEach(holder -> merged.put(holder.id().identifier(), holder));
+        second.forEach(holder -> merged.putIfAbsent(holder.id().identifier(), holder));
+        return merged.values().stream().sorted(java.util.Comparator.comparing(
+                holder -> holder.id().identifier().toString())).toList();
+    }
 
     private boolean available(RecipeHolder<?> holder)
     { return RecipeIndexVisibility.includes(RecipePlanningService.family(holder), availableFamilies); }
@@ -219,10 +255,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         synchronized (RECIPE_INDEX_CACHE)
         {
             return RECIPE_INDEX_CACHE.computeIfAbsent(source, ignored -> {
-                Collection<RecipeHolder<?>> recipes = java.util.stream.Stream.concat(
-                        level.recipeAccess().getRecipes().stream(),
-                        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                                .recipes().stream()).toList();
+                Collection<RecipeHolder<?>> recipes = level.recipeAccess().getRecipes();
                 return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()),
                         FORCED_SERVER_INDEX_REBUILDS.remove(level.getServer()));
             });

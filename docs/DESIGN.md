@@ -445,7 +445,7 @@ Forge/NeoForge 自动生成 client 和 server 配置。服务端配置通常按�
 
 - 工作台类定制配方：由原配方 `matches/assemble/getRemainingItems` 决定，支持动态结果和返还物。
 - 原版及第三方机器：要求 JEI catalyst、可映射的服务端 RecipeType、已加载配方和可用 `IItemHandler` 同时成立。
-- 供给器扫描工作站时不要求目标拥有方块实体或物品能力。原版酿造台、锻造台、堆肥桶、铁砧和切石机只允许绑定供给器，不开放直接机器绑定。锻造与切石使用服务端原生配方；酿造、铁砧和堆肥没有服务端 `RecipeHolder`，从 JEI 点单时会把当前布局中有界的输入候选、精确组件键、产物与数量上传为临时供给器配方。服务端只接受 `minecraft:brewing`、`minecraft:anvil`、`minecraft:compostable` 三个白名单分类，重新计算确定性 ID，并按普通供给器步骤扣料、投送和等待目标产物回到网络。
+- 供给器扫描工作站时不要求目标拥有方块实体或物品能力。原版酿造台、锻造台、堆肥桶、铁砧和切石机只允许绑定供给器，不开放直接机器绑定。锻造与切石使用服务端原生配方；酿造、铁砧和堆肥没有服务端 `RecipeHolder`，从 JEI 点单时会把当前布局中有界的输入候选、精确组件键、产物与数量上传为临时供给器配方。服务端只接受 `minecraft:brewing`、`minecraft:anvil`、`minecraft:compostable` 三个白名单分类，重新计算确定性 ID，并按普通供给器步骤扣料、投送和等待目标产物回到网络。临时配方通过动态旁路参与当前菜单和规划，不计入、写入或使全量服务端配方索引失效。
 - 配方中的 `energy`、`power`、`FE` 等数值元数据不视为 ingredient，也不推断单位或换算关系；机器能量与其他专用工艺条件由真实机器自行处理。公开为 ingredient representations 且能转换为 BD 已注册资源键的物品、流体、化学品等真实输入会正常规划与供应。
 - 内置 `recipe_io_profiles/mekanism.json` 将 Mekanism 按 tick 消耗的机器化学品输入按 JEI 展示语义折算为完整工序总量；1.20.x 的气体加工配方和新版带 `perTickUsage` 标记的配方均按 200 tick 计算，整合包可用更高优先级数据包替换同路径规则。
 - 配方和 ingredient 选择当前按输出物品、配方槽位作用于整棵订单树；相同输出或相同配方槽位的重复节点共享选择。

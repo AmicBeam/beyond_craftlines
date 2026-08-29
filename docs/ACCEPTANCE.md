@@ -190,7 +190,7 @@
 1. 使用候选为空且尚未配置的供给器，在搜索框输入名称或 UID 片段并选择一个有效类型。
 2. 确认界面重新打开后出现该父类型及其可用子标签。
 3. 选择 JEI UID 与服务端 `RecipeType` 不同名的分类，确认仍以 JEI UID 保存并下单。
-4. 在尚未从该分类下过单时，扫描包含 `catalyst` 与 `input_0`/`input_1` slot name 的 JEI 分类并打开供给器，确认已直接显示 `catalyst` 与 `ingredients` 子标签；随后下单确认虚拟配方沿用相同标签。
+4. 在尚未从该分类下过单时，打开包含 `catalyst` 与 `input_0`/`input_1` slot name 的 JEI 分类对应供给器，确认客户端按帧预算完成该分类布局物化后打开配置，并直接显示 `catalyst` 与 `ingredients` 子标签；随后下单确认虚拟配方沿用相同标签。
 5. 使用两个 JEI 子分类共享同一个服务端 `RecipeType` 的配方，确认两个 JEI UID 仍是互相隔离的运行时 family。
 
 预期结果：

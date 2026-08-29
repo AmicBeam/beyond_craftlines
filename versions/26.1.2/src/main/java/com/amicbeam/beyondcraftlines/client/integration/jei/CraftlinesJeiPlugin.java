@@ -38,6 +38,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static volatile IJeiRuntime runtime;
     private static volatile NetworkAvailability networkAvailability = NetworkAvailability.UNKNOWN;
     private static volatile long nextNetworkCheckNanos;
+    private static PendingOrder pendingOrder;
 
     @Override
     public Identifier getPluginUid()
@@ -95,6 +96,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         runtime = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
+        pendingOrder = null;
         JeiCatalystIndex.clear();
     }
 
@@ -107,6 +109,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingOut()
     {
+        pendingOrder = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
     }
@@ -139,8 +142,34 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         if (current == null || orderButtonAvailability() != NetworkAvailability.AVAILABLE) return false;
         IStackKey<?> target = ingredientUnderMouse(current);
         if (target == null || target.isEmpty()) return false;
-        ClientPacketDistributor.sendToServer(new OpenOrderMenuPayload(target, "", ""));
+        queueOrder(new OpenOrderMenuPayload(target, "", ""));
         return true;
+    }
+
+    public static void orderTarget(IStackKey<?> target)
+    { queueOrder(new OpenOrderMenuPayload(target, "", "")); }
+
+    /** Advances the target-driven JEI queue once per rendered client frame. */
+    public static void clientFrame()
+    {
+        JeiCatalystIndex.tick();
+        if (pendingOrder != null && JeiCatalystIndex.idle())
+        {
+            ClientPacketDistributor.sendToServer(pendingOrder.payload());
+            pendingOrder = null;
+        }
+    }
+
+    private static void queueOrder(OpenOrderMenuPayload payload)
+    {
+        if (runtime == null)
+        {
+            ClientPacketDistributor.sendToServer(payload);
+            return;
+        }
+        pendingOrder = new PendingOrder(payload);
+        JeiCatalystIndex.requestRecipesFor(payload.target());
+        clientFrame();
     }
 
     private static @Nullable IStackKey<?> ingredientUnderMouse(IJeiRuntime current)
@@ -196,12 +225,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static <T> @Nullable Identifier serverCraftingRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayed = layout.getRecipe();
-        net.minecraft.world.item.crafting.Recipe<?> recipe = displayed instanceof
-                net.minecraft.world.item.crafting.RecipeHolder<?> holder ? holder.value()
-                : displayed instanceof net.minecraft.world.item.crafting.Recipe<?> value ? value : null;
-        return recipe != null && JeiRecipeExecutionSource.usesServerRecipe(
-                com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService
-                        .family(recipe.getType()))
+        return JeiRecipeExecutionSource.usesServerRecipe(displayed)
                 ? findRecipeId(layout) : null;
     }
 
@@ -276,8 +300,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (orderButtonAvailability() != NetworkAvailability.AVAILABLE) return false;
             if (!input.isSimulate())
             {
-                ClientPacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                        target, recipe.toString(), recipeType.toString(), virtualInputs, virtualOutputAmount));
+                queueOrder(new OpenOrderMenuPayload(target, recipe.toString(), recipeType.toString(),
+                        virtualInputs, virtualOutputAmount));
             }
             return true;
         }
@@ -295,6 +319,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         AVAILABLE,
         UNAVAILABLE
     }
+
+    private record PendingOrder(OpenOrderMenuPayload payload) {}
 
     private record ScaledDrawable(IDrawable delegate, int width, int height) implements IDrawable
     {

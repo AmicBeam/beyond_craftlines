@@ -91,12 +91,26 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
+            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+                    ? DimensionsNet.getAllNetFromPlayer(player).stream()
+                            .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
+                    : DimensionsNet.getPrimaryNetFromPlayer(player);
+            if (network == null)
+            {
+                player.sendSystemMessage(Component.translatable("error.beyond_craftlines.network_required"));
+                return;
+            }
+            int networkId = network.getId();
+            var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
             if (!payload.virtualInputs().isEmpty())
             {
                 try
                 {
-                    if (requestedType == null || !com.amicbeam.beyondcraftlines.common.crafting
-                            .VanillaProvisionerRecipeTypes.isJeiOnly(requestedType))
+                    if (requestedType == null || (CraftlinesConfig.VERIFY_SERVER_RECIPE_TYPES.get()
+                            && !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                            .containsDatapackType(requestedType)
+                            && !DeviceBindingRegistry.supportsJeiOnlyCompatibility(
+                            player.level().getServer(), networkId, requestedType)))
                         throw new IllegalArgumentException("invalid virtual recipe category");
                     var holder = com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.register(requestedType.toString(), target,
@@ -120,17 +134,6 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();
             if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
                 showRecipeDebug(player, payload, candidates);
-            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
-                    ? DimensionsNet.getAllNetFromPlayer(player).stream()
-                            .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
-                    : DimensionsNet.getPrimaryNetFromPlayer(player);
-            if (network == null)
-            {
-                player.sendSystemMessage(Component.translatable("error.beyond_craftlines.network_required"));
-                return;
-            }
-            int networkId = network.getId();
-            var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
             var recipe = candidates.stream()
                     .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))

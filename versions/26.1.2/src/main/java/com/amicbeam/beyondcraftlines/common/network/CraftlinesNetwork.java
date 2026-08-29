@@ -13,7 +13,7 @@ public final class CraftlinesNetwork
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event)
     {
-        var registrar = event.registrar("20");
+        var registrar = event.registrar("21");
         registrar.playToServer(OpenOrderMenuPayload.TYPE, OpenOrderMenuPayload.STREAM_CODEC, OpenOrderMenuPayload::handle);
         registrar.playToServer(OpenOrderStatusMenuPayload.TYPE, OpenOrderStatusMenuPayload.STREAM_CODEC,
                 OpenOrderStatusMenuPayload::handle);
@@ -71,6 +71,8 @@ public final class CraftlinesNetwork
                 JeiNetworkAvailabilityPayload::handle);
         registrar.playToClient(RecipeIoProfilePayload.TYPE, RecipeIoProfilePayload.STREAM_CODEC,
                 RecipeIoProfilePayload::handle);
+        registrar.playToClient(JeiOnlyRecipeTypesPayload.TYPE, JeiOnlyRecipeTypesPayload.STREAM_CODEC,
+                JeiOnlyRecipeTypesPayload::handle);
         registrar.playToClient(DashboardStatusPayload.TYPE, DashboardStatusPayload.STREAM_CODEC,
                 DashboardStatusPayload::handle);
     }

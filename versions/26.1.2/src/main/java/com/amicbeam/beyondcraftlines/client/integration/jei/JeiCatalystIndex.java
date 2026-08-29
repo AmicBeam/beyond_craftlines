@@ -105,8 +105,8 @@ public final class JeiCatalystIndex
 
     /** Uses the synced client recipe access to mirror the server's representative-hint validation. */
     public static Set<Identifier> recipeTypes(Set<String> loadedFamilies,
-                                              Map<String, Set<String>> aliases,
-                                              boolean debugMappings)
+                                                    Map<String, Set<String>> aliases,
+                                                    boolean debugMappings)
     {
         if (TITLES_BY_TYPE.isEmpty()) refresh();
         Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(Identifier::toString)
@@ -115,6 +115,20 @@ public final class JeiCatalystIndex
                 allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
         return visible.stream().map(Identifier::parse)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public static boolean usesCompatibilityMode(Identifier type, Set<String> loadedFamilies,
+                                                Map<String, Set<String>> aliases)
+    {
+        return ManualRecipeTypeVisibility.usesCompatibilityMode(type.toString(), loadedFamilies,
+                aliases, verifiedHintFamilies());
+    }
+
+    public static boolean shouldUploadVirtualRecipe(Identifier type)
+    {
+        return !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                .serverRecipeValidationEnabled()
+                || com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.contains(type);
     }
 
     public static void clear()

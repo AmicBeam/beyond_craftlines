@@ -95,12 +95,25 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 return;
             }
             var level = player.level();
+            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+                    && dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
+                    ? storage.getNet() : DimensionsNet.getPrimaryNetFromPlayer(player);
+            if (network == null)
+            {
+                player.displayClientMessage(Component.translatable("error.beyond_craftlines.network_required"), false);
+                return;
+            }
+            int networkId = network.getId();
+            var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
             if (!payload.virtualInputs().isEmpty())
             {
                 try
                 {
-                    if (requestedType == null || !com.amicbeam.beyondcraftlines.common.crafting
-                            .VanillaProvisionerRecipeTypes.isJeiOnly(requestedType))
+                    if (requestedType == null || (CraftlinesConfig.VERIFY_SERVER_RECIPE_TYPES.get()
+                            && !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                            .containsDatapackType(requestedType)
+                            && !DeviceBindingRegistry.supportsJeiOnlyCompatibility(
+                            player.getServer(), networkId, requestedType)))
                         throw new IllegalArgumentException("invalid virtual recipe category");
                     var holder = com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.register(requestedType.toString(), target,
@@ -123,16 +136,6 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();
             if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
                 showRecipeDebug(player, payload, candidates);
-            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
-                    && dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
-                    ? storage.getNet() : DimensionsNet.getPrimaryNetFromPlayer(player);
-            if (network == null)
-            {
-                player.displayClientMessage(Component.translatable("error.beyond_craftlines.network_required"), false);
-                return;
-            }
-            int networkId = network.getId();
-            var availableFamilies = DeviceBindingRegistry.availableFamilies(player.getServer(), networkId);
             if (requestedRecipe != null && candidates.isEmpty())
             {
                 reject(player, payload, "not_loaded", "error.beyond_craftlines.order_recipe_not_loaded",

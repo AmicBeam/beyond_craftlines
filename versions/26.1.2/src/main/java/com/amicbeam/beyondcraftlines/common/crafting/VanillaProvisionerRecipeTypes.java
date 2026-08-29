@@ -4,19 +4,12 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Vanilla workstation categories that are provisioner-only, including JEI-only virtual recipes. */
+/** Vanilla workstation categories that are provisioner-only, plus datapack-enabled virtual recipes. */
 public final class VanillaProvisionerRecipeTypes
 {
     private static final Set<String> PROVISIONER_ONLY = Set.of(
-            "minecraft:anvil",
-            "minecraft:brewing",
-            "minecraft:compostable",
             "minecraft:smithing",
             "minecraft:stonecutting");
-    private static final Set<String> JEI_ONLY = Set.of(
-            "minecraft:anvil",
-            "minecraft:brewing",
-            "minecraft:compostable");
     private static final Map<String, String> CATEGORY_BY_BLOCK = Map.ofEntries(
             Map.entry("minecraft:brewing_stand", "minecraft:brewing"),
             Map.entry("minecraft:smithing_table", "minecraft:smithing"),
@@ -29,10 +22,11 @@ public final class VanillaProvisionerRecipeTypes
     private VanillaProvisionerRecipeTypes() {}
 
     public static boolean isProvisionerOnly(Object type)
-    { return type != null && PROVISIONER_ONLY.contains(type.toString()); }
+    { return type != null && (PROVISIONER_ONLY.contains(type.toString()) || isJeiOnly(type)); }
 
     public static boolean isJeiOnly(Object type)
-    { return type != null && JEI_ONLY.contains(type.toString()); }
+    { return type != null && (!JeiOnlyRecipeTypeRegistry.serverRecipeValidationEnabled()
+            || JeiOnlyRecipeTypeRegistry.contains(type)); }
 
     public static String categoryForBlock(Object blockId)
     { return blockId == null ? null : CATEGORY_BY_BLOCK.get(blockId.toString()); }

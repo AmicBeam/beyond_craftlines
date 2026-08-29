@@ -12,6 +12,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
@@ -76,9 +77,11 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                     .executable(selected);
             var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                     .resolve(executableTypes, loadedFamilies);
-            Set<Identifier> acceptedTypes = menu.isBoundMachineConfiguration() ? mapping.jeiTypes()
+            boolean manualSelection = menu.allowsManualRecipeSelection();
+            Set<Identifier> mappedAcceptedTypes = menu.isBoundMachineConfiguration() ? mapping.jeiTypes()
                     : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                     .accepted(selected, mapping.jeiTypes());
+            Set<Identifier> acceptedTypes = manualSelection ? Set.copyOf(selected) : mappedAcceptedTypes;
             if (!selected.isEmpty() && acceptedTypes.size() != selected.size())
             {
                 var missing = selected.stream().filter(type -> !acceptedTypes.contains(type))
@@ -91,7 +94,6 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                     showMappingDebug(player, player.level(), hints, missing);
                 return;
             }
-            boolean manualSelection = menu.allowsManualRecipeSelection();
             if (!menu.acceptsRecipeSelection(selected)) return;
             Map<Identifier, Set<String>> selectedGroups = new HashMap<>();
             boolean invalidGroups = false;
@@ -120,9 +122,17 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             Component message = Component.translatable(messageKey);
             if (configured) player.sendOverlayMessage(message); else player.sendSystemMessage(message);
             if (configured) BindingVisualsPayload.broadcast(player.level());
+            if (configured && !menu.isBoundMachineConfiguration())
+            {
+                var compatibility = JeiOnlyRecipeTypesPayload.snapshot(player.level().getServer());
+                player.level().getServer().getPlayerList().getPlayers().forEach(target ->
+                        PacketDistributor.sendToPlayer(target, compatibility));
+            }
             if (configured && manualSelection)
+            {
                 com.amicbeam.beyondcraftlines.common.block.CraftlineProvisionerBlock
                         .openConfiguration(player, position);
+            }
         });
     }
 

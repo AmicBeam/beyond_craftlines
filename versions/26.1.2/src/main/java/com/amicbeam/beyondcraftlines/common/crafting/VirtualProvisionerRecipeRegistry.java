@@ -115,7 +115,7 @@ public final class VirtualProvisionerRecipeRegistry
     {
         public Descriptor
         {
-            if (!VanillaProvisionerRecipeTypes.isJeiOnly(family)
+            if (!JeiOnlyRecipeTypeRegistry.isValidType(family)
                     || output == null || output.isEmpty() || outputAmount < 1
                     || inputs == null || inputs.isEmpty() || inputs.size() > 32)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");

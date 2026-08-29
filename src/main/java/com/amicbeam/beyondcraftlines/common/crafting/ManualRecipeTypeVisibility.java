@@ -3,7 +3,7 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 import java.util.Map;
 import java.util.Set;
 
-/** Filters JEI's display categories to the recipe families the server can actually execute. */
+/** Classifies JEI categories for the manual picker without hiding compatibility candidates. */
 public final class ManualRecipeTypeVisibility
 {
     private ManualRecipeTypeVisibility() {}
@@ -12,24 +12,23 @@ public final class ManualRecipeTypeVisibility
                                       Map<String, Set<String>> aliases,
                                       Map<String, Set<String>> verifiedHints,
                                       boolean debugMappings)
+    { return Set.copyOf(jeiTypes); }
+
+    public static boolean usesCompatibilityMode(String jeiType, Set<String> loadedFamilies,
+                                                Map<String, Set<String>> aliases,
+                                                Map<String, Set<String>> verifiedHints)
     {
-        if (debugMappings) return Set.copyOf(jeiTypes);
-        return JeiRecipeFamilyMappings.resolve(
-                jeiTypes, loadedFamilies, aliases, verifiedHints).jeiTypes();
+        return !JeiRecipeFamilyMappings.resolve(Set.of(jeiType), loadedFamilies, aliases, verifiedHints)
+                .jeiTypes().contains(jeiType);
     }
 
-    /**
-     * Keeps the manual picker usable when client JEI categories exist but the synchronized
-     * family mapping is temporarily empty. The server still validates the selected category
-     * and its representative recipe hints before configuring the provisioner.
-     */
+    /** Compatibility name retained for callers; the picker now always exposes all JEI categories. */
     public static Set<String> visibleOrAllWhenUnresolved(Set<String> jeiTypes,
                                                          Set<String> loadedFamilies,
                                                          Map<String, Set<String>> aliases,
                                                          Map<String, Set<String>> verifiedHints,
                                                          boolean debugMappings)
     {
-        Set<String> visible = visible(jeiTypes, loadedFamilies, aliases, verifiedHints, debugMappings);
-        return visible.isEmpty() ? Set.copyOf(jeiTypes) : visible;
+        return visible(jeiTypes, loadedFamilies, aliases, verifiedHints, debugMappings);
     }
 }

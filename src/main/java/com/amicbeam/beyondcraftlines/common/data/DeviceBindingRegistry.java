@@ -282,11 +282,16 @@ public final class DeviceBindingRegistry
         Set<ResourceLocation> executableTypes = com.amicbeam.beyondcraftlines.common.crafting
                 .VanillaProvisionerRecipeTypes.executable(selectedTypes);
         var resolved = JeiRecipeFamilyRegistry.resolve(executableTypes, loadedFamilies);
-        Set<ResourceLocation> acceptedTypes = com.amicbeam.beyondcraftlines.common.crafting
+        Set<ResourceLocation> normallyAcceptedTypes = com.amicbeam.beyondcraftlines.common.crafting
                 .VanillaProvisionerRecipeTypes.accepted(selectedTypes, resolved.jeiTypes());
+        Set<ResourceLocation> compatibilityTypes = manualSelection ? selectedTypes.stream()
+                .filter(type -> !normallyAcceptedTypes.contains(type))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()) : Set.of();
+        Set<ResourceLocation> acceptedTypes = manualSelection ? Set.copyOf(selectedTypes) : normallyAcceptedTypes;
         if (acceptedTypes.size() != selectedTypes.size()) return false;
-        Set<String> provisionerFamilies = com.amicbeam.beyondcraftlines.common.crafting
-                .VanillaProvisionerRecipeTypes.provisionerFamilies(acceptedTypes, resolved.families());
+        java.util.LinkedHashSet<String> provisionerFamilies = new java.util.LinkedHashSet<>(com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.provisionerFamilies(normallyAcceptedTypes, resolved.families()));
+        compatibilityTypes.stream().map(ResourceLocation::toString).forEach(provisionerFamilies::add);
         Map<ResourceLocation, Set<String>> availableGroups = inputGroupsByJeiType(level, selectedTypes);
         if (!selectedGroups.keySet().stream().allMatch(selectedTypes::contains)) return false;
         LinkedHashMap<String, Set<String>> groupsByFamily = new LinkedHashMap<>();
@@ -295,9 +300,10 @@ public final class DeviceBindingRegistry
             Set<String> available = availableGroups.getOrDefault(type, Set.of());
             Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
             if (!available.containsAll(chosen)) return false;
-            Set<String> typeFamilies = com.amicbeam.beyondcraftlines.common.crafting
-                    .VanillaProvisionerRecipeTypes.familiesForType(type,
-                    JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families());
+            Set<String> typeFamilies = compatibilityTypes.contains(type) ? Set.of(type.toString())
+                    : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .familiesForType(type,
+                            JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families());
             for (String family : typeFamilies)
             {
                 Set<String> accepted = com.amicbeam.beyondcraftlines.common.crafting
@@ -310,7 +316,7 @@ public final class DeviceBindingRegistry
         BindingRecord replacement = new BindingRecord(
                 existing == null ? UUID.randomUUID() : existing.id(), player.getUUID(), network.getId(),
                 level.dimension(), position, DeviceType.PROVISIONER_RECIPE_BINDING,
-                acceptedTypes, provisionerFamilies, Map.copyOf(groupsByFamily), provisionerId,
+                acceptedTypes, Set.copyOf(provisionerFamilies), Map.copyOf(groupsByFamily), provisionerId,
                 level.dimension(), position, existing == null ? "" : existing.nickname(),
                 existing != null && existing.favorite(),
                 priority,
@@ -474,6 +480,20 @@ public final class DeviceBindingRegistry
                     && validProvisionerTarget(server, record).isPresent())
                 record.recipeFamilies().stream().filter(record::acceptsAnyInputGroup).forEach(result::add);
         return Set.copyOf(result);
+    }
+
+    public static boolean supportsJeiOnlyCompatibility(MinecraftServer server, int networkId,
+                                                       ResourceLocation jeiType)
+    {
+        if (!JeiRecipeFamilyRegistry.resolve(Set.of(jeiType),
+                RecipePlanningService.loadedFamilies(server.overworld())).isEmpty()) return false;
+        String family = jeiType.toString();
+        return BindingSavedData.get(server).forNetwork(networkId).stream()
+                .filter(record -> record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)
+                .filter(record -> record.jeiRecipeTypes().contains(jeiType))
+                .filter(record -> record.recipeFamilies().contains(family))
+                .filter(record -> record.acceptsAnyInputGroup(family))
+                .anyMatch(record -> validProvisionerTarget(server, record).isPresent());
     }
 
     public static boolean supportsJeiType(MinecraftServer server, int networkId,

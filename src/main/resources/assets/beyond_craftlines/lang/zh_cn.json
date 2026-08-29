@@ -13,6 +13,7 @@
   "config.beyond_craftlines.max_provisioner_connections": "单个供给器的最大无线设备连接数",
   "config.beyond_craftlines.reset_provisioner_round_robin_on_activation": "每次配方激活时从头轮询供给器",
   "config.beyond_craftlines.debug_recipe_type_mappings": "调试配方类型映射",
+  "config.beyond_craftlines.verify_server_recipe_types": "是否开启服务端配方验证",
   "config.beyond_craftlines.max_planning_depth": "配方规划最大深度",
   "config.beyond_craftlines.max_planning_nodes": "配方候选分支预算",
   "config.beyond_craftlines.max_planning_time_millis": "配方规划时间预算（毫秒）",

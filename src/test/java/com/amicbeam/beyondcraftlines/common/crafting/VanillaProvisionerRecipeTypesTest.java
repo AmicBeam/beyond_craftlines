@@ -1,6 +1,8 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 
 import java.util.Set;
 
@@ -10,6 +12,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class VanillaProvisionerRecipeTypesTest
 {
+    @BeforeEach
+    void installBundledJeiOnlyTypes()
+    {
+        JeiOnlyRecipeTypeRegistry.setServerRecipeValidationEnabled(true);
+        JeiOnlyRecipeTypeRegistry.applySyncedTypes(Set.of(
+                "minecraft:anvil", "minecraft:brewing", "minecraft:compostable"));
+    }
+
+    @AfterEach
+    void restoreValidationMode()
+    { JeiOnlyRecipeTypeRegistry.setServerRecipeValidationEnabled(true); }
+
     @Test
     void acceptsVanillaJeiCategoriesWithoutServerRecipeTypesForProvisionerBinding()
     {
@@ -72,5 +86,15 @@ final class VanillaProvisionerRecipeTypesTest
     {
         assertFalse(VanillaProvisionerRecipeTypes.acceptsAll(
                 Set.of("example:virtual_machine"), Set.of()));
+    }
+
+    @Test
+    void disablingServerValidationMakesEveryCategoryJeiOnly()
+    {
+        JeiOnlyRecipeTypeRegistry.setServerRecipeValidationEnabled(false);
+
+        assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("example:machine"));
+        assertEquals(Set.of(), VanillaProvisionerRecipeTypes.executable(Set.of("example:machine")));
+        assertTrue(VanillaProvisionerRecipeTypes.acceptsAll(Set.of("example:machine"), Set.of()));
     }
 }

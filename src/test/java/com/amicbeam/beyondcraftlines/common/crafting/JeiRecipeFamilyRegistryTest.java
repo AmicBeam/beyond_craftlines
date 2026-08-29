@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class JeiRecipeFamilyRegistryTest
@@ -122,15 +123,19 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
-    void manualSelectionHidesVirtualCategoriesUnlessMappingDebugIsEnabled()
+    void manualSelectionShowsMappedAndCompatibilityCategoriesWithoutDebug()
     {
         Set<String> categories = Set.of("minecraft:anvil", "minecraft:smelting", "create:packing");
         Set<String> loaded = Set.of("smelting", "create:compacting");
 
-        assertEquals(Set.of("minecraft:smelting", "create:packing"),
+        assertEquals(categories,
                 ManualRecipeTypeVisibility.visible(categories, loaded, ALIASES, Map.of(), false));
         assertEquals(categories,
                 ManualRecipeTypeVisibility.visible(categories, loaded, ALIASES, Map.of(), true));
+        assertTrue(ManualRecipeTypeVisibility.usesCompatibilityMode(
+                "minecraft:anvil", loaded, ALIASES, Map.of()));
+        assertFalse(ManualRecipeTypeVisibility.usesCompatibilityMode(
+                "create:packing", loaded, ALIASES, Map.of()));
     }
 
     @Test
@@ -143,11 +148,11 @@ final class JeiRecipeFamilyRegistryTest
     }
 
     @Test
-    void manualSelectionKeepsFilteringWhenAnyCategoryCanBeMapped()
+    void manualSelectionKeepsUnmappedCategoriesWhenAnotherCategoryCanBeMapped()
     {
         Set<String> categories = Set.of("minecraft:crafting", "example:virtual");
 
-        assertEquals(Set.of("minecraft:crafting"),
+        assertEquals(categories,
                 ManualRecipeTypeVisibility.visibleOrAllWhenUnresolved(
                         categories, Set.of("crafting"), Map.of(), Map.of(), false));
     }

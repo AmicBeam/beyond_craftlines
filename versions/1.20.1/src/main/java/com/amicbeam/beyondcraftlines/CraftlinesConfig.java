@@ -46,6 +46,9 @@ public final class CraftlinesConfig {
             .pop().push("crafting")
             .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
             .define("debugRecipeTypeMappings", false);
+    public static final ForgeConfigSpec.BooleanValue VERIFY_SERVER_RECIPE_TYPES = SERVER_BUILDER
+            .comment("Validate JEI categories against server RecipeTypes. When disabled, every JEI category uses the bounded JEI-only compatibility path.")
+            .define("verifyServerRecipeTypes", false);
     public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
             .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
             .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);

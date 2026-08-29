@@ -91,6 +91,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.debug_recipe_type_mappings")
             .define("debugRecipeTypeMappings", false);
 
+    public static final ModConfigSpec.BooleanValue VERIFY_SERVER_RECIPE_TYPES = SERVER_BUILDER
+            .comment("Validate JEI categories against server RecipeTypes. When disabled, every JEI category uses the bounded JEI-only compatibility path.")
+            .translation("config.beyond_craftlines.verify_server_recipe_types")
+            .define("verifyServerRecipeTypes", false);
+
     public static final ModConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
             .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
             .translation("config.beyond_craftlines.server_recipe_index_max_per_tick")

@@ -67,10 +67,10 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
             boolean manualSelection = candidates.isEmpty() && configured.isEmpty();
             boolean debugMappings = manualSelection
                     && com.amicbeam.beyondcraftlines.CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get();
-            var loadedFamilies = manualSelection && !debugMappings
+            var loadedFamilies = manualSelection
                     ? com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.loadedFamilies(level)
                     : java.util.Set.<String>of();
-            var aliases = manualSelection && !debugMappings
+            var aliases = manualSelection
                     ? com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.aliases()
                     : java.util.Map.<String, java.util.Set<String>>of();
             serverPlayer.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->

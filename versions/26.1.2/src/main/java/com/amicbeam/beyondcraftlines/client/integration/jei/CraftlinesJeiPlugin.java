@@ -61,13 +61,15 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 Identifier recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
                 if (output == null) return null;
-                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = com.amicbeam.beyondcraftlines
-                        .common.crafting.VanillaProvisionerRecipeTypes.isJeiOnly(recipeType)
+                boolean virtualRecipe = JeiCatalystIndex.shouldUploadVirtualRecipe(recipeType);
+                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = virtualRecipe
                         ? virtualInputs(recipeLayoutDrawable) : java.util.List.of();
-                Identifier recipe = virtualInputs.isEmpty() ? findRecipeId(recipeLayoutDrawable)
-                        : com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                if (virtualRecipe && virtualInputs.isEmpty()) return null;
+                Identifier recipe = virtualRecipe
+                        ? com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
                         .register(recipeType.toString(), output.key(), output.amount(), virtualInputs.stream()
-                                .map(OpenOrderMenuPayload.VirtualInput::candidates).toList()).id().identifier();
+                                .map(OpenOrderMenuPayload.VirtualInput::candidates).toList()).id().identifier()
+                        : findRecipeId(recipeLayoutDrawable);
                 return recipe == null ? null : new OrderButtonController(
                         output.key(), recipe, recipeType, virtualInputs, output.amount(), scaledIcon);
             }

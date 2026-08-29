@@ -87,6 +87,9 @@ public final class CraftlinesEvents {
     @SubscribeEvent public static void onLevelUnload(LevelEvent.Unload event) { NativeFurnaceRegistry.onLevelUnload(event); }
     @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) {
         var server = event.getPlayerList().getServer();
+        com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                .setServerRecipeValidationEnabled(
+                        com.amicbeam.beyondcraftlines.CraftlinesConfig.VERIFY_SERVER_RECIPE_TYPES.get());
         if (event.getPlayer() == null) {
             if (recipeAliasServer == server)
                 com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
@@ -100,15 +103,22 @@ public final class CraftlinesEvents {
                     server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
+            com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.reload(
+                    server.getResourceManager());
+            com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
             com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
             recipeAliasServer = server;
         }
         var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
-        if (event.getPlayer() != null)
+        var jeiOnlyTypes = com.amicbeam.beyondcraftlines.common.network.JeiOnlyRecipeTypesPayload.snapshot(server);
+        if (event.getPlayer() != null) {
             com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
                     .sendToPlayer(event.getPlayer(), profiles);
-        else server.getPlayerList().getPlayers().forEach(player ->
-                com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                        .sendToPlayer(player, profiles));
+            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
+                    .sendToPlayer(event.getPlayer(), jeiOnlyTypes);
+        } else server.getPlayerList().getPlayers().forEach(player -> {
+            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork.sendToPlayer(player, profiles);
+            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork.sendToPlayer(player, jeiOnlyTypes);
+        });
     }
 }

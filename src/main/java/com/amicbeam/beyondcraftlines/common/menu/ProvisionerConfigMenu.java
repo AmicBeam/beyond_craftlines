@@ -207,14 +207,12 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
             writeGroups(buffer, selectedGroups.getOrDefault(type, Set.of()));
         }
         buffer.writeBoolean(debugRecipeTypeMappings);
-        var families = debugRecipeTypeMappings ? java.util.List.<String>of()
-                : manualLoadedFamilies.stream().filter(ProvisionerConfigMenu::validFamily)
+        var families = manualLoadedFamilies.stream().filter(ProvisionerConfigMenu::validFamily)
                 .sorted().limit(2048).toList();
         buffer.writeVarInt(families.size());
         families.forEach(family -> buffer.writeUtf(family, 256));
         Set<String> sentFamilies = Set.copyOf(families);
-        var aliases = debugRecipeTypeMappings ? java.util.List.<Map.Entry<String, Set<String>>>of()
-                : manualRecipeAliases.entrySet().stream()
+        var aliases = manualRecipeAliases.entrySet().stream()
                 .filter(entry -> validFamily(entry.getKey()))
                 .filter(entry -> entry.getValue().stream().anyMatch(sentFamilies::contains))
                 .sorted(Map.Entry.comparingByKey()).limit(512).toList();

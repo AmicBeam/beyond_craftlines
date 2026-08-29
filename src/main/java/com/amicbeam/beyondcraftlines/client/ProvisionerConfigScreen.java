@@ -283,6 +283,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         ResourceLocation type = options.get(index);
         selected.clear();
         selected.add(type);
+        if (usesCompatibilityMode(type))
+            com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.enableSyncedType(type);
         selectedGroups.clear();
         selectedGroups.put(type, new LinkedHashSet<>());
         search.setFocused(false);
@@ -323,8 +325,21 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                     .orElse(type.toString());
             String text = title + "  ·  " + type;
             graphics.drawString(font, font.plainSubstrByWidth(text, width - 8),
-                    x + 4, rowY + 2, 0xFFD8F3FF, false);
+                    x + 4, rowY + 2, compatibilityColor(type), false);
         }
+    }
+
+    private int compatibilityColor(ResourceLocation type)
+    {
+        return usesCompatibilityMode(type) ? 0xFFFFA64D : 0xFFD8F3FF;
+    }
+
+    private boolean usesCompatibilityMode(ResourceLocation type)
+    {
+        return com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                .serverRecipeValidationEnabled()
+                && JeiCatalystIndex.usesCompatibilityMode(type, menu.manualLoadedFamilies(),
+                menu.manualRecipeAliases());
     }
 
     @Override public boolean mouseClicked(double mouseX, double mouseY, int button)

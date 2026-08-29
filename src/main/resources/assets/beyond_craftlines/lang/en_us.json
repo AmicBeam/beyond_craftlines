@@ -13,6 +13,7 @@
   "config.beyond_craftlines.max_provisioner_connections": "Maximum wireless device connections per provisioner",
   "config.beyond_craftlines.reset_provisioner_round_robin_on_activation": "Restart provisioner round-robin on each recipe activation",
   "config.beyond_craftlines.debug_recipe_type_mappings": "Debug recipe type mappings",
+  "config.beyond_craftlines.verify_server_recipe_types": "Verify server recipe types",
   "config.beyond_craftlines.max_planning_depth": "Maximum recipe planning depth",
   "config.beyond_craftlines.max_planning_nodes": "Maximum recipe candidate branches",
   "config.beyond_craftlines.max_planning_time_millis": "Recipe planning time budget (milliseconds)",

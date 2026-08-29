@@ -109,6 +109,20 @@ public final class JeiCatalystIndex
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    public static boolean usesCompatibilityMode(ResourceLocation type, Set<String> loadedFamilies,
+                                                Map<String, Set<String>> aliases)
+    {
+        return ManualRecipeTypeVisibility.usesCompatibilityMode(type.toString(), loadedFamilies,
+                aliases, verifiedHintFamilies());
+    }
+
+    public static boolean shouldUploadVirtualRecipe(ResourceLocation type)
+    {
+        return !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
+                .serverRecipeValidationEnabled()
+                || com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.contains(type);
+    }
+
     public static List<RecipeFamilyHint> hintsFor(Set<ResourceLocation> types)
     {
         return types.stream().sorted(java.util.Comparator.comparing(ResourceLocation::toString))

@@ -31,7 +31,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private static final int MANUAL_ROWS = 5;
     private static final int MANUAL_ROW_HEIGHT = 12;
     private static final int MAX_GROUPS = 16;
-    private final List<ResourceLocation> candidates;
+    private List<ResourceLocation> candidates;
     private final boolean manualFallback;
     private final Set<ResourceLocation> selected;
     private final Map<ResourceLocation, Set<String>> availableGroups;
@@ -54,10 +54,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     {
         super(menu, inventory, title);
         manualFallback = menu.allowsManualRecipeSelection();
-        candidates = (manualFallback ? JeiCatalystIndex.recipeTypes(
-                menu.manualLoadedFamilies(), menu.manualRecipeAliases(),
-                menu.debugRecipeTypeMappings()) : menu.candidates()).stream()
-                .sorted(Comparator.comparing(ResourceLocation::toString)).toList();
+        candidates = loadCandidates();
         selected = new LinkedHashSet<>(menu.selected());
         availableGroups = menu.availableGroups();
         selectedGroups = new HashMap<>();
@@ -77,12 +74,14 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         dropdownOpen = manualFallback;
         if (manualFallback)
         {
+            reloadManualCandidates();
             search = addRenderableWidget(new EditBox(font, leftPos + 12, topPos + 43,
                     imageWidth - 24, 18, Component.translatable(
                     "gui.beyond_craftlines.provisioner.manual_search")));
             search.setMaxLength(128);
             search.setResponder(ignored -> {
                 if (search.isFocused()) dropdownOpen = true;
+                if (candidates.isEmpty()) reloadManualCandidates();
                 dropdownScroll = 0;
                 refresh();
             });
@@ -128,6 +127,19 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private Component deliveryStrategyTitle()
     { return Component.translatable(deliveryStrategy.translationKey()); }
+
+    private List<ResourceLocation> loadCandidates()
+    {
+        return (manualFallback ? JeiCatalystIndex.recipeTypes(
+                menu.manualLoadedFamilies(), menu.manualRecipeAliases(),
+                menu.debugRecipeTypeMappings()) : menu.candidates()).stream()
+                .sorted(Comparator.comparing(ResourceLocation::toString)).toList();
+    }
+
+    private void reloadManualCandidates()
+    {
+        if (manualFallback) candidates = loadCandidates();
+    }
 
     private void cycleDeliveryStrategy()
     {
@@ -249,8 +261,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private boolean isOverDropdown(double mouseX, double mouseY)
     {
-        if (!manualFallback || !dropdownOpen || manualOptions().isEmpty()) return false;
-        int rows = Math.min(MANUAL_ROWS, manualOptions().size());
+        if (!manualFallback || !dropdownOpen) return false;
+        int rows = Math.max(1, Math.min(MANUAL_ROWS, manualOptions().size()));
         int x = leftPos + 12;
         int y = topPos + 62;
         return mouseX >= x && mouseX < x + imageWidth - 24
@@ -283,15 +295,22 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void renderManualDropdown(GuiGraphics graphics, int mouseX, int mouseY)
     {
-        if (!manualFallback || !dropdownOpen || manualOptions().isEmpty()) return;
+        if (!manualFallback || !dropdownOpen) return;
         List<ResourceLocation> options = manualOptions();
         dropdownScroll = Math.max(0, Math.min(dropdownScroll, maxDropdownScroll()));
-        int rows = Math.min(MANUAL_ROWS, options.size());
+        int rows = Math.max(1, Math.min(MANUAL_ROWS, options.size()));
         int x = leftPos + 12;
         int y = topPos + 62;
         int width = imageWidth - 24;
         graphics.fill(x, y, x + width, y + rows * MANUAL_ROW_HEIGHT + 2, 0xFF55D5DA);
         graphics.fill(x + 1, y + 1, x + width - 1, y + rows * MANUAL_ROW_HEIGHT + 1, 0xFF0E1D24);
+        if (options.isEmpty())
+        {
+            graphics.drawString(font, Component.translatable(
+                            "gui.beyond_craftlines.provisioner.manual_no_matches"),
+                    x + 4, y + 3, 0xFF9CB0B8, false);
+            return;
+        }
         for (int row = 0; row < rows; row++)
         {
             int index = dropdownScroll + row;
@@ -313,7 +332,11 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         int option = hoveredDropdownOption(mouseX, mouseY);
         if (option >= 0) { selectManualOption(option); return true; }
         boolean clickedSearch = search != null && search.isMouseOver(mouseX, mouseY);
-        if (clickedSearch) dropdownOpen = true;
+        if (clickedSearch)
+        {
+            if (candidates.isEmpty()) reloadManualCandidates();
+            dropdownOpen = true;
+        }
         else if (!isOverDropdown(mouseX, mouseY)) dropdownOpen = false;
         return super.mouseClicked(mouseX, mouseY, button);
     }

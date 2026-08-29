@@ -62,6 +62,7 @@
   "gui.beyond_craftlines.provisioner.no_candidates": "Bind and scan a target block with the Network Linker first",
   "gui.beyond_craftlines.provisioner.manual_help": "No target detected; select a recipe type manually",
   "gui.beyond_craftlines.provisioner.manual_search": "Search recipe name or ID...",
+  "gui.beyond_craftlines.provisioner.manual_no_matches": "No matching recipe types",
   "gui.beyond_craftlines.provisioner.manual_select": "Select recipe type",
   "gui.beyond_craftlines.provisioner.return_all": "Return all to network",
   "message.beyond_craftlines.provisioner_returned_all": "Every provisioner resource was returned to the network.",

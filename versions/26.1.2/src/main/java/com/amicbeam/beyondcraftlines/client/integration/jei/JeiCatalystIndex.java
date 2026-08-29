@@ -28,6 +28,7 @@ import java.util.Set;
 /** Client-only snapshot of the machine relationships JEI actually displays. */
 public final class JeiCatalystIndex
 {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static volatile Map<Identifier, Set<Identifier>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<Identifier, Component> TITLES_BY_TYPE = Map.of();
     private static volatile Map<Identifier, List<RecipeFamilyHint>> HINTS_BY_TYPE = Map.of();
@@ -45,14 +46,23 @@ public final class JeiCatalystIndex
         Map<Identifier, List<RecipeFamilyHint>> hints = new HashMap<>();
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
-            var recipeType = category.getRecipeType();
-            Identifier typeId = recipeType.getUid();
-            titles.put(typeId, category.getTitle());
-            manager.createCraftingStationLookup(recipeType).includeHidden().getItemStack()
-                    .filter(stack -> !stack.isEmpty())
-                    .map(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()))
-                    .forEach(item -> building.computeIfAbsent(item, ignored -> new LinkedHashSet<>()).add(typeId));
-            hints.put(typeId, collectRecipes(manager, category, typeId, recipes));
+            try
+            {
+                var recipeType = category.getRecipeType();
+                Identifier typeId = recipeType.getUid();
+                titles.put(typeId, category.getTitle());
+                manager.createCraftingStationLookup(recipeType).includeHidden().getItemStack()
+                        .filter(stack -> !stack.isEmpty())
+                        .map(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()))
+                        .forEach(item -> building.computeIfAbsent(item, ignored ->
+                                new LinkedHashSet<>()).add(typeId));
+                hints.put(typeId, collectRecipes(manager, category, typeId, recipes));
+            }
+            catch (RuntimeException | LinkageError exception)
+            {
+                LOGGER.warn("Unable to index JEI recipe category {}",
+                        category.getClass().getName(), exception);
+            }
         });
         Map<Identifier, Set<Identifier>> frozen = new HashMap<>();
         building.forEach((item, types) -> frozen.put(item, Set.copyOf(types)));
@@ -98,6 +108,7 @@ public final class JeiCatalystIndex
                                               Map<String, Set<String>> aliases,
                                               boolean debugMappings)
     {
+        if (TITLES_BY_TYPE.isEmpty()) refresh();
         Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(Identifier::toString)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         Set<String> visible = ManualRecipeTypeVisibility.visible(

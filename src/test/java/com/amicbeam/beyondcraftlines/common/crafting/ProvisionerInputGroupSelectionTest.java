@@ -31,6 +31,15 @@ final class ProvisionerInputGroupSelectionTest
     }
 
     @Test
+    void legacyStoredEmptySelectionNormalizesToWildcard()
+    {
+        assertEquals(Set.of(ProvisionerInputGroupSelection.ALL),
+                ProvisionerInputGroupSelection.normalizeStored(Set.of()));
+        assertEquals(Set.of("input_chemical"),
+                ProvisionerInputGroupSelection.normalizeStored(Set.of("input_chemical")));
+    }
+
+    @Test
     void explicitGroupRoutingPrecedesWildcardFallback()
     {
         assertEquals(ProvisionerInputGroupSelection.EXPLICIT_PRIORITY,

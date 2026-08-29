@@ -142,12 +142,65 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         if (current == null) return false;
         IStackKey<?> target = ingredientUnderMouse(current);
         if (target == null || target.isEmpty()) return false;
-        queueOrder(new OpenOrderMenuPayload(target, "", ""));
+        orderTarget(target);
         return true;
     }
 
     public static void orderTarget(IStackKey<?> target)
-    { queueOrder(new OpenOrderMenuPayload(target, "", "")); }
+    {
+        OpenOrderMenuPayload focused = focusedOrderPayload(target);
+        queueOrder(focused == null ? new OpenOrderMenuPayload(target, "", "") : focused);
+    }
+
+    private static @Nullable OpenOrderMenuPayload focusedOrderPayload(IStackKey<?> target)
+    {
+        IJeiRuntime current = runtime;
+        if (current == null || target == null || target.isEmpty()) return null;
+        var typed = current.getIngredientManager().createTypedIngredient(target.getReadOnlyStack(), false);
+        if (typed.isEmpty()) return null;
+        var focusFactory = current.getJeiHelpers().getFocusFactory();
+        var focus = focusFactory.createFocus(RecipeIngredientRole.OUTPUT, typed.get());
+        java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses = java.util.List.of(focus);
+        var focusGroup = focusFactory.createFocusGroup(focuses);
+        var categories = current.getRecipeManager().createRecipeCategoryLookup()
+                .limitFocus(focuses).includeHidden().get().toList();
+        for (var category : categories)
+        {
+            OpenOrderMenuPayload payload = focusedOrderPayload(
+                    current, target, category, focuses, focusGroup);
+            if (payload != null) return payload;
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static @Nullable OpenOrderMenuPayload focusedOrderPayload(
+            IJeiRuntime current, IStackKey<?> target,
+            mezz.jei.api.recipe.category.IRecipeCategory<?> rawCategory,
+            java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses,
+            mezz.jei.api.recipe.IFocusGroup focusGroup)
+    {
+        var category = (mezz.jei.api.recipe.category.IRecipeCategory<Object>) rawCategory;
+        var recipes = current.getRecipeManager().createRecipeLookup(category.getRecipeType())
+                .limitFocus(focuses).includeHidden().get().toList();
+        for (Object recipe : recipes)
+        {
+            var layout = current.getRecipeManager().createRecipeLayoutDrawable(
+                    category, recipe, focusGroup).orElse(null);
+            if (layout == null) continue;
+            var captured = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
+            if (captured == null || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(target, captured.output().key())) continue;
+            Identifier serverRecipe = serverCraftingRecipeId(layout);
+            if (serverRecipe != null)
+                return new OpenOrderMenuPayload(target, serverRecipe.toString(),
+                        captured.type().toString(), java.util.List.of(), captured.output().amount());
+            Identifier virtualRecipe = JeiVirtualRecipeLayouts.register(captured).id().identifier();
+            return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
+                    captured.inputs(), captured.output().amount());
+        }
+        return null;
+    }
 
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()

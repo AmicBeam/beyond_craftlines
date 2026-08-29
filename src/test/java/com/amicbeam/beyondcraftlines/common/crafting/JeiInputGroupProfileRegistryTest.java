@@ -74,7 +74,7 @@ final class JeiInputGroupProfileRegistryTest
     private static JeiInputGroupProfileRegistry.Profile read(String name)
     {
         var stream = JeiInputGroupProfileRegistryTest.class.getResourceAsStream(
-                "/data/beyond_craftlines/jei_input_group_profiles/" + name);
+                "/assets/beyond_craftlines/jei_input_group_profiles/" + name);
         assertNotNull(stream);
         JsonObject object = JsonParser.parseReader(new InputStreamReader(
                 stream, StandardCharsets.UTF_8)).getAsJsonObject();

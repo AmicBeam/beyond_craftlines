@@ -4,8 +4,10 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
 import java.util.Collections;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.WeakHashMap;
 
 /**
@@ -22,9 +24,16 @@ public final class RecipeIngredientResolver
 
     public static List<Ingredient> ingredients(Recipe<?> recipe)
     {
-        List<Ingredient> vanilla = List.copyOf(recipe.placementInfo().ingredients());
+        var placement = recipe.placementInfo();
+        List<Ingredient> vanilla = placement == null ? List.of() : safeCopy(placement.ingredients());
         if (!vanilla.isEmpty()) return vanilla;
         return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::customItemInputs);
+    }
+
+    static <T> List<T> safeCopy(Collection<T> values)
+    {
+        if (values == null || values.isEmpty()) return List.of();
+        return values.stream().filter(Objects::nonNull).toList();
     }
 
     public static void clearCache()

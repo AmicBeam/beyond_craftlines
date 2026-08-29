@@ -57,14 +57,17 @@ public final class CraftlinesClientEvents
             NetworkLinkerItem.CLIENT_BIND_REQUEST = (context, remove) -> {
                 var player = context.getPlayer();
                 if (player == null) return net.minecraft.world.InteractionResult.PASS;
-                var catalyst = new net.minecraft.world.item.ItemStack(
-                        context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-                var types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
-                        .recipeTypesFor(catalyst);
+                boolean connectionEditing = ClientBindingVisuals.isEditingProvisionerConnections();
+                var types = connectionEditing ? java.util.Set.<Identifier>of()
+                        : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.recipeTypesFor(
+                        new net.minecraft.world.item.ItemStack(context.getLevel()
+                                .getBlockState(context.getClickedPos()).getBlock().asItem()));
+                var inputGroups = connectionEditing ? java.util.List.<String>of()
+                        : com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                        com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                                .inputGroupsFor(types));
                 ClientPacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
-                                .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
-                                .JeiCatalystIndex.inputGroupsFor(types)), remove));
+                        context.getClickedFace(), inputGroups, remove));
                 return net.minecraft.world.InteractionResult.SUCCESS;
             };
         }
@@ -143,10 +146,14 @@ public final class CraftlinesClientEvents
                     && !minecraft.player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
             var state = minecraft.level.getBlockState(hit.getBlockPos());
             var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            boolean provisioner = state.is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks
+                    .CRAFTLINE_PROVISIONER.get());
+            if (!provisioner && !ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId)) return;
             var types = new java.util.LinkedHashSet<>(
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    provisioner ? java.util.Set.<Identifier>of()
+                            : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
-            if (types.isEmpty())
+            if (!provisioner && types.isEmpty())
             {
                 String vanillaCategory = com.amicbeam.beyondcraftlines.common.crafting
                         .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);

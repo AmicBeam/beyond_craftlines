@@ -63,6 +63,18 @@ public final class ClientBindingVisuals
         boundFaces = List.of();
     }
 
+    public static boolean isBoundMachine(BlockPos position, ResourceLocation blockId)
+    {
+        return BY_CHUNK.getOrDefault(ChunkPos.asLong(position.getX() >> 4, position.getZ() >> 4), List.of())
+                .stream().anyMatch(entry -> entry.position().equals(position)
+                        && entry.visual().blockId().equals(blockId));
+    }
+
+    public static boolean isEditingProvisionerConnections()
+    {
+        return selectedProvisioner != null;
+    }
+
     public static void render(RenderLevelStageEvent event)
     {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;

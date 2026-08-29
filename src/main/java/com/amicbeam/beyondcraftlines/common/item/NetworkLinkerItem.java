@@ -86,29 +86,24 @@ public final class NetworkLinkerItem extends Item
         }
         if (context.getPlayer().isShiftKeyDown())
         {
-            if (context.getLevel().isClientSide())
-            {
-                ItemStack catalyst = new ItemStack(
-                        context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-                Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
-                PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
-                                .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
-                                .JeiCatalystIndex.inputGroupsFor(types)), true));
-            }
+            if (context.getLevel().isClientSide()) sendBindRequest(context, blockId, true);
             return InteractionResult.SUCCESS;
         }
-        if (context.getLevel().isClientSide())
-        {
-            ItemStack catalyst = new ItemStack(
-                    context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-            Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
-            PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                    context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
-                            .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
-                            .JeiCatalystIndex.inputGroupsFor(types)), false));
-        }
+        if (context.getLevel().isClientSide()) sendBindRequest(context, blockId, false);
         return InteractionResult.SUCCESS;
+    }
+
+    private static void sendBindRequest(UseOnContext context, ResourceLocation blockId, boolean remove)
+    {
+        boolean connectionEditing = com.amicbeam.beyondcraftlines.client.ClientBindingVisuals
+                .isEditingProvisionerConnections();
+        Set<ResourceLocation> types = connectionEditing ? Set.of() : recipeTypes(new ItemStack(
+                context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem()), blockId);
+        var inputGroups = connectionEditing ? java.util.List.<String>of()
+                : com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.inputGroupsFor(types));
+        PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
+                context.getClickedFace(), inputGroups, remove));
     }
 
     private static Set<ResourceLocation> recipeTypes(ItemStack catalyst, ResourceLocation blockId)

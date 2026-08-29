@@ -68,14 +68,10 @@ public final class JeiCatalystIndex
     public static Set<ResourceLocation> recipeTypesFor(ItemStack catalyst)
     {
         if (catalyst.isEmpty()) return Set.of();
-        Item item = catalyst.getItem();
-        Set<ResourceLocation> types = TYPES_BY_CATALYST.get(item);
-        if (types != null) return types;
-
-        // A recipe reload can complete after JEI first publishes its runtime. Rebuild once at the
-        // point of use so machine binding and provisioner scans do not remain stuck with that stale snapshot.
-        refresh();
-        return TYPES_BY_CATALYST.getOrDefault(item, Set.of());
+        // Rebuilds are driven by JEI runtime and recipe-update events. A cache miss usually means
+        // this is an ordinary block rather than a catalyst, so rebuilding every JEI layout here
+        // would turn a linker click into a multi-frame stall.
+        return TYPES_BY_CATALYST.getOrDefault(catalyst.getItem(), Set.of());
     }
 
     public static Optional<Component> recipeTypeTitle(ResourceLocation type)

@@ -128,10 +128,14 @@ public final class CraftlinesClientEvents
                     && !minecraft.player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
             var state = minecraft.level.getBlockState(hit.getBlockPos());
             var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            boolean provisioner = state.is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks
+                    .CRAFTLINE_PROVISIONER.get());
+            if (!provisioner && !ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId)) return;
             var types = new java.util.LinkedHashSet<>(
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    provisioner ? java.util.Set.<ResourceLocation>of()
+                            : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
-            if (types.isEmpty()) types.add(blockId);
+            if (!provisioner && types.isEmpty()) types.add(blockId);
             PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
                     com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
                             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex

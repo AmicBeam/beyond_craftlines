@@ -77,7 +77,9 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             if (!connectionMode && types.isEmpty())
             {
                 player.sendSystemMessage(Component.translatable(
-                        "error.beyond_craftlines.machine_recipe_type_unknown"));
+                        "error.beyond_craftlines.machine_recipe_type_unknown",
+                        net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(
+                                player.level().getBlockState(target).getBlock())));
                 return;
             }
             if (!connectionMode && !supported)

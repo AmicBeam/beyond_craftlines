@@ -102,6 +102,11 @@ public final class RecipeOrderService
     {
         if (!plan.target().equals(target) || plan.requested() != count || !plan.craftable())
             throw new IllegalArgumentException("validated plan does not match the order");
+        if (LOGGER.isDebugEnabled()) LOGGER.debug("Craftlines validated order: network={}, target={}, steps={}",
+                networkId, RecipeResourceResolver.sortKey(plan.targetKey()), plan.steps().stream().map(step ->
+                        step.family() + "=" + step.inputs().stream().map(input -> input.inputGroup() + ":"
+                                + RecipeResourceResolver.sortKey(input.key()) + "@" + input.amount()).toList())
+                        .toList());
         List<RecipeOrderJob> active = RecipeOrderSavedData.get(level.getServer()).active();
         boolean orderLimitReached = active.size() >= CraftlinesConfig.MAX_ACTIVE_ORDERS.get();
         if (origin == OrderOrigin.AUTOMATIC)

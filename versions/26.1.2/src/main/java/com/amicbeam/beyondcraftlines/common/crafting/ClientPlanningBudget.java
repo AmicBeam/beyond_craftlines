@@ -48,6 +48,12 @@ final class ClientPlanningBudget
 
     int used() { return used; }
 
+    boolean exhausted()
+    {
+        canOptimize();
+        return exhausted;
+    }
+
     void checkCancellation()
     {
         if (Thread.currentThread().isInterrupted())

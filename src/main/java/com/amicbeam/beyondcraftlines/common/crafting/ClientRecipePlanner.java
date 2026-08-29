@@ -147,7 +147,8 @@ public final class ClientRecipePlanner
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
                 0, maxDepth, budget);
-        return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock);
+        return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock,
+                budget.exhausted());
     }
 
     private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
@@ -492,7 +493,8 @@ public final class ClientRecipePlanner
     public record Proposal(Map<String, ResourceLocation> recipes,
                            Map<IngredientKey, ResourceLocation> ingredients,
                            Map<IStackKey<?>, Long> missing,
-                           Map<IStackKey<?>, Long> extraction)
+                           Map<IStackKey<?>, Long> extraction,
+                           boolean searchExhausted)
     {
         public Proposal
         {

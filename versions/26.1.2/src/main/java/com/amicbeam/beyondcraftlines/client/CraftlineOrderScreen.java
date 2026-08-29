@@ -132,6 +132,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private long proposalStockRevision;
     private long proposalRecipeEpoch;
     private boolean proposalReady;
+    private boolean submitWhenReady;
     private boolean planningSnapshotValid;
     private long planningSnapshotCapturedAt;
     private long planningSnapshotRevision;
@@ -200,7 +201,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ignored -> { if (menu.dashboardConfiguration()) saveDashboardRecipe(); else submit(); })
                 .bounds(rightX + actionWidth + 4, topPos + 139,
                         rightWidth - actionWidth - 4, 18).build());
-        orderButton.active = proposalReady;
+        orderButton.active = canQueueOrder();
         updateBlockingButton();
         updateOutputDestinationButton();
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
@@ -218,6 +219,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     }
 
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
+    private boolean canQueueOrder()
+    {
+        return selected != null && planningCatalog != null && menu.serverRecipeIndexComplete()
+                && (!menu.dashboardConfiguration() || proposalReady);
+    }
     private int rightPanelLeft() { return leftPos + imageWidth - rightPanelWidth(); }
     private int treeLeft() { return leftPos + 10; }
     private int treeRight() { return rightPanelLeft() - 6; }
@@ -395,10 +401,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void submit()
     {
-        if (selected == null || minecraft.level == null || !proposalReady) return;
+        if (selected == null || minecraft.level == null) return;
+        if (!proposalReady)
+        {
+            submitWhenReady = true;
+            if (orderButton != null) orderButton.active = false;
+            return;
+        }
         ClientPacketDistributor.sendToServer(new SubmitOrderPayload(
                 menu.targetToken(), amountValue(), blockingMode,
                 outputDestination.id(), previewNonce, proposalStockRevision, proposalRecipeEpoch));
+        submitWhenReady = false;
         markPreviewDirty();
     }
 
@@ -1697,9 +1710,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         previewDelayTicks = Math.max(1, delayTicks);
         amountOnlyPreviewChange = amountOnly;
         previewNonce++;
+        submitWhenReady = false;
         proposalReady = false;
         clearDisplayMetrics();
-        if (orderButton != null) orderButton.active = false;
+        if (orderButton != null) orderButton.active = canQueueOrder();
     }
 
     private void clearDisplayMetrics()
@@ -1857,6 +1871,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Map<ClientRecipePlanner.IngredientKey, Identifier> forcedIngredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        Map<String, Identifier> fixedTreeRecipes = visibleTreeRecipes();
+        Map<ClientRecipePlanner.IngredientKey, Identifier> fixedTreeIngredients = visibleTreeIngredients();
         boolean hasDefaults = !defaultResourceRecipes.isEmpty() || !defaultRecipes.isEmpty()
                 || !defaultIngredients.isEmpty();
         boolean hasAutomaticChoices = preferAutomaticChoices && (!automaticResourceRecipes.isEmpty()
@@ -1872,6 +1888,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
                     ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
             catch (RuntimeException exception) { failure = exception; }
+            boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
             if (!refreshSnapshotIfMissing && hasAutomaticChoices && fallbackSearchNanos > 0
                     && (proposal == null || !proposal.craftable()))
@@ -1881,6 +1898,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
                             fallbackSearchNanos);
+                    searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
                         proposal = fallback;
@@ -1898,6 +1916,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
                             fallbackSearchNanos);
+                    searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
                         proposal = fallback;
@@ -1905,6 +1924,21 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     }
                 }
                 catch (RuntimeException ignored) {}
+            }
+            if (!refreshSnapshotIfMissing && proposal != null && !proposal.craftable()
+                    && searchExhausted)
+            {
+                try
+                {
+                    // Candidate optimization is bounded, but the already-visible tree must still be
+                    // validated deterministically. This preserves a craftable current choice instead
+                    // of replacing it with the incomplete branch that happened to hit the budget.
+                    proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
+                            fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes,
+                            ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS);
+                    failure = null;
+                }
+                catch (RuntimeException exception) { failure = exception; }
             }
             ClientRecipePlanner.Proposal completed = proposal;
             RuntimeException completedFailure = failure;
@@ -1924,6 +1958,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
                             return;
                         }
+                        submitWhenReady = false;
+                        if (orderButton != null) orderButton.active = false;
                         previewError = localizedPlanningError(completedFailure.getMessage());
                         return;
                     }
@@ -1944,6 +1980,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
                             return;
                         }
+                        submitWhenReady = false;
+                        if (orderButton != null) orderButton.active = false;
                         showMissingMaterials(completed.missing());
                         previewError = formatMissing(completed.missing());
                         rebuildTree(false);
@@ -1960,8 +1998,29 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     previewError = "";
                     if (orderButton != null) orderButton.active = true;
                     rebuildTree(false);
+                    if (submitWhenReady) submit();
                 });
         });
+    }
+
+    private Map<String, Identifier> visibleTreeRecipes()
+    {
+        LinkedHashMap<String, Identifier> result = new LinkedHashMap<>();
+        for (GraphNode node : treeNodes)
+            if (node.recipe != null)
+                result.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .sortKey(node.key), node.recipe.id().identifier());
+        return Map.copyOf(result);
+    }
+
+    private Map<ClientRecipePlanner.IngredientKey, Identifier> visibleTreeIngredients()
+    {
+        LinkedHashMap<ClientRecipePlanner.IngredientKey, Identifier> result = new LinkedHashMap<>();
+        for (GraphNode node : treeNodes)
+            if (node.parentRecipe != null && node.itemId != null)
+                for (int slot : node.parentSlots)
+                    result.put(new ClientRecipePlanner.IngredientKey(node.parentRecipe, slot), node.itemId);
+        return Map.copyOf(result);
     }
 
     private void refreshSnapshotAfterFastAmountPlan(long nonce, boolean preferAutomaticChoices)

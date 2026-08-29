@@ -175,7 +175,6 @@ public final class RecipeOrderSavedData extends SavedData
         tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
         tag.putLong("self_increment_seed", step.selfIncrementSeed());
-        tag.putString("match_rule", step.matchRule().encode());
         ListTag inputs = new ListTag();
         for (RecipePlan.Material input : step.inputs())
         {
@@ -229,9 +228,7 @@ public final class RecipeOrderSavedData extends SavedData
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
                 output, tag.getLong("per"), tag.getLong("crafts"), inputs, selections,
                 java.util.Arrays.stream(tag.getIntArray("dependencies")).boxed().toList(),
-                tag.getLong("self_increment_seed"),
-                com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(
-                        tag.contains("match_rule", Tag.TAG_STRING) ? tag.getString("match_rule") : "strict"));
+                tag.getLong("self_increment_seed"));
     }
 
     private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,

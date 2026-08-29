@@ -51,7 +51,7 @@ public final class ClientPlannerPreferences
         Snapshot old = load();
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
         if (recipe == null) recipes.remove(output); else recipes.put(output, recipe);
-        return write(recipes, old.ingredients(), old.matchRules(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination());
     }
 
     public static synchronized boolean clearRecipe(String output, ResourceLocation legacyOutput)
@@ -60,7 +60,7 @@ public final class ClientPlannerPreferences
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
         recipes.remove(output);
         if (legacyOutput != null) recipes.remove(legacyOutput.toString());
-        return write(recipes, old.ingredients(), old.matchRules(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination());
     }
 
     public static synchronized boolean setIngredients(ResourceLocation recipe, Iterable<Integer> slots,
@@ -73,17 +73,14 @@ public final class ClientPlannerPreferences
             String key = ingredientKey(recipe, slot);
             if (item == null) ingredients.remove(key); else ingredients.put(key, item);
         }
-        return write(old.recipes(), ingredients, old.matchRules(), old.outputDestination());
+        return write(old.recipes(), ingredients, old.outputDestination());
     }
 
     public static synchronized boolean setOutputDestination(OrderOutputDestination destination)
     {
         Snapshot old = load();
-        return write(old.recipes(), old.ingredients(), old.matchRules(), destination);
+        return write(old.recipes(), old.ingredients(), destination);
     }
-
-    public static synchronized boolean setMatchRule(String key,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule)
-    {Snapshot old=load();LinkedHashMap<String,String> rules=new LinkedHashMap<>(old.matchRules());if(rule==null||rule.equals(com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT))rules.remove(key);else rules.put(key,rule.encode());return write(old.recipes(),old.ingredients(),rules,old.outputDestination());}
 
     public static String ingredientKey(ResourceLocation recipe, int slot)
     { return recipe + "#" + slot; }
@@ -109,15 +106,13 @@ public final class ClientPlannerPreferences
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             return new Snapshot(readMap(root.getAsJsonObject("recipes")),
                     readMap(root.getAsJsonObject("ingredients")),
-                    readStrings(root.getAsJsonObject("match_rules")),
                     OrderOutputDestination.byId(root.has("output_destination")
                             ? root.get("output_destination").getAsString() : "network"));
         }
     }
 
-    private static Map<String,String> readStrings(JsonObject object){if(object==null)return Map.of();LinkedHashMap<String,String> result=new LinkedHashMap<>();object.entrySet().stream().limit(MAX_ENTRIES).filter(e->e.getValue().isJsonPrimitive()).forEach(e->result.put(e.getKey(),e.getValue().getAsString()));return Map.copyOf(result);}
     private static boolean write(Map<String, ResourceLocation> recipes,
-                                 Map<String, ResourceLocation> ingredients,Map<String,String> matchRules,
+                                 Map<String, ResourceLocation> ingredients,
                                  OrderOutputDestination outputDestination)
     {
         Path path = path();
@@ -130,7 +125,6 @@ public final class ClientPlannerPreferences
             root.addProperty("output_destination", outputDestination.id());
             root.add("recipes", toJson(recipes));
             root.add("ingredients", toJson(ingredients));
-            JsonObject rules=new JsonObject();matchRules.entrySet().stream().limit(MAX_ENTRIES).forEach(e->rules.addProperty(e.getKey(),e.getValue()));root.add("match_rules",rules);
             try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                  Writer writer = Channels.newWriter(channel, StandardCharsets.UTF_8))
@@ -173,10 +167,9 @@ public final class ClientPlannerPreferences
 
     public record Snapshot(Map<String, ResourceLocation> recipes,
                            Map<String, ResourceLocation> ingredients,
-                           Map<String,String> matchRules,
                            OrderOutputDestination outputDestination)
     {
         private static final Snapshot EMPTY = new Snapshot(
-                Map.of(), Map.of(),Map.of(), OrderOutputDestination.NETWORK);
+                Map.of(), Map.of(), OrderOutputDestination.NETWORK);
     }
 }

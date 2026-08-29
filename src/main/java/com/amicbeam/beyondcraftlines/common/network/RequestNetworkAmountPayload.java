@@ -13,14 +13,12 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
-public record RequestNetworkAmountPayload(String itemId,String matchRule) implements CustomPacketPayload
+public record RequestNetworkAmountPayload(String itemId) implements CustomPacketPayload
 {
-    public RequestNetworkAmountPayload(String itemId){this(itemId,"strict");}
     public static final Type<RequestNetworkAmountPayload> TYPE = new Type<>(
             ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "request_network_amount"));
     public static final StreamCodec<ByteBuf, RequestNetworkAmountPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), RequestNetworkAmountPayload::itemId,
-            ByteBufCodecs.stringUtf8(16_384),RequestNetworkAmountPayload::matchRule,
             RequestNetworkAmountPayload::new);
 
     public static void handle(RequestNetworkAmountPayload payload, IPayloadContext context)
@@ -33,10 +31,9 @@ public record RequestNetworkAmountPayload(String itemId,String matchRule) implem
             DimensionsNet network = DimensionsNet.getNetFromId(menu.networkId());
             if (network == null) return;
             long total = 0;
-            var rule=com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(payload.matchRule());
             for (var stored : network.getUnifiedStorage().getStorage())
             {
-                if(!rule.matches(menu.initialTarget(),stored.key()))continue;
+                if (!menu.initialTarget().isSame(stored.key())) continue;
                 long amount = Math.max(0, stored.amount());
                 total = Long.MAX_VALUE - total < amount ? Long.MAX_VALUE : total + amount;
             }

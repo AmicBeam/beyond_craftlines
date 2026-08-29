@@ -56,9 +56,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         }
         List<SubmitOrderPayload.RecipeChoice> recipeChoices = recipes.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
-                        entry.getKey(), entry.getValue().toString(),plan.steps().stream()
-                        .filter(step->com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(step.outputKey()).equals(entry.getKey()))
-                        .map(step->step.matchRule().encode()).findFirst().orElse("strict"))).toList();
+                        entry.getKey(), entry.getValue().toString())).toList();
         List<SubmitOrderPayload.IngredientChoice> ingredientChoices = ingredients.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.IngredientChoice(
                         entry.getKey().recipe().toString(), entry.getKey().slot(),
@@ -101,9 +99,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         }
         List<SubmitOrderPayload.RecipeChoice> recipeChoices = recipes.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
-                        entry.getKey(), entry.getValue().toString(),plan.steps().stream()
-                        .filter(step->com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(step.outputKey()).equals(entry.getKey()))
-                        .map(step->step.matchRule().encode()).findFirst().orElse("strict"))).toList();
+                        entry.getKey(), entry.getValue().toString())).toList();
         List<SubmitOrderPayload.IngredientChoice> ingredientChoices = ingredients.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.IngredientChoice(
                         entry.getKey().recipe().toString(), entry.getKey().slot(),

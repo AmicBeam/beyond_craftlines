@@ -357,7 +357,8 @@ public final class RecipeOrderService
                 {
                     previousWait.occupiedMachines().forEach(machine -> index.releaseMachine(
                             new MachineKey(machine.dimension(), machine.position())));
-                    inFlightOutputs.removeIf(output->execution.step().matchRule().matches(execution.step().outputKey(),output));
+                    inFlightOutputs.removeIf(output -> com.amicbeam.beyondcraftlines.common.crafting
+                            .StackKeyMatch.exact(execution.step().outputKey(), output));
                 }
                 if (currentWait != null)
                     inFlightOutputs.add(working.executions().get(step).step().outputKey());
@@ -468,7 +469,7 @@ public final class RecipeOrderService
                 .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
         long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
         long output = SaturatingLongMath.multiply(step.outputPerCraft(), batchCrafts);
-        long networkBaseline=networkAmount(job.networkId(),step.outputKey(),step.matchRule());
+        long networkBaseline = networkAmount(job.networkId(), step.outputKey());
         List<RecipeOrderJob.MachineLocation> occupied = targets.entrySet().stream().map(entry -> {
             MachineKey key = provisionerKey(entry.getValue());
             return new RecipeOrderJob.MachineLocation(key.dimension(), key.position(), entry.getKey());
@@ -477,7 +478,7 @@ public final class RecipeOrderService
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(
                 coordinator.dimension(), coordinator.position(), step.outputKey(), false, true,
                 0, networkBaseline, 0, output, 0, List.of(),
-                outputBaseline(job.networkId(),step.outputKey(),step.matchRule()),occupied);
+                outputBaseline(job.networkId(), step.outputKey()), occupied);
         occupied.forEach(machine -> index.occupyMachine(new MachineKey(machine.dimension(), machine.position())));
         return consumeReserved(job, selection.consumedReserved()).awaitExternal(wait,
                 encode("provisioner_waiting_output", 0, output));
@@ -557,12 +558,12 @@ public final class RecipeOrderService
             if (taken.amount() != input.amount())
             {
                 if (!taken.isEmpty()) extracted.add(new InputChunk(
-                        taken.key(),taken.amount(),false,input.inputGroup(),input.matchRule()));
+                        taken.key(), taken.amount(), false, input.inputGroup()));
                 extracted.forEach(value -> network.getUnifiedStorage().insert(
                         value.key(), value.amount(), false));
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_resource", input.key()));
             }
-            extracted.add(new InputChunk(taken.key(),taken.amount(),false,input.inputGroup(),input.matchRule()));
+            extracted.add(new InputChunk(taken.key(), taken.amount(), false, input.inputGroup()));
         }
 
         List<ProvisionerDelivery> inserted = new ArrayList<>();
@@ -609,8 +610,8 @@ public final class RecipeOrderService
                 .findFirst().orElse(occupied.getFirst());
         RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(
                 coordinator.dimension(), coordinator.position(), step.outputKey(), false, !hasDirect,
-                baseline,networkAmount(job.networkId(),step.outputKey(),step.matchRule()),0,output,0,
-                remainingInputs,outputBaseline(job.networkId(),step.outputKey(),step.matchRule()),occupied);
+                baseline, networkAmount(job.networkId(), step.outputKey()), 0, output, 0,
+                remainingInputs, outputBaseline(job.networkId(), step.outputKey()), occupied);
         occupied.forEach(machine -> index.occupyMachine(new MachineKey(machine.dimension(), machine.position())));
         RecipeOrderJob updated = consumeReserved(job, consumedReservedForGroups(
                 selection.chunks(), provisionerGroups));
@@ -809,7 +810,7 @@ public final class RecipeOrderService
                         break;
                     }
                     available.add(new RoutedInputChunk(routed.machine(), new InputChunk(
-                            taken.key(),taken.amount(),false,chunk.inputGroup(),chunk.matchRule())));
+                            taken.key(), taken.amount(), false, chunk.inputGroup())));
                 }
                 if (extractionFailed)
                 {
@@ -832,7 +833,7 @@ public final class RecipeOrderService
                                     chunk.key(), chunk.amount() - inserted, false);
                         if (inserted <= 0) continue;
                         delivered.add(new InputChunk(chunk.key(), inserted,
-                                chunk.fromReserved(),chunk.inputGroup(),chunk.matchRule()));
+                                chunk.fromReserved(), chunk.inputGroup()));
                         if (chunk.fromReserved()) consumed.add(
                                 new RecipePlan.ReservedMaterial(chunk.key(), inserted));
                     }
@@ -856,20 +857,20 @@ public final class RecipeOrderService
         // bound machine. Count that network delta as this batch's output just like provisioner
         // and native-furnace orders do. This is required for rituals whose whitelist pipes move
         // the altar result directly back into the dimension network.
-        long currentNetwork=networkAmount(job.networkId(),wait.outputKey(),step.matchRule());
+        long currentNetwork = networkAmount(job.networkId(), wait.outputKey());
         ExternalOrderLogic.NetworkCredit networkCredit = ExternalOrderLogic.creditNetworkOutput(
                 wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
         long newlyCredited = Math.max(0, networkCredit.collected() - wait.collected());
         if (newlyCredited > 0 && job.nextStep() + 1 < job.stepCount())
         {
             List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
-                    wait.outputKey(),newlyCredited,wait.networkBaselineStacks(),step.matchRule());
+                    wait.outputKey(), newlyCredited, wait.networkBaselineStacks());
             long capturedAmount = 0;
             for (KeyAmount value : captured)
                 capturedAmount = SaturatingLongMath.add(capturedAmount, value.amount());
             job = addReserved(job, captured.stream().map(value ->
                     new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
-            long afterCapture=networkAmount(job.networkId(),wait.outputKey(),step.matchRule());
+            long afterCapture = networkAmount(job.networkId(), wait.outputKey());
             networkCredit = new ExternalOrderLogic.NetworkCredit(
                     ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterCapture),
                     wait.collected() + capturedAmount);
@@ -918,7 +919,7 @@ public final class RecipeOrderService
             }
             job = addReserved(job, produced);
             wait = wait.withCollected(wait.collected() + inserted);
-            long afterInsert=networkAmount(job.networkId(),wait.outputKey(),step.matchRule());
+            long afterInsert = networkAmount(job.networkId(), wait.outputKey());
             long afterObserved = ExternalOrderLogic.availableMachineOutput(
                     wait.networkBaseline(), afterInsert);
             wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved), wait.collected());
@@ -987,20 +988,20 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.ERROR, encode("provisioner_assignment_changed"));
         }
 
-        long currentNetwork=networkAmount(job.networkId(),wait.outputKey(),step.matchRule());
+        long currentNetwork = networkAmount(job.networkId(), wait.outputKey());
         ExternalOrderLogic.NetworkCredit credit = ExternalOrderLogic.creditNetworkOutput(
                 wait.networkBaseline(), currentNetwork, wait.networkObserved(), wait.collected(), wait.amount());
         long newlyCredited = Math.max(0, credit.collected() - wait.collected());
         if (newlyCredited > 0 && job.nextStep() + 1 < job.stepCount())
         {
             List<KeyAmount> captured = extractOutputDelta(job.networkId(), network.getUnifiedStorage(),
-                    wait.outputKey(),newlyCredited,wait.networkBaselineStacks(),step.matchRule());
+                    wait.outputKey(), newlyCredited, wait.networkBaselineStacks());
             long capturedAmount = 0;
             for (KeyAmount value : captured)
                 capturedAmount = SaturatingLongMath.add(capturedAmount, value.amount());
             job = addReserved(job, captured.stream().map(value ->
                     new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
-            long afterCapture=networkAmount(job.networkId(),wait.outputKey(),step.matchRule());
+            long afterCapture = networkAmount(job.networkId(), wait.outputKey());
             credit = new ExternalOrderLogic.NetworkCredit(
                     ExternalOrderLogic.availableMachineOutput(wait.networkBaseline(), afterCapture),
                     wait.collected() + capturedAmount);
@@ -1127,13 +1128,11 @@ public final class RecipeOrderService
     }
 
     private static long networkAmount(int networkId, IStackKey<?> key)
-    {return networkAmount(networkId,key,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.ITEM_ONLY);}
-    private static long networkAmount(int networkId,IStackKey<?> key,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule)
     {
         long amount = 0;
         for (PlanningSnapshotService.ComponentEntry value :
                 PlanningSnapshotService.capture(networkId).componentEntries())
-            if(rule.matches(key,value.key()))amount=SaturatingLongMath.add(amount,value.amount());
+            if (key.isSame(value.key())) amount = SaturatingLongMath.add(amount, value.amount());
         return amount;
     }
 
@@ -1165,7 +1164,7 @@ public final class RecipeOrderService
 
     private static List<KeyAmount> extractOutputDelta(int networkId, UnifiedStorage storage,
                                                       IStackKey<?> outputKey, long amount,
-                                                      List<RecipePlan.ReservedMaterial> baseline,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule)
+                                                      List<RecipePlan.ReservedMaterial> baseline)
     {
         java.util.HashMap<IStackKey<?>, Long> original = new java.util.HashMap<>();
         for (RecipePlan.ReservedMaterial value : baseline)
@@ -1176,7 +1175,7 @@ public final class RecipeOrderService
                 PlanningSnapshotService.capture(networkId).componentEntries())
         {
             if (remaining <= 0) break;
-            if(!rule.matches(outputKey,value.key()))continue;
+            if (!outputKey.isSame(value.key())) continue;
             long delta = Math.max(0, value.amount() - original.getOrDefault(value.key(), 0L));
             if (delta <= 0) continue;
             KeyAmount taken = storage.extract(value.key(), Math.min(remaining, delta), false, false);
@@ -1192,10 +1191,10 @@ public final class RecipeOrderService
                 .map(value -> new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList();
     }
 
-    private static List<RecipePlan.ReservedMaterial> outputBaseline(int networkId,IStackKey<?> outputKey,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule)
+    private static List<RecipePlan.ReservedMaterial> outputBaseline(int networkId, IStackKey<?> outputKey)
     {
         return PlanningSnapshotService.capture(networkId).componentEntries().stream()
-                .filter(value->rule.matches(outputKey,value.key()))
+                .filter(value -> outputKey.isSame(value.key()))
                 .map(value -> new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList();
     }
 
@@ -1294,10 +1293,9 @@ public final class RecipeOrderService
         for (RecipePlan.Material material : materials)
         {
             Ingredient ingredient = ingredient(level, step, material.ingredientSlot());
-            var matchRule=matchRuleFor(job,material.key());
             long needed = material.amount();
-            needed=selectFrom(reserved,material.key(),ingredient,material.inputGroup(),needed,true,chunks,matchRule);
-            needed=selectFrom(network,material.key(),ingredient,material.inputGroup(),needed,false,chunks,matchRule);
+            needed = selectFrom(reserved, material.key(), ingredient, material.inputGroup(), needed, true, chunks);
+            needed = selectFrom(network, material.key(), ingredient, material.inputGroup(), needed, false, chunks);
             if (needed > 0) return null;
         }
         List<RecipePlan.ReservedMaterial> consumed = chunks.stream().filter(InputChunk::fromReserved)
@@ -1320,13 +1318,14 @@ public final class RecipeOrderService
                     level, position, chunk.key(), chunk.amount());
             long offered = Math.min(chunk.amount(), capacity);
             if (offered > 0) result.add(new InputChunk(
-                    chunk.key(),offered,chunk.fromReserved(),chunk.inputGroup(),chunk.matchRule()));
+                    chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup()));
         }
         for (RecipePlan.Material material : materials)
         {
             long offered = 0;
             for (InputChunk chunk : result)
-                if(chunk.matchRule().matches(material.key(),chunk.key()))
+                if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), chunk.key()))
                     offered = SaturatingLongMath.add(offered, chunk.amount());
             // A full input tank/slot containing this same resource already satisfies this kind
             // for the current machine cycle. Keep its outstanding order amount for later rounds,
@@ -1367,7 +1366,7 @@ public final class RecipeOrderService
                 long offered = Math.min(remaining, Math.max(0, capacity - alreadyPlanned));
                 if (offered <= 0) continue;
                 result.add(new RoutedInputChunk(machine, new InputChunk(
-                        chunk.key(),offered,chunk.fromReserved(),chunk.inputGroup(),chunk.matchRule())));
+                        chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup())));
                 planned.put(channel, new PlannedInput(chunk.key(),
                         SaturatingLongMath.add(alreadyPlanned, offered)));
                 remaining -= offered;
@@ -1378,7 +1377,8 @@ public final class RecipeOrderService
         {
             long offered = result.stream().map(RoutedInputChunk::chunk)
                     .filter(chunk -> material.inputGroup().equals(chunk.inputGroup())
-                            && chunk.matchRule().matches(material.key(),chunk.key()))
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()))
                     .mapToLong(InputChunk::amount).reduce(0, SaturatingLongMath::add);
             long present = 0;
             if (offered <= 0) for (RecipeOrderJob.MachineLocation machine : machines)
@@ -1390,7 +1390,8 @@ public final class RecipeOrderService
             }
             boolean deferred = deferredByResourceConflict.stream().anyMatch(chunk ->
                     material.inputGroup().equals(chunk.inputGroup())
-                            && chunk.matchRule().matches(material.key(),chunk.key()));
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()));
             if (!InputGroupRouteLogic.canContinuePartialRound(offered, present, deferred)) return List.of();
         }
         return List.copyOf(result);
@@ -1449,7 +1450,8 @@ public final class RecipeOrderService
             for (int i = 0; i < delivered.size() && left > 0; i++)
             {
                 if (!material.inputGroup().equals(delivered.get(i).inputGroup())
-                        || !delivered.get(i).matchRule().matches(material.key(),delivered.get(i).key()))continue;
+                        || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), delivered.get(i).key())) continue;
                 long used = Math.min(left, unused.get(i));
                 left -= used;
                 unused.set(i, unused.get(i) - used);
@@ -1527,17 +1529,18 @@ public final class RecipeOrderService
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,
                                    com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> requested,
                                    Ingredient ingredient, String inputGroup, long needed,
-                                   boolean reserved,List<InputChunk> selected,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRule)
+                                   boolean reserved, List<InputChunk> selected)
     {
         if (needed <= 0) return 0;
         for (var entry : available.entrySet())
         {
-            if(entry.getValue()<=0||!matchRule.matches(requested,entry.getKey()))continue;
+            if (entry.getValue() <= 0 || !com.amicbeam.beyondcraftlines.common.crafting
+                    .StackKeyMatch.exact(requested, entry.getKey())) continue;
             if (ingredient != null && (!(entry.getKey() instanceof ItemStackKey itemKey)
                     || !ingredient.test(itemKey.getReadOnlyStack()))) continue;
             long amount = Math.min(entry.getValue(), needed);
             entry.setValue(entry.getValue() - amount);
-            selected.add(new InputChunk(entry.getKey(),amount,reserved,inputGroup,matchRule));
+            selected.add(new InputChunk(entry.getKey(), amount, reserved, inputGroup));
             needed -= amount;
             if (needed == 0) break;
         }
@@ -1550,8 +1553,8 @@ public final class RecipeOrderService
         return null;
     }
 
-    private static com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRuleFor(RecipeOrderJob job,IStackKey<?> key){for(RecipePlan.Step step:job.steps())if(com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(step.outputKey(),key))return step.matchRule();return com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT;}
-    private record InputChunk(com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> key,long amount,boolean fromReserved,String inputGroup,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule matchRule){private InputChunk(IStackKey<?> key,long amount,boolean reserved,String group){this(key,amount,reserved,group,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT);}}
+    private record InputChunk(com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> key,
+                              long amount, boolean fromReserved, String inputGroup) {}
     private record RoutedInputChunk(RecipeOrderJob.MachineLocation machine, InputChunk chunk) {}
     private record PlannedInput(IStackKey<?> key, long amount) {}
     private record GroupedStock(String inputGroup, IStackKey<?> key, long amount) {}

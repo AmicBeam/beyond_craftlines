@@ -28,7 +28,7 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
     {
         long bytes = 64;
         for (var choice : overrides.recipeChoices())
-            bytes += utf8(choice.output()) + utf8(choice.recipe().toString())+utf8(choice.matchRule().encode())+32L;
+            bytes += utf8(choice.output()) + utf8(choice.recipe().toString()) + 32L;
         for (var choice : overrides.ingredientChoices())
             bytes += utf8(choice.recipe().toString()) + utf8(choice.item().toString()) + 40L;
         return (int) Math.min(Integer.MAX_VALUE, bytes);
@@ -44,7 +44,6 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
             CompoundTag value = new CompoundTag();
             value.putString("output", choice.output());
             value.putString("recipe", choice.recipe().toString());
-            value.putString("match_rule",choice.matchRule().encode());
             recipes.add(value);
         }
         root.put("recipes", recipes);
@@ -72,9 +71,7 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
             ResourceLocation recipe = ResourceLocation.tryParse(value.getString("recipe"));
             String output = value.getString("output");
             if (recipe != null && !output.isBlank())
-                recipes.add(new RecipeResolutionOverrides.RecipeChoice(output,recipe,
-                        com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.decode(
-                                value.contains("match_rule",Tag.TAG_STRING)?value.getString("match_rule"):"strict")));
+                recipes.add(new RecipeResolutionOverrides.RecipeChoice(output, recipe));
         }
         List<RecipeResolutionOverrides.IngredientChoice> ingredients = new ArrayList<>();
         ListTag encodedIngredients = root.getList("ingredients", Tag.TAG_COMPOUND);

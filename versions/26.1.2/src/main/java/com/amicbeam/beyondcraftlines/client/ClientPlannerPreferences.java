@@ -39,7 +39,6 @@ public final class ClientPlannerPreferences
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
             return new Snapshot(readMap(root.getAsJsonObject("recipes")),
                     readMap(root.getAsJsonObject("ingredients")),
-                    readStrings(root.getAsJsonObject("match_rules")),
                     OrderOutputDestination.byId(root.has("output_destination")
                             ? root.get("output_destination").getAsString() : "network"));
         }
@@ -55,7 +54,7 @@ public final class ClientPlannerPreferences
         Snapshot old = load();
         LinkedHashMap<String, Identifier> recipes = new LinkedHashMap<>(old.recipes());
         if (recipe == null) recipes.remove(output); else recipes.put(output, recipe);
-        return write(recipes, old.ingredients(),old.matchRules(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination());
     }
 
     public static boolean clearRecipe(String output, Identifier legacyOutput)
@@ -64,7 +63,7 @@ public final class ClientPlannerPreferences
         LinkedHashMap<String, Identifier> recipes = new LinkedHashMap<>(old.recipes());
         recipes.remove(output);
         if (legacyOutput != null) recipes.remove(legacyOutput.toString());
-        return write(recipes, old.ingredients(),old.matchRules(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination());
     }
 
     public static boolean setIngredients(Identifier recipe, Iterable<Integer> slots, Identifier item)
@@ -76,15 +75,14 @@ public final class ClientPlannerPreferences
             String key = ingredientKey(recipe, slot);
             if (item == null) ingredients.remove(key); else ingredients.put(key, item);
         }
-        return write(old.recipes(), ingredients,old.matchRules(), old.outputDestination());
+        return write(old.recipes(), ingredients, old.outputDestination());
     }
 
     public static boolean setOutputDestination(OrderOutputDestination destination)
     {
         Snapshot old = load();
-        return write(old.recipes(), old.ingredients(),old.matchRules(), destination);
+        return write(old.recipes(), old.ingredients(), destination);
     }
-    public static boolean setMatchRule(String key,com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule rule){Snapshot old=load();LinkedHashMap<String,String> rules=new LinkedHashMap<>(old.matchRules());if(rule==null||rule.equals(com.amicbeam.beyondcraftlines.common.crafting.ResourceMatchRule.STRICT))rules.remove(key);else rules.put(key,rule.encode());return write(old.recipes(),old.ingredients(),rules,old.outputDestination());}
 
     public static String ingredientKey(Identifier recipe, int slot)
     { return recipe + "#" + slot; }
@@ -103,9 +101,8 @@ public final class ClientPlannerPreferences
         return Map.copyOf(result);
     }
 
-    private static Map<String,String> readStrings(JsonObject object){if(object==null)return Map.of();LinkedHashMap<String,String> result=new LinkedHashMap<>();object.entrySet().stream().limit(MAX_ENTRIES).filter(e->e.getValue().isJsonPrimitive()).forEach(e->result.put(e.getKey(),e.getValue().getAsString()));return Map.copyOf(result);}
     private static boolean write(Map<String, Identifier> recipes,
-                                 Map<String, Identifier> ingredients,Map<String,String> matchRules,
+                                 Map<String, Identifier> ingredients,
                                  OrderOutputDestination outputDestination)
     {
         Path path = path();
@@ -118,7 +115,6 @@ public final class ClientPlannerPreferences
             root.addProperty("output_destination", outputDestination.id());
             root.add("recipes", toJson(recipes));
             root.add("ingredients", toJson(ingredients));
-            JsonObject rules=new JsonObject();matchRules.entrySet().stream().limit(MAX_ENTRIES).forEach(e->rules.addProperty(e.getKey(),e.getValue()));root.add("match_rules",rules);
             try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(root, writer); }
             try
             {
@@ -151,10 +147,9 @@ public final class ClientPlannerPreferences
 
     public record Snapshot(Map<String, Identifier> recipes,
                            Map<String, Identifier> ingredients,
-                           Map<String,String> matchRules,
                            OrderOutputDestination outputDestination)
     {
         private static final Snapshot EMPTY = new Snapshot(
-                Map.of(), Map.of(),Map.of(), OrderOutputDestination.NETWORK);
+                Map.of(), Map.of(), OrderOutputDestination.NETWORK);
     }
 }

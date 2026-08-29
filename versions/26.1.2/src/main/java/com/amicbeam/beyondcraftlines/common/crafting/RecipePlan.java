@@ -78,27 +78,26 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
     public record Step(Identifier recipe, String family, IStackKey<?> outputKey,
                        long outputPerCraft, long crafts, List<Material> inputs,
                        List<IngredientSelection> ingredientSelections, List<Integer> dependencies,
-                       long selfIncrementSeed, ResourceMatchRule matchRule)
+                       long selfIncrementSeed)
     {
-        public Step(Identifier recipe,String family,IStackKey<?> outputKey,long outputPerCraft,long crafts,List<Material> inputs,List<IngredientSelection> ingredientSelections,List<Integer> dependencies,long selfIncrementSeed){this(recipe,family,outputKey,outputPerCraft,crafts,inputs,ingredientSelections,dependencies,selfIncrementSeed,ResourceMatchRule.STRICT);}
         public Step(Identifier recipe, String family, IStackKey<?> outputKey,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections, List<Integer> dependencies)
         { this(recipe, family, outputKey, outputPerCraft, crafts, inputs,
-                ingredientSelections, dependencies, 0, ResourceMatchRule.STRICT); }
+                ingredientSelections, dependencies, 0); }
 
         public Step(Identifier recipe, String family, IStackKey<?> outputKey,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections)
         { this(recipe, family, outputKey, outputPerCraft, crafts, inputs,
-                ingredientSelections, List.of(), 0, ResourceMatchRule.STRICT); }
+                ingredientSelections, List.of(), 0); }
 
         public Step(Identifier recipe, String family, Identifier output,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections)
         { this(recipe, family, new ItemStackKey(new net.minecraft.world.item.ItemStack(
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(output))), outputPerCraft, crafts,
-                inputs, ingredientSelections, List.of(), 0, ResourceMatchRule.STRICT); }
+                inputs, ingredientSelections, List.of(), 0); }
 
         public Step
         {
@@ -108,7 +107,6 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
             inputs = List.copyOf(inputs);
             ingredientSelections = List.copyOf(ingredientSelections);
             dependencies = List.copyOf(dependencies);
-            matchRule=matchRule==null?ResourceMatchRule.STRICT:matchRule;
             if (dependencies.stream().anyMatch(index -> index == null || index < 0))
                 throw new IllegalArgumentException("invalid recipe dependency");
         }

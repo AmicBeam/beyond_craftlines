@@ -15,17 +15,16 @@ public final class RecipeResolutionOverrides
 {
     public static final RecipeResolutionOverrides EMPTY = new RecipeResolutionOverrides(List.of(), List.of());
 
-    private final Map<String, RecipeSelection> recipes;
+    private final Map<String, ResourceLocation> recipes;
     private final Map<IngredientSlot, ResourceLocation> ingredients;
 
     public RecipeResolutionOverrides(List<RecipeChoice> recipeChoices, List<IngredientChoice> ingredientChoices)
     {
         if (recipeChoices.size() > 16_384 || ingredientChoices.size() > 16_384)
             throw new IllegalArgumentException("too many recipe resolutions");
-        SharedResolutionMap<String, RecipeSelection> recipes = new SharedResolutionMap<>();
+        SharedResolutionMap<String, ResourceLocation> recipes = new SharedResolutionMap<>();
         for (RecipeChoice choice : recipeChoices)
-            recipes.put(choice.output(), new RecipeSelection(choice.recipe(), choice.matchRule()),
-                    "duplicate recipe resolution for " + choice.output());
+            recipes.put(choice.output(), choice.recipe(), "duplicate recipe resolution for " + choice.output());
         SharedResolutionMap<IngredientSlot, ResourceLocation> ingredients = new SharedResolutionMap<>();
         for (IngredientChoice choice : ingredientChoices)
             ingredients.put(new IngredientSlot(choice.recipe(), choice.slot()), choice.item(),
@@ -36,25 +35,16 @@ public final class RecipeResolutionOverrides
 
     public ResourceLocation recipeFor(IStackKey<?> output)
     {
-        RecipeSelection exact = recipes.get(RecipeResourceResolver.resolutionKey(output));
-        RecipeSelection selected = exact == null ? recipes.get(RecipeResourceResolver.sortKey(output)) : exact;
-        return selected == null ? null : selected.recipe();
-    }
-    public ResourceMatchRule matchRuleFor(IStackKey<?> output)
-    {
-        RecipeSelection exact = recipes.get(RecipeResourceResolver.resolutionKey(output));
-        RecipeSelection selected = exact == null ? recipes.get(RecipeResourceResolver.sortKey(output)) : exact;
-        return selected == null ? ResourceMatchRule.STRICT : selected.matchRule();
+        ResourceLocation exact = recipes.get(RecipeResourceResolver.resolutionKey(output));
+        return exact == null ? recipes.get(RecipeResourceResolver.sortKey(output)) : exact;
     }
     public ResourceLocation recipeFor(ResourceLocation output)
     { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(output)))); }
     public ResourceLocation ingredientFor(ResourceLocation recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
-    public Set<ResourceLocation> selectedRecipes()
-    { return recipes.values().stream().map(RecipeSelection::recipe).collect(java.util.stream.Collectors.toUnmodifiableSet()); }
+    public Set<ResourceLocation> selectedRecipes() { return Set.copyOf(recipes.values()); }
     public List<RecipeChoice> recipeChoices()
-    { return recipes.entrySet().stream().map(entry -> new RecipeChoice(entry.getKey(),
-            entry.getValue().recipe(), entry.getValue().matchRule())).toList(); }
+    { return recipes.entrySet().stream().map(entry -> new RecipeChoice(entry.getKey(), entry.getValue())).toList(); }
     public List<IngredientChoice> ingredientChoices()
     { return ingredients.entrySet().stream().map(entry -> new IngredientChoice(
             entry.getKey().recipe(), entry.getKey().slot(), entry.getValue())).toList(); }
@@ -70,17 +60,13 @@ public final class RecipeResolutionOverrides
         return true;
     }
 
-    public record RecipeChoice(String output, ResourceLocation recipe, ResourceMatchRule matchRule)
+    public record RecipeChoice(String output, ResourceLocation recipe)
     {
-        public RecipeChoice(String output, ResourceLocation recipe)
-        { this(output, recipe, ResourceMatchRule.STRICT); }
         public RecipeChoice
         {
             if (output == null || recipe == null) throw new IllegalArgumentException("invalid recipe resolution");
-            matchRule = matchRule == null ? ResourceMatchRule.STRICT : matchRule;
         }
     }
-    private record RecipeSelection(ResourceLocation recipe, ResourceMatchRule matchRule) {}
 
     public record IngredientChoice(ResourceLocation recipe, int slot, ResourceLocation item)
     {

@@ -98,7 +98,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     : DimensionsNet.getPrimaryNetFromPlayer(player);
             if (network == null)
             {
-                player.sendSystemMessage(Component.translatable("error.beyond_craftlines.network_required"));
+                openOrderMenu(player, -1, target, null, false, java.util.Set.of(), "network unavailable");
                 return;
             }
             int networkId = network.getId();
@@ -148,26 +148,33 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             // output above are the authoritative checks.
             if (requestedRecipe != null && recipe == null)
             {
-                player.sendSystemMessage(Component.translatable(
-                        "error.beyond_craftlines.invalid_order_recipe"));
+                openOrderMenu(player, networkId, target, null, false, availableFamilies,
+                        "selected recipe is unavailable");
                 return;
             }
-            player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
-                    new CraftlineOrderMenu(id, inventory, networkId, target,
-                            recipe == null ? null : recipe.id().identifier(),
-                            requestedRecipe != null, availableFamilies),
-                    Component.translatable("menu.beyond_craftlines.order")), buffer -> {
-                        buffer.writeVarInt(networkId);
-                        IStackKey.STREAM_CODEC.encode(buffer, target);
-                        buffer.writeUtf(recipe == null ? "" : recipe.id().identifier().toString());
-                        buffer.writeBoolean(requestedRecipe != null);
-                        buffer.writeVarInt(availableFamilies.size());
-                        availableFamilies.stream().sorted().forEach(buffer::writeUtf);
-                        buffer.writeBoolean(false);
-                        buffer.writeBoolean(false);
-                        buffer.writeVarLong(1);
-                        buffer.writeUtf("network", 16);
-                    });
+            openOrderMenu(player, networkId, target, recipe == null ? null : recipe.id().identifier(),
+                    requestedRecipe != null, availableFamilies, "");
+        });
+    }
+
+    private static void openOrderMenu(ServerPlayer player, int networkId, IStackKey<?> target,
+                                      Identifier recipe, boolean pinned,
+                                      java.util.Set<String> families, String initialError)
+    {
+        player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
+                new CraftlineOrderMenu(id, inventory, networkId, target, recipe, pinned, families),
+                Component.translatable("menu.beyond_craftlines.order")), buffer -> {
+            buffer.writeVarInt(networkId);
+            IStackKey.STREAM_CODEC.encode(buffer, target);
+            buffer.writeUtf(recipe == null ? "" : recipe.toString());
+            buffer.writeBoolean(pinned);
+            buffer.writeVarInt(families.size());
+            families.stream().sorted().forEach(buffer::writeUtf);
+            buffer.writeBoolean(false);
+            buffer.writeBoolean(false);
+            buffer.writeVarLong(1);
+            buffer.writeUtf("network", 16);
+            buffer.writeUtf(initialError == null ? "" : initialError, 512);
         });
     }
 

@@ -158,6 +158,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         String retainedAmount = amount == null ? Long.toString(menu.dashboardConfiguration()
                 ? menu.initialDashboardDesired() : 1) : amount.getValue();
         super.init();
+        if (!menu.initialError().isBlank()) previewError = localizedPlanningError(menu.initialError());
 
         int rightX = rightPanelLeft() + 10;
         int rightWidth = rightPanelWidth() - 20;

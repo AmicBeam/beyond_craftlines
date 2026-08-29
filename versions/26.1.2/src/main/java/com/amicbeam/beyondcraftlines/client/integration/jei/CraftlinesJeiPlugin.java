@@ -38,7 +38,6 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static volatile IJeiRuntime runtime;
     private static volatile NetworkAvailability networkAvailability = NetworkAvailability.UNKNOWN;
     private static volatile long nextNetworkCheckNanos;
-    private static PendingOrder pendingOrder;
 
     @Override
     public Identifier getPluginUid()
@@ -99,7 +98,6 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         runtime = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
-        pendingOrder = null;
         JeiCatalystIndex.clear();
     }
 
@@ -112,7 +110,6 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingOut()
     {
-        pendingOrder = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
     }
@@ -142,7 +139,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public static boolean orderIngredientUnderMouse()
     {
         IJeiRuntime current = runtime;
-        if (current == null || orderButtonAvailability() != NetworkAvailability.AVAILABLE) return false;
+        if (current == null) return false;
         IStackKey<?> target = ingredientUnderMouse(current);
         if (target == null || target.isEmpty()) return false;
         queueOrder(new OpenOrderMenuPayload(target, "", ""));
@@ -154,14 +151,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
-    {
-        JeiCatalystIndex.tick();
-        if (pendingOrder != null && JeiCatalystIndex.idle())
-        {
-            ClientPacketDistributor.sendToServer(pendingOrder.payload());
-            pendingOrder = null;
-        }
-    }
+    { JeiCatalystIndex.tick(); }
 
     private static void queueOrder(OpenOrderMenuPayload payload)
     {
@@ -170,11 +160,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             ClientPacketDistributor.sendToServer(payload);
             return;
         }
-        pendingOrder = new PendingOrder(payload);
         if (!payload.jeiRecipeType().isBlank())
             JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
         JeiCatalystIndex.requestRecipesFor(payload.target());
-        clientFrame();
+        ClientPacketDistributor.sendToServer(payload);
     }
 
     private static @Nullable IStackKey<?> ingredientUnderMouse(IJeiRuntime current)
@@ -323,8 +312,6 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         AVAILABLE,
         UNAVAILABLE
     }
-
-    private record PendingOrder(OpenOrderMenuPayload payload) {}
 
     private record ScaledDrawable(IDrawable delegate, int width, int height) implements IDrawable
     {

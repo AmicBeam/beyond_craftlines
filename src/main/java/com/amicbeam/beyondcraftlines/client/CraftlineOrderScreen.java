@@ -159,6 +159,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         imageWidth = Math.min(620, Math.max(300, width - 16));
         imageHeight = Math.min(360, Math.max(236, height - 16));
         super.init();
+        if (!menu.initialError().isBlank()) previewError = localizedPlanningError(menu.initialError());
 
         int rightX = rightPanelLeft() + 10;
         int rightWidth = rightPanelWidth() - 20;

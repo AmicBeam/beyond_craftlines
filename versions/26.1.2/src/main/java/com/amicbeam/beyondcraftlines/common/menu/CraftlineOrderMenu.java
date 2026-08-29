@@ -64,6 +64,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private final boolean initialBlockingMode;
     private final long initialDashboardDesired;
     private final String initialDashboardStockMode;
+    private String initialError;
     private final SimpleContainerData serverIndexProgress = new SimpleContainerData(2);
 
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
@@ -72,6 +73,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                 optionalId(data.readUtf()), data.readBoolean(), readFamilies(data),
                 data.readBoolean() ? data.readBlockPos() : null, data.readBoolean(),
                 data.readVarLong(), data.readUtf(16));
+        this.initialError = data.readableBytes() > 0 ? data.readUtf(512) : "";
     }
 
     public CraftlineOrderMenu(int id, Inventory inventory, int networkId, IStackKey<?> initialTarget,
@@ -97,6 +99,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialBlockingMode = initialBlockingMode;
         this.initialDashboardDesired = Math.max(1, initialDashboardDesired);
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
+        this.initialError = "";
         var level = player.level();
         this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(displayRecipes(level), level);
         this.initialRecipeHolder = initialRecipe == null ? null : findDisplayRecipe(level, initialRecipe);
@@ -117,6 +120,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public boolean initialBlockingMode() { return initialBlockingMode; }
     public long initialDashboardDesired() { return initialDashboardDesired; }
     public String initialDashboardStockMode() { return initialDashboardStockMode; }
+    public String initialError() { return initialError; }
     public List<RecipeHolder<?>> recipes()
     { return available(displayRecipes(player.level())); }
     public RecipeHolder<?> recipeForOutput(Identifier output)
@@ -550,6 +554,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     {
         if (player != this.player) return false;
         if (player.level().isClientSide()) return true;
+        if (networkId < 0) return true;
         DimensionsNet network = DimensionsNet.getNetFromId(networkId);
         return network != null && (network.isOwner(player) || network.isManager(player)
                 || network.getPlayers().contains(player.getUUID()));

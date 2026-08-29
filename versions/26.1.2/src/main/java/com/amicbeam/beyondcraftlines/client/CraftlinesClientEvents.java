@@ -145,7 +145,12 @@ public final class CraftlinesClientEvents
             var types = new java.util.LinkedHashSet<>(
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
-            if (types.isEmpty()) types.add(blockId);
+            if (types.isEmpty())
+            {
+                String vanillaCategory = com.amicbeam.beyondcraftlines.common.crafting
+                        .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);
+                types.add(vanillaCategory == null ? blockId : Identifier.parse(vanillaCategory));
+            }
             ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
                     com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
             event.setCanceled(true);

@@ -79,13 +79,20 @@ public final class DeviceBindingRegistry
             return BindAttempt.failure(BindFailure.NO_NETWORK_PERMISSION);
         var state = level.getBlockState(position);
         Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
-        if (!DeviceType.isBindableMachine(blockId.toString()) || level.getBlockEntity(position) == null)
-            return BindAttempt.failure(BindFailure.INVALID_TARGET);
-        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
-        var resolved = JeiRecipeFamilyRegistry.resolve(jeiTypes, loadedFamilies);
-        if (resolved.isEmpty()) return BindAttempt.failure(BindFailure.UNSUPPORTED_RECIPE_TYPE);
         ProvisionerSelection selection = validSelection(level.getServer(), player.getUUID(), network.getId(),
                 SelectionMode.RECIPE_SCAN);
+        if (!DeviceType.isBindableMachine(blockId.toString())
+                || (selection == null && level.getBlockEntity(position) == null))
+            return BindAttempt.failure(BindFailure.INVALID_TARGET);
+        Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
+        Set<Identifier> executableTypes = com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.executable(jeiTypes);
+        var resolved = JeiRecipeFamilyRegistry.resolve(executableTypes, loadedFamilies);
+        Set<Identifier> acceptedTypes = selection == null ? resolved.jeiTypes()
+                : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                .accepted(jeiTypes, resolved.jeiTypes());
+        if (acceptedTypes.isEmpty() || acceptedTypes.size() != jeiTypes.size())
+            return BindAttempt.failure(BindFailure.UNSUPPORTED_RECIPE_TYPE);
         DeviceType deviceType = selection == null ? DeviceType.EXTERNAL_RECIPE_MACHINE
                 : DeviceType.PROVISIONER_RECIPE_BINDING;
         if (deviceType == DeviceType.EXTERNAL_RECIPE_MACHINE
@@ -116,14 +123,14 @@ public final class DeviceBindingRegistry
                 instanceof CraftlineProvisionerBlockEntity provisioner))
             return BindAttempt.failure(BindFailure.INVALID_TARGET);
         ItemStack targetIcon = new ItemStack(state.getBlock());
-        provisioner.addRecipeCandidates(resolved.jeiTypes(), blockId, targetIcon);
+        provisioner.addRecipeCandidates(acceptedTypes, blockId, targetIcon);
         Set<Identifier> candidates = provisioner.recipeCandidates();
         boolean autoSelected = candidates.size() == 1
                 && data.recipeTypesForProvisioner(selection.dimension(), selection.position()).isEmpty()
                 && configureProvisioner(player, provisionerLevel, selection.position(), provisioner, candidates);
         PROVISIONER_SELECTIONS.remove(player.getUUID());
         return BindAttempt.success(new BindResult(
-                deviceType, resolved.jeiTypes(), resolved.families(), autoSelected, null));
+                deviceType, acceptedTypes, resolved.families(), autoSelected, null));
     }
 
     private static BindAttempt toggleProvisionerConnection(Player player, ServerLevel targetLevel,
@@ -210,6 +217,8 @@ public final class DeviceBindingRegistry
         LinkedHashMap<String, Set<String>> groupsByFamily = new LinkedHashMap<>();
         for (Identifier type : selectedTypes)
         {
+            if (com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .isBindOnly(type)) continue;
             Set<String> available = availableGroups.getOrDefault(type, Set.of());
             Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
             if (!available.containsAll(chosen)) return false;
@@ -260,8 +269,12 @@ public final class DeviceBindingRegistry
             return true;
         }
         Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
-        var resolved = JeiRecipeFamilyRegistry.resolve(selectedTypes, loadedFamilies);
-        if (resolved.isEmpty() || resolved.jeiTypes().size() != selectedTypes.size()) return false;
+        Set<Identifier> executableTypes = com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.executable(selectedTypes);
+        var resolved = JeiRecipeFamilyRegistry.resolve(executableTypes, loadedFamilies);
+        Set<Identifier> acceptedTypes = com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.accepted(selectedTypes, resolved.jeiTypes());
+        if (acceptedTypes.size() != selectedTypes.size()) return false;
         Map<Identifier, Set<String>> availableGroups = inputGroupsByJeiType(level, selectedTypes);
         if (!selectedGroups.keySet().stream().allMatch(selectedTypes::contains)) return false;
         LinkedHashMap<String, Set<String>> groupsByFamily = new LinkedHashMap<>();
@@ -282,13 +295,13 @@ public final class DeviceBindingRegistry
         BindingRecord replacement = new BindingRecord(
                 existing == null ? UUID.randomUUID() : existing.id(), player.getUUID(), network.getId(),
                 level.dimension(), position, DeviceType.PROVISIONER_RECIPE_BINDING,
-                resolved.jeiTypes(), resolved.families(), Map.copyOf(groupsByFamily), provisionerId,
+                acceptedTypes, resolved.families(), Map.copyOf(groupsByFamily), provisionerId,
                 level.dimension(), position, existing == null ? "" : existing.nickname(),
                 existing != null && existing.favorite(),
                 priority,
                 existing == null ? level.getGameTime() : existing.boundGameTime());
         data.replaceProvisionerBinding(level.dimension(), position, replacement);
-        if (manualSelection) provisioner.addRecipeCandidates(resolved.jeiTypes());
+        if (manualSelection) provisioner.addRecipeCandidates(acceptedTypes);
         return true;
     }
 
@@ -375,6 +388,15 @@ public final class DeviceBindingRegistry
         DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
         return network != null && validSelection(server, player.getUUID(), network.getId(),
                 SelectionMode.DEVICE_CONNECTION) != null;
+    }
+
+    public static boolean hasProvisionerRecipeSelection(Player player)
+    {
+        MinecraftServer server = player.level().getServer();
+        if (server == null) return false;
+        DimensionsNet network = DimensionsNet.getNetFromPlayer(player);
+        return network != null && validSelection(server, player.getUUID(), network.getId(),
+                SelectionMode.RECIPE_SCAN) != null;
     }
 
     public static Optional<ConnectionSelection> connectionSelection(Player player)
@@ -504,7 +526,9 @@ public final class DeviceBindingRegistry
         Set<String> relevantFamilies = new HashSet<>();
         for (Identifier type : jeiTypes)
         {
-            Set<String> families = JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families();
+            Set<String> families = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.isBindOnly(type) ? Set.of()
+                    : JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families();
             familiesByType.put(type, families);
             relevantFamilies.addAll(families);
         }
@@ -535,7 +559,10 @@ public final class DeviceBindingRegistry
         for (Identifier type : jeiTypes)
         {
             HashSet<String> groups = new HashSet<>();
-            JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families().forEach(family -> {
+            Set<String> families = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.isBindOnly(type) ? Set.of()
+                    : JeiRecipeFamilyRegistry.resolve(Set.of(type), loadedFamilies).families();
+            families.forEach(family -> {
                 Set<String> values = stored.getOrDefault(family, Set.of());
                 if (!values.contains(BindingRecord.ALL_INPUT_GROUPS)) groups.addAll(values);
             });

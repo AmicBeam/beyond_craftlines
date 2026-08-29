@@ -72,11 +72,17 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                     .verifyAndRemember(level, hints);
             Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
                     .RecipePlanningService.loadedFamilies(level);
+            Set<ResourceLocation> executableTypes = menu.isBoundMachineConfiguration() ? selected
+                    : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .executable(selected);
             var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                    .resolve(selected, loadedFamilies);
-            if (!selected.isEmpty() && mapping.jeiTypes().size() != selected.size())
+                    .resolve(executableTypes, loadedFamilies);
+            Set<ResourceLocation> acceptedTypes = menu.isBoundMachineConfiguration() ? mapping.jeiTypes()
+                    : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .accepted(selected, mapping.jeiTypes());
+            if (!selected.isEmpty() && acceptedTypes.size() != selected.size())
             {
-                var missing = selected.stream().filter(type -> !mapping.jeiTypes().contains(type))
+                var missing = selected.stream().filter(type -> !acceptedTypes.contains(type))
                         .map(Object::toString).sorted().toList();
                 com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                         .logUnmapped(missing, loadedFamilies);

@@ -63,6 +63,7 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                     .verifyAndRemember(player.level(), hints);
             boolean connectionMode = DeviceBindingRegistry.hasProvisionerConnectionSelection(player);
+            boolean provisionerRecipeMode = DeviceBindingRegistry.hasProvisionerRecipeSelection(player);
             if (payload.remove() && !connectionMode)
             {
                 boolean removed = DeviceBindingRegistry.unbind(player, target);
@@ -74,8 +75,15 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             }
             Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
                     .RecipePlanningService.loadedFamilies(player.level());
-            if (!connectionMode && com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                    .resolve(types, loadedFamilies).isEmpty())
+            Set<Identifier> executableTypes = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.executable(types);
+            var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
+                    .resolve(executableTypes, loadedFamilies);
+            boolean supported = provisionerRecipeMode
+                    ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .acceptsAll(types, mapping.jeiTypes())
+                    : !mapping.isEmpty();
+            if (!connectionMode && !supported)
             {
                 com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                         .logUnmapped(types, loadedFamilies);

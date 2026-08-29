@@ -117,7 +117,12 @@ public final class NetworkLinkerItem extends Item
         // Several JEI integrations (notably Mekanism 1.20.1) use the machine block id as their
         // category id. Only use that id when JEI has no catalyst categories: adding it alongside
         // an authoritative category leaks legacy ids such as mekanism:enrichment_chamber on 1.21.1.
-        if (types.isEmpty()) types.add(blockId);
+        if (types.isEmpty())
+        {
+            String vanillaCategory = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);
+            types.add(vanillaCategory == null ? blockId : ResourceLocation.parse(vanillaCategory));
+        }
         return Set.copyOf(types);
     }
 

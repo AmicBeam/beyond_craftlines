@@ -71,6 +71,20 @@ public final class BoundMachineAutomation
         return false;
     }
 
+    /** Diagnostic view of every non-empty native BD capability slot, including input-only tanks. */
+    public static List<KeyAmount> visibleCapabilityStacks(ServerLevel level, BlockPos position)
+    {
+        List<KeyAmount> result = new ArrayList<>();
+        for (BdResourceHandler handler : resourceHandlers(level, position))
+            for (int slot = 0; slot < handler.wrapper().getSlots(); slot++)
+            {
+                KeyAmount value = RecipeResourceResolver.fromStack(
+                        handler.wrapper().getStackInSlot(slot));
+                if (value != null && !value.isEmpty()) merge(result, value);
+            }
+        return List.copyOf(result);
+    }
+
     public static long insertCapacity(ServerLevel level, BlockPos position, Identifier itemId, long limit)
     {
         return insertCapacity(handlers(level, position), new ItemStack(BuiltInRegistries.ITEM.getValue(itemId)), limit);

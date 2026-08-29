@@ -1462,6 +1462,7 @@ public final class RecipeOrderService
         List<String> reserved = job.reserved().stream().map(material ->
                 RecipeResourceResolver.sortKey(material.key()) + "@" + material.amount()).toList();
         List<String> capacities = new ArrayList<>();
+        java.util.LinkedHashSet<String> contents = new java.util.LinkedHashSet<>();
         for (RecipePlan.Material material : wait.remainingInputs())
             for (RecipeOrderJob.MachineLocation machine : machines)
             {
@@ -1473,10 +1474,13 @@ public final class RecipeOrderService
                         + "=" + BoundMachineAutomation.insertCapacity(level, machine.position(),
                         material.key(), material.amount()) + "/present="
                         + BoundMachineAutomation.countPresent(level, machine.position(), material.key()));
+                contents.add(machine.position().toShortString() + "="
+                        + BoundMachineAutomation.visibleCapabilityStacks(level, machine.position()).stream()
+                        .map(value -> RecipeResourceResolver.sortKey(value.key()) + "@" + value.amount()).toList());
             }
         LOGGER.debug("Craftlines feeding stall: order={}, step={}/{}, family={}, reason={}, remaining={}, "
-                        + "reserved={}, capacities={}", job.id(), job.nextStep() + 1, job.stepCount(),
-                step.family(), reason, remaining, reserved, capacities);
+                        + "reserved={}, capacities={}, contents={}", job.id(), job.nextStep() + 1, job.stepCount(),
+                step.family(), reason, remaining, reserved, capacities, contents);
     }
 
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,

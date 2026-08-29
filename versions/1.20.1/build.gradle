@@ -135,6 +135,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('location.id().equals(PROVISIONER)', 'new ResourceLocation(location.getNamespace(), location.getPath()).equals(PROVISIONER)')
             .replace('location.variant()', 'location.getVariant()')
             .replace('(RegistryFriendlyByteBuf) data', 'new RegistryFriendlyByteBuf(data)')
+            .replace('(RegistryFriendlyByteBuf) buffer', 'new RegistryFriendlyByteBuf(buffer)')
             .replace('                && !location.getVariant().equals("inventory") ? new ProvisionerMaterialModel(model) : model);',
                     '                ? new ProvisionerMaterialModel(model) : model);')
     }

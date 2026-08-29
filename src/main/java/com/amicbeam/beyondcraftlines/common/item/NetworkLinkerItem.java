@@ -19,7 +19,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 public final class NetworkLinkerItem extends Item
@@ -86,41 +85,25 @@ public final class NetworkLinkerItem extends Item
         }
         if (context.getPlayer().isShiftKeyDown())
         {
-            if (context.getLevel().isClientSide()) sendBindRequest(context, blockId, true);
+            if (context.getLevel().isClientSide()) sendBindRequest(context, true);
             return InteractionResult.SUCCESS;
         }
-        if (context.getLevel().isClientSide()) sendBindRequest(context, blockId, false);
+        if (context.getLevel().isClientSide()) sendBindRequest(context, false);
         return InteractionResult.SUCCESS;
     }
 
-    private static void sendBindRequest(UseOnContext context, ResourceLocation blockId, boolean remove)
+    private static void sendBindRequest(UseOnContext context, boolean remove)
     {
         boolean connectionEditing = com.amicbeam.beyondcraftlines.client.ClientBindingVisuals
                 .isEditingProvisionerConnections();
-        Set<ResourceLocation> types = connectionEditing ? Set.of() : recipeTypes(new ItemStack(
-                context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem()), blockId);
+        Set<ResourceLocation> types = connectionEditing ? Set.of()
+                : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.recipeTypesFor(
+                new ItemStack(context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem()));
         var inputGroups = connectionEditing ? java.util.List.<String>of()
                 : com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
                 com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.inputGroupsFor(types));
         PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
                 context.getClickedFace(), inputGroups, remove));
-    }
-
-    private static Set<ResourceLocation> recipeTypes(ItemStack catalyst, ResourceLocation blockId)
-    {
-        LinkedHashSet<ResourceLocation> types = new LinkedHashSet<>(
-                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
-                        .recipeTypesFor(catalyst));
-        // Several JEI integrations (notably Mekanism 1.20.1) use the machine block id as their
-        // category id. Only use that id when JEI has no catalyst categories: adding it alongside
-        // an authoritative category leaks legacy ids such as mekanism:enrichment_chamber on 1.21.1.
-        if (types.isEmpty())
-        {
-            String vanillaCategory = com.amicbeam.beyondcraftlines.common.crafting
-                    .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);
-            types.add(vanillaCategory == null ? blockId : ResourceLocation.parse(vanillaCategory));
-        }
-        return Set.copyOf(types);
     }
 
     @Override

@@ -8,6 +8,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -23,6 +26,8 @@ public final class RecipeResourceResolver
 {
     public static final String VANILLA_INPUT_GROUP = "ingredients";
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
+            Collections.synchronizedMap(new java.util.WeakHashMap<>());
+    private static final Map<IStackKey<?>, String> SORT_KEYS =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
 
     private RecipeResourceResolver() {}
@@ -79,7 +84,11 @@ public final class RecipeResourceResolver
         return List.copyOf(result);
     }
 
-    public static void clearCache() { CACHE.clear(); }
+    public static void clearCache()
+    {
+        CACHE.clear();
+        SORT_KEYS.clear();
+    }
 
     public static KeyAmount fromStack(Object stack)
     {
@@ -97,7 +106,38 @@ public final class RecipeResourceResolver
     }
 
     public static String sortKey(IStackKey<?> key)
-    { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
+    { return SORT_KEYS.computeIfAbsent(key, RecipeResourceResolver::encodeSortKey); }
+
+    private static String encodeSortKey(IStackKey<?> key)
+    {
+        String serialized;
+        try
+        {
+            serialized = key.serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())
+                    .toString();
+        }
+        catch (LinkageError | RuntimeException ignored)
+        {
+            // Retain a component-aware fallback even when an optional stack type cannot serialize.
+            serialized = key.getSource() + "|" + key.hashCode();
+        }
+        return identityKey(key.getTypeId().toString(), key.getModId(), key.getSource(), serialized);
+    }
+
+    static String identityKey(String type, String mod, Object source, String serialized)
+    { return type + "|" + mod + "|" + source + "|" + sha256(serialized); }
+
+    private static String sha256(String value)
+    {
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        }
+        catch (NoSuchAlgorithmException impossible)
+        { throw new IllegalStateException("SHA-256 is unavailable", impossible); }
+    }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
     {

@@ -40,6 +40,9 @@ final class VanillaProvisionerRecipeTypesTest
     @Test
     void keepsAllFiveVanillaWorkstationsOffTheDirectMachinePath()
     {
+        assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:anvil"));
+        assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:brewing"));
+        assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:compostable"));
         assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:smithing"));
         assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:stonecutting"));
         assertFalse(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:smithing"));
@@ -96,5 +99,32 @@ final class VanillaProvisionerRecipeTypesTest
         assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("example:machine"));
         assertEquals(Set.of(), VanillaProvisionerRecipeTypes.executable(Set.of("example:machine")));
         assertTrue(VanillaProvisionerRecipeTypes.acceptsAll(Set.of("example:machine"), Set.of()));
+        assertEquals(Set.of("example:machine"), VanillaProvisionerRecipeTypes.directBindable(
+                Set.of("example:machine", "minecraft:anvil")));
+        assertEquals(Set.of("example:machine"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+                "example:machine", Set.of("example:server_family")));
+    }
+
+    @Test
+    void datapackJeiOnlyTypesCanStillBindCapabilityBackedMachinesDirectly()
+    {
+        JeiOnlyRecipeTypeRegistry.applySyncedTypes(Set.of(
+                "minecraft:anvil", "minecraft:brewing", "minecraft:compostable", "example:machine"));
+
+        assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("example:machine"));
+        assertFalse(VanillaProvisionerRecipeTypes.isProvisionerOnly("example:machine"));
+        assertEquals(Set.of("example:machine"),
+                VanillaProvisionerRecipeTypes.directBindable(Set.of("example:machine")));
+        assertEquals(Set.of("example:machine"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+                "example:machine", Set.of("example:server_family")));
+    }
+
+    @Test
+    void strictDirectBindingUsesMappedFamilyOrFallsBackToJeiUid()
+    {
+        assertEquals(Set.of("example:server_family"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+                "example:machine", Set.of("example:server_family")));
+        assertEquals(Set.of("example:unknown"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+                "example:unknown", Set.of()));
     }
 }

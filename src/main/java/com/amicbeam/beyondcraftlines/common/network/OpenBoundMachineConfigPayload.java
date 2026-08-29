@@ -84,8 +84,8 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
                     .map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::decode)
                     .filter(java.util.Objects::nonNull).toList());
             Set<String> loadedFamilies = RecipePlanningService.loadedFamilies(level);
-            var resolved = JeiRecipeFamilyRegistry.resolve(requested, loadedFamilies);
-            Set<ResourceLocation> candidates = resolved.jeiTypes();
+            Set<ResourceLocation> candidates = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.directBindable(requested);
             if (candidates.isEmpty())
             {
                 JeiRecipeFamilyRegistry.logUnmapped(requested, loadedFamilies);

@@ -78,7 +78,9 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
                     .resolve(executableTypes, loadedFamilies);
             boolean manualSelection = menu.allowsManualRecipeSelection();
-            Set<Identifier> mappedAcceptedTypes = menu.isBoundMachineConfiguration() ? mapping.jeiTypes()
+            Set<Identifier> mappedAcceptedTypes = menu.isBoundMachineConfiguration()
+                    ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .directBindable(selected)
                     : com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                     .accepted(selected, mapping.jeiTypes());
             Set<Identifier> acceptedTypes = manualSelection ? Set.copyOf(selected) : mappedAcceptedTypes;
@@ -122,7 +124,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             Component message = Component.translatable(messageKey);
             if (configured) player.sendOverlayMessage(message); else player.sendSystemMessage(message);
             if (configured) BindingVisualsPayload.broadcast(player.level());
-            if (configured && !menu.isBoundMachineConfiguration())
+            if (configured)
             {
                 var compatibility = JeiOnlyRecipeTypesPayload.snapshot(player.level().getServer());
                 player.level().getServer().getPlayerList().getPlayers().forEach(target ->

@@ -35,8 +35,6 @@ public record JeiOnlyRecipeTypesPayload(List<String> recipeTypes,
         Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
                 .RecipePlanningService.loadedFamilies(server.overworld());
         com.amicbeam.beyondcraftlines.common.data.BindingSavedData.get(server).records().stream()
-                .filter(record -> record.deviceType()
-                        == com.amicbeam.beyondcraftlines.common.data.DeviceType.PROVISIONER_RECIPE_BINDING)
                 .forEach(record -> record.jeiRecipeTypes().stream()
                         .filter(type -> !enabled || (record.recipeFamilies().contains(type.toString())
                                 && com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry

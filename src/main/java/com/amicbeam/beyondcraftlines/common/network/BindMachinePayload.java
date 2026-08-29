@@ -71,7 +71,13 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
                 player.displayClientMessage(Component.translatable(removed
                         ? "message.beyond_craftlines.device_unbound"
                         : "error.beyond_craftlines.machine_not_bound_or_denied"), false);
-                if (removed) BindingVisualsPayload.broadcast(player.serverLevel());
+                if (removed)
+                {
+                    BindingVisualsPayload.broadcast(player.serverLevel());
+                    var compatibility = JeiOnlyRecipeTypesPayload.snapshot(player.getServer());
+                    player.getServer().getPlayerList().getPlayers().forEach(targetPlayer ->
+                            PacketDistributor.sendToPlayer(targetPlayer, compatibility));
+                }
                 return;
             }
             Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
@@ -83,8 +89,8 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             boolean supported = provisionerRecipeMode
                     ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                     .acceptsAll(types, mapping.jeiTypes())
-                    : !mapping.isEmpty() && types.stream().noneMatch(com.amicbeam.beyondcraftlines.common.crafting
-                    .VanillaProvisionerRecipeTypes::isProvisionerOnly);
+                    : !types.isEmpty() && com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.directBindable(types).size() == types.size();
             if (!connectionMode && !supported)
             {
                 com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
@@ -110,6 +116,9 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
                         .sorted().findFirst().orElse("");
                 PacketDistributor.sendToPlayer(player, new BindMachineFeedbackPayload(selectedType));
                 BindingVisualsPayload.broadcast(player.serverLevel());
+                var compatibility = JeiOnlyRecipeTypesPayload.snapshot(player.getServer());
+                player.getServer().getPlayerList().getPlayers().forEach(targetPlayer ->
+                        PacketDistributor.sendToPlayer(targetPlayer, compatibility));
                 return;
             }
             String message = binding.isSuccess() && result.connectionEdit() != null

@@ -8,6 +8,9 @@ import java.util.Set;
 public final class VanillaProvisionerRecipeTypes
 {
     private static final Set<String> PROVISIONER_ONLY = Set.of(
+            "minecraft:anvil",
+            "minecraft:brewing",
+            "minecraft:compostable",
             "minecraft:smithing",
             "minecraft:stonecutting");
     private static final Map<String, String> CATEGORY_BY_BLOCK = Map.ofEntries(
@@ -22,7 +25,7 @@ public final class VanillaProvisionerRecipeTypes
     private VanillaProvisionerRecipeTypes() {}
 
     public static boolean isProvisionerOnly(Object type)
-    { return type != null && (PROVISIONER_ONLY.contains(type.toString()) || isJeiOnly(type)); }
+    { return type != null && PROVISIONER_ONLY.contains(type.toString()); }
 
     public static boolean isJeiOnly(Object type)
     { return type != null && (!JeiOnlyRecipeTypeRegistry.serverRecipeValidationEnabled()
@@ -34,7 +37,7 @@ public final class VanillaProvisionerRecipeTypes
     public static <T> Set<T> accepted(Set<T> requested, Set<T> mapped)
     {
         LinkedHashSet<T> accepted = new LinkedHashSet<>(mapped);
-        requested.stream().filter(VanillaProvisionerRecipeTypes::isProvisionerOnly).forEach(accepted::add);
+        requested.stream().filter(type -> isProvisionerOnly(type) || isJeiOnly(type)).forEach(accepted::add);
         return Set.copyOf(accepted);
     }
 
@@ -42,6 +45,17 @@ public final class VanillaProvisionerRecipeTypes
     {
         return requested.stream().filter(type -> !isJeiOnly(type))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public static <T> Set<T> directBindable(Set<T> requested)
+    {
+        return requested.stream().filter(type -> !isProvisionerOnly(type))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public static Set<String> directFamiliesForType(Object type, Set<String> mapped)
+    {
+        return isJeiOnly(type) || mapped.isEmpty() ? Set.of(type.toString()) : mapped;
     }
 
     public static <T> boolean acceptsAll(Set<T> requested, Set<T> mapped)

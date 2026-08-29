@@ -92,7 +92,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
-            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+            DimensionsNet network;
+            if (player.containerMenu instanceof CraftlineOrderMenu orderMenu)
+                network = orderMenu.canAccessNetwork(player)
+                        ? DimensionsNet.getNetFromId(orderMenu.networkId()) : null;
+            else network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
                     ? DimensionsNet.getAllNetFromPlayer(player).stream()
                             .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
                     : DimensionsNet.getPrimaryNetFromPlayer(player);

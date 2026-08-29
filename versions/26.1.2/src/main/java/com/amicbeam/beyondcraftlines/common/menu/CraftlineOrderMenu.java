@@ -159,7 +159,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         return recipes().stream()
                 .flatMap(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream())
                 .filter(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
-                        .RecipeResourceResolver.sortKey(value.key())))
+                        .RecipeResourceResolver.resolutionKey(value.key())) || token.equals(
+                        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(value.key())))
                 .filter(value -> value.key() instanceof ItemStackKey).map(value ->
                         net.minecraft.core.registries.BuiltInRegistries.ITEM
                                 .getKey(((ItemStackKey) value.key()).getSource())).findFirst().orElse(null);

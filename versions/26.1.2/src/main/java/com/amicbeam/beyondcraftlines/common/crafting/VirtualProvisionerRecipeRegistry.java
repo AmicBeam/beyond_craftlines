@@ -137,11 +137,11 @@ public final class VirtualProvisionerRecipeRegistry
         public Identifier id()
         {
             StringBuilder canonical = new StringBuilder(family).append('|')
-                    .append(RecipeResourceResolver.sortKey(output)).append('@').append(outputAmount);
+                    .append(RecipeResourceResolver.resolutionKey(output)).append('@').append(outputAmount);
             for (InputSlot slot : inputs)
             {
                 canonical.append('|').append(slot.inputGroup()).append(':');
-                slot.candidates().stream().map(value -> RecipeResourceResolver.sortKey(value.key()) + '@' + value.amount())
+                slot.candidates().stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }
             UUID uuid = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));

@@ -65,7 +65,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                     throw new IllegalStateException("orders are being submitted too quickly");
                 long count = Math.max(1, payload.count());
                 if (!menu.targetToken().equals(payload.itemId())
-                        || menu.recipeForResourceOutput(menu.initialTarget()) == null)
+                        || !menu.canPlanTarget(menu.initialTarget()))
                     throw new IllegalArgumentException("target is not available in this order menu");
                 var validated = ValidatedClientPlanCache.consume(player.getUUID(), payload.proposalNonce(), now);
                 if (validated == null || validated.networkId() != menu.networkId()

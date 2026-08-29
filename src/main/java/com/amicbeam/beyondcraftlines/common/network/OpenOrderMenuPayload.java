@@ -96,7 +96,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 return;
             }
             var level = player.level();
-            DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
+            DimensionsNet network;
+            if (player.containerMenu instanceof CraftlineOrderMenu orderMenu)
+                network = orderMenu.canAccessNetwork(player)
+                        ? DimensionsNet.getNetFromId(orderMenu.networkId()) : null;
+            else network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
                     && dimensionsMenu.storage instanceof com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage storage
                     ? storage.getNet() : DimensionsNet.getPrimaryNetFromPlayer(player);
             if (network == null)

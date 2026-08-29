@@ -50,7 +50,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         for (RecipePlan.Step step : plan.steps())
         {
             recipes.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                    .sortKey(step.outputKey()), step.recipe());
+                    .resolutionKey(step.outputKey()), step.recipe());
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
                 ingredients.put(new Slot(step.recipe(), selection.slot()), selection.item());
         }
@@ -93,7 +93,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         for (RecipePlan.Step step : plan.steps())
         {
             recipes.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                    .sortKey(step.outputKey()), step.recipe());
+                    .resolutionKey(step.outputKey()), step.recipe());
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
                 ingredients.put(new Slot(step.recipe(), selection.slot()), selection.item());
         }

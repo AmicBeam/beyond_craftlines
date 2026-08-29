@@ -153,17 +153,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     }
 
     public static void orderTarget(IStackKey<?> target)
-    {
-        OpenOrderMenuPayload focused = focusedOrderPayload(target);
-        if (runtime != null && focused == null)
-        {
-            if (Minecraft.getInstance().player != null)
-                Minecraft.getInstance().player.displayClientMessage(Component.translatable(
-                        "error.beyond_craftlines.middle_click_recipe_not_found"), false);
-            return;
-        }
-        queueOrder(focused == null ? new OpenOrderMenuPayload(target, "", "") : focused);
-    }
+    { queueOrder(new OpenOrderMenuPayload(target, "", "")); }
+
+    public static @Nullable OpenOrderMenuPayload resolveOrderTarget(IStackKey<?> target)
+    { return focusedOrderPayload(target); }
+
+    public static void openResolvedOrder(OpenOrderMenuPayload payload)
+    { if (payload != null) queueOrder(payload); }
 
     private static @Nullable OpenOrderMenuPayload focusedOrderPayload(IStackKey<?> target)
     {

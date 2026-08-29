@@ -169,11 +169,12 @@ public final class ClientRecipePlanner
         }
         if (!visiting.add(resource))
             throw new PlanningCycleBranch.Cycle();
-        String resourceId = RecipeResourceResolver.sortKey(resource);
+        String resourceId = RecipeResourceResolver.resolutionKey(resource);
         try
         {
             List<Recipe> candidates = recipesFor(byOutput, resource);
             ResourceLocation selected = manualRecipes.get(resourceId);
+            if (selected == null) selected = manualRecipes.get(RecipeResourceResolver.sortKey(resource));
             if (selected == null) selected = state.recipes.get(resourceId);
             if (selected != null)
             {

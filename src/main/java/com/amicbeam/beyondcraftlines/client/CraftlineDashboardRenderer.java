@@ -57,7 +57,7 @@ public final class CraftlineDashboardRenderer implements BlockEntityRenderer<Cra
                 ? item.getReadOnlyStack().getHoverName()
                 : target.getRender().getDisplayName(target);
         boolean visualIcon = itemTarget || resourceIcon != null;
-        String label = font.plainSubstrByWidth(name.getString(), visualIcon ? 40 : 48);
+        String label = font.plainSubstrByWidth(name.getString(), 54);
         String amount = dashboard.lastObserved() + "/" + dashboard.desiredAmount();
         pose.pushPose();
         pose.translate(0, visualIcon ? -.0625 : -.0325, -.018);

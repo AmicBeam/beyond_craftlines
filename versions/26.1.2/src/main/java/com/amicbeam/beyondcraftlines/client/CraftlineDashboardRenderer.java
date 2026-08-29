@@ -67,9 +67,8 @@ public final class CraftlineDashboardRenderer implements BlockEntityRenderer<
                 ? item.getReadOnlyStack().getHoverName().getString()
                 : dashboard.target().getRender().getDisplayName(dashboard.target()).getString();
         String value = name + "  " + dashboard.lastObserved() + "/" + dashboard.desiredAmount();
-        boolean visualIcon = !state.item.isEmpty() || state.sprite != null;
         state.text = net.minecraft.network.chat.Component.literal(
-                font.plainSubstrByWidth(value, visualIcon ? 40 : 48)).getVisualOrderText();
+                font.plainSubstrByWidth(value, 54)).getVisualOrderText();
         state.width = font.width(state.text);
     }
 

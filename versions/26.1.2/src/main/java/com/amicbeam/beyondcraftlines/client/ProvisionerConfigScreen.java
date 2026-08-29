@@ -10,6 +10,7 @@ import com.amicbeam.beyondcraftlines.common.runtime.ProvisionerDeliveryStrategy;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -33,6 +34,12 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private static final int MANUAL_ROWS = 5;
     private static final int MANUAL_ROW_HEIGHT = 12;
     private static final int MAX_GROUPS = 16;
+    private static final int MAX_GROUP_COLUMNS = 4;
+    private static final int GROUP_HEIGHT = 16;
+    private static final int GROUP_GAP_X = 3;
+    private static final int GROUP_GAP_Y = 2;
+    private static final int ENTRY_GAP = 4;
+    private static final int CONTENT_TOP = 44;
     private List<Identifier> candidates;
     private final boolean manualFallback;
     private final Set<Identifier> selected;
@@ -109,7 +116,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
             if (page > 0) { page--; refresh(); }
         }).bounds(leftPos + 12, topPos + 229, 28, 18).build());
         next = addRenderableWidget(Button.builder(Component.literal(">"), ignored -> {
-            if ((page + 1) * ROWS < visibleCandidates().size()) { page++; refresh(); }
+            if (page + 1 < pageStarts(visibleCandidates()).size()) { page++; refresh(); }
         }).bounds(leftPos + 44, topPos + 229, 28, 18).build());
         if (!menu.isBoundMachineConfiguration())
         {
@@ -163,10 +170,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void toggle(int row)
     {
-        List<Identifier> visible = visibleCandidates();
-        int index = page * ROWS + row;
-        if (index >= visible.size()) return;
-        Identifier type = visible.get(index);
+        Identifier type = displayedCandidate(row);
+        if (type == null) return;
         if (manualFallback) return;
         if (!selected.remove(type))
         {
@@ -181,9 +186,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private void toggleGroup(int row, int groupIndex)
     {
         if (manualFallback) return;
-        int index = page * ROWS + row;
-        if (index >= candidates.size()) return;
-        Identifier type = candidates.get(index);
+        Identifier type = displayedCandidate(row);
+        if (type == null) return;
         if (!selected.contains(type)) return;
         List<String> groups = groups(type);
         if (groupIndex >= groups.size()) return;
@@ -203,25 +207,29 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private void refresh()
     {
         List<Identifier> visible = visibleCandidates();
+        List<Integer> pageStarts = pageStarts(visible);
+        page = Math.max(0, Math.min(page, pageStarts.size() - 1));
+        int start = pageStarts.get(page);
+        int end = page + 1 < pageStarts.size() ? pageStarts.get(page + 1) : visible.size();
+        int entryY = topPos + CONTENT_TOP;
         for (int row = 0; row < rows.size(); row++)
         {
-            int index = page * ROWS + row;
+            int index = start + row;
             Button button = rows.get(row);
-            button.visible = !manualFallback && index < visible.size();
+            button.visible = !manualFallback && index < end;
             if (!button.visible)
             {
                 groupRows.get(row).forEach(group -> group.visible = false);
                 continue;
             }
             Identifier type = visible.get(index);
+            button.setY(entryY);
             Component title = JeiCatalystIndex.recipeTypeTitle(type).orElse(Component.literal(type.toString()));
             button.setMessage(Component.literal(selected.contains(type) ? "[✓] " : "[ ] ").append(title));
             List<String> groups = groups(type);
             Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
             int groupCount = groups.size();
             int availableWidth = imageWidth - 36;
-            int groupWidth = groupCount == 0 ? availableWidth
-                    : Math.max(12, (availableWidth - Math.max(0, groupCount - 1) * 3) / groupCount);
             for (int groupIndex = 0; groupIndex < groupRows.get(row).size(); groupIndex++)
             {
                 Button groupButton = groupRows.get(row).get(groupIndex);
@@ -229,23 +237,72 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                         && groupCount > 1 && groupIndex < groupCount;
                 if (!groupButton.visible) continue;
                 String group = groups.get(groupIndex);
+                int groupRow = groupIndex / MAX_GROUP_COLUMNS;
+                int column = groupIndex % MAX_GROUP_COLUMNS;
+                int columns = Math.min(MAX_GROUP_COLUMNS,
+                        groupCount - groupRow * MAX_GROUP_COLUMNS);
+                int groupWidth = (availableWidth - (columns - 1) * GROUP_GAP_X) / columns;
                 groupButton.active = true;
-                groupButton.setX(leftPos + 18 + groupIndex * (groupWidth + 3));
-                groupButton.setY(topPos + 64 + row * 40);
+                groupButton.setX(leftPos + 18 + column * (groupWidth + GROUP_GAP_X));
+                groupButton.setY(entryY + 20 + groupRow * (GROUP_HEIGHT + GROUP_GAP_Y));
                 groupButton.setWidth(groupWidth);
+                Component groupLabel = groupTitle(group);
                 groupButton.setMessage(Component.literal(chosen.contains(group) ? "[✓] " : "[ ] ")
-                        .append(groupTitle(group)));
+                        .append(groupLabel));
+                groupButton.setTooltip(Tooltip.create(groupLabel));
             }
+            entryY += entryHeight(type);
         }
         previous.active = page > 0;
-        next.active = (page + 1) * ROWS < visible.size();
+        next.active = page + 1 < pageStarts.size();
         previous.visible = !manualFallback;
         next.visible = !manualFallback;
         if (returnAll != null) returnAll.active = menu.hasResources();
     }
 
     private int rowY(int row)
-    { return topPos + 44 + row * 40; }
+    { return topPos + CONTENT_TOP + row * 40; }
+
+    private Identifier displayedCandidate(int row)
+    {
+        List<Identifier> visible = visibleCandidates();
+        List<Integer> starts = pageStarts(visible);
+        if (page < 0 || page >= starts.size()) return null;
+        int index = starts.get(page) + row;
+        int end = page + 1 < starts.size() ? starts.get(page + 1) : visible.size();
+        return index < end ? visible.get(index) : null;
+    }
+
+    private List<Integer> pageStarts(List<Identifier> visible)
+    {
+        if (visible.isEmpty()) return List.of(0);
+        List<Integer> starts = new ArrayList<>();
+        int contentHeight = (menu.isBoundMachineConfiguration() ? 203 : 183) - CONTENT_TOP;
+        for (int start = 0; start < visible.size(); )
+        {
+            starts.add(start);
+            int usedHeight = 0;
+            int count = 0;
+            while (start + count < visible.size() && count < ROWS)
+            {
+                int height = entryHeight(visible.get(start + count));
+                if (count > 0 && usedHeight + height > contentHeight) break;
+                usedHeight += height;
+                count++;
+            }
+            start += Math.max(1, count);
+        }
+        return starts;
+    }
+
+    private int entryHeight(Identifier type)
+    {
+        int groupCount = selected.contains(type) ? groups(type).size() : 0;
+        if (groupCount <= 1) return 18 + ENTRY_GAP;
+        int groupRowCount = (groupCount + MAX_GROUP_COLUMNS - 1) / MAX_GROUP_COLUMNS;
+        return 20 + groupRowCount * GROUP_HEIGHT
+                + (groupRowCount - 1) * GROUP_GAP_Y + ENTRY_GAP;
+    }
 
     private List<Identifier> visibleCandidates()
     {

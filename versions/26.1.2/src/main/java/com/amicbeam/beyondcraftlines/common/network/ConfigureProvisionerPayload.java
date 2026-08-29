@@ -22,7 +22,8 @@ import java.util.HashMap;
 import java.util.Set;
 
 public record ConfigureProvisionerPayload(long position, List<String> selectedTypes,
-                                          List<String> selectedGroups, int priority)
+                                          List<String> selectedGroups, List<String> availableInputGroups,
+                                          int priority)
         implements CustomPacketPayload
 {
     public static final Type<ConfigureProvisionerPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(
@@ -33,11 +34,14 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             ConfigureProvisionerPayload::selectedTypes,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
             ConfigureProvisionerPayload::selectedGroups,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
+            ConfigureProvisionerPayload::availableInputGroups,
             ByteBufCodecs.VAR_INT, ConfigureProvisionerPayload::priority,
             ConfigureProvisionerPayload::new);
 
     public static ConfigureProvisionerPayload of(BlockPos position, Set<Identifier> selected,
                                                   Map<Identifier, Set<String>> groups,
+                                                  List<String> availableInputGroups,
                                                   int priority)
     {
         return new ConfigureProvisionerPayload(position.asLong(),
@@ -45,7 +49,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                 selected.stream().sorted(java.util.Comparator.comparing(Identifier::toString))
                         .flatMap(type -> groups.getOrDefault(type, Set.of()).stream().sorted()
                                 .map(group -> type + "|" + group)).limit(512).toList(),
-                priority);
+                availableInputGroups.stream().limit(512).toList(), priority);
     }
 
     public static void handle(ConfigureProvisionerPayload payload, IPayloadContext context)
@@ -58,6 +62,8 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             LinkedHashSet<Identifier> selected = new LinkedHashSet<>();
             payload.selectedTypes().stream().limit(32).map(Identifier::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(selected::add);
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry
+                    .rememberEncoded(payload.availableInputGroups());
             boolean manualSelection = menu.allowsManualRecipeSelection();
             Set<Identifier> mappedAcceptedTypes = menu.isBoundMachineConfiguration()
                     ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes

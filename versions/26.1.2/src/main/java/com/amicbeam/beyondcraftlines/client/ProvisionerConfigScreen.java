@@ -196,7 +196,9 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void sendConfiguration()
     { ClientPacketDistributor.sendToServer(ConfigureProvisionerPayload.of(
-            menu.position(), selected, selectedGroups, priority)); }
+            menu.position(), selected, selectedGroups,
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                    JeiCatalystIndex.inputGroupsFor(selected)), priority)); }
 
     private void refresh()
     {

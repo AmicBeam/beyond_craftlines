@@ -517,7 +517,8 @@ public final class DeviceBindingRegistry
         LinkedHashMap<ResourceLocation, Set<String>> result = new LinkedHashMap<>();
         for (ResourceLocation type : jeiTypes)
         {
-            Set<String> groups = new HashSet<>();
+            Set<String> groups = new HashSet<>(com.amicbeam.beyondcraftlines.common.crafting
+                    .JeiInputGroupRegistry.groups(type));
             groups.addAll(byFamily.getOrDefault(type.toString(), Set.of()));
             result.put(type, Set.copyOf(groups));
         }

@@ -62,7 +62,9 @@ public final class CraftlinesClientEvents
                 var types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .recipeTypesFor(catalyst);
                 ClientPacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(), remove));
+                        context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
+                                .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
+                                .JeiCatalystIndex.inputGroupsFor(types)), remove));
                 return net.minecraft.world.InteractionResult.SUCCESS;
             };
         }
@@ -150,7 +152,10 @@ public final class CraftlinesClientEvents
                         .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);
                 types.add(vanillaCategory == null ? blockId : Identifier.parse(vanillaCategory));
             }
-            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types));
+            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
+                    com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                                    .inputGroupsFor(types))));
             event.setCanceled(true);
         }
 

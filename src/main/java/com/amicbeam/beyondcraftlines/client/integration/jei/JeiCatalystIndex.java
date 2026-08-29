@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import mezz.jei.api.runtime.IJeiRuntime;
+import mezz.jei.api.recipe.RecipeIngredientRole;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -18,6 +19,7 @@ public final class JeiCatalystIndex
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static volatile Map<Item, Set<ResourceLocation>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<ResourceLocation, Component> TITLES_BY_TYPE = Map.of();
+    private static volatile Map<ResourceLocation, Set<String>> INPUT_GROUPS_BY_TYPE = Map.of();
     private static volatile IJeiRuntime runtime;
 
     private JeiCatalystIndex() {}
@@ -27,6 +29,7 @@ public final class JeiCatalystIndex
         JeiCatalystIndex.runtime = runtime;
         Map<Item, LinkedHashSet<ResourceLocation>> building = new HashMap<>();
         Map<ResourceLocation, Component> titles = new HashMap<>();
+        Map<ResourceLocation, Set<String>> inputGroups = new HashMap<>();
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
             try
@@ -39,6 +42,7 @@ public final class JeiCatalystIndex
                         .map(ItemStack::getItem)
                         .forEach(item -> building.computeIfAbsent(item, ignored ->
                                 new LinkedHashSet<>()).add(typeId));
+                inputGroups.put(typeId, collectInputGroups(runtime, category));
             }
             catch (RuntimeException | LinkageError exception)
             {
@@ -50,6 +54,7 @@ public final class JeiCatalystIndex
         building.forEach((item, types) -> frozen.put(item, Set.copyOf(types)));
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
+        INPUT_GROUPS_BY_TYPE = Map.copyOf(inputGroups);
     }
 
     public static void refresh()
@@ -82,6 +87,13 @@ public final class JeiCatalystIndex
         return TITLES_BY_TYPE.keySet();
     }
 
+    public static Map<ResourceLocation, Set<String>> inputGroupsFor(Set<ResourceLocation> types)
+    {
+        Map<ResourceLocation, Set<String>> result = new HashMap<>();
+        types.forEach(type -> result.put(type, INPUT_GROUPS_BY_TYPE.getOrDefault(type, Set.of())));
+        return Map.copyOf(result);
+    }
+
     /** Uses the synced client recipe manager to mirror the server's representative-hint validation. */
     public static Set<ResourceLocation> recipeTypes(Set<String> loadedFamilies,
                                                     Map<String, Set<String>> aliases,
@@ -96,6 +108,21 @@ public final class JeiCatalystIndex
         runtime = null;
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
+        INPUT_GROUPS_BY_TYPE = Map.of();
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
+    }
+
+    private static <T> Set<String> collectInputGroups(IJeiRuntime runtime,
+                                                       mezz.jei.api.recipe.category.IRecipeCategory<T> category)
+    {
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        var manager = runtime.getRecipeManager();
+        var focuses = runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup();
+        manager.createRecipeLookup(category.getRecipeType()).includeHidden().get().limit(64).forEach(recipe ->
+                manager.createRecipeLayoutDrawable(category, recipe, focuses).ifPresent(layout ->
+                        layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).forEach(slot ->
+                                groups.add(com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup
+                                        .fromSlotName(slot.getSlotName().orElse(""))))));
+        return Set.copyOf(groups);
     }
 }

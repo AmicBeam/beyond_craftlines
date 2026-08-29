@@ -110,6 +110,7 @@ public final class CraftlinesEvents
             com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
         var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();

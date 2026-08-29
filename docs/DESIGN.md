@@ -145,7 +145,7 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络连接器
 
 实验版的第三方机器关系只来自 JEI 正式 recipe catalyst。客户端以 JEI category UID 作为唯一运行时 family，并从当前 JEI 布局上传有界输入槽、精确资源键、产物与数量；服务端不读取或推断 `RecipeType`，也不加载 alias 或分类白名单。
 
-每个虚拟输入槽同时上传规范化后的 JEI slot name。`catalyst`、`activation_item`、`chemical_input` 等语义名称形成独立材料子标签；空名称以及 `input_0`、`input_1` 等普通编号槽统一归入 `ingredients`。子标签参与供给器选择、材料路由、虚拟配方确定性 ID 与服务端校验。
+每个虚拟输入槽同时上传规范化后的 JEI slot name。`catalyst`、`activation_item`、`chemical_input` 等语义名称形成独立材料子标签；空名称以及 `input_0`、`input_1` 等普通编号槽统一归入 `ingredients`。JEI runtime 建索引时会预先创建分类的有界代表布局并收集这些标签，绑定和打开配置时同步给服务端，因此不要求玩家先下单。子标签参与供给器选择、材料路由、虚拟配方确定性 ID 与服务端校验。
 
 第三方配方结构兼容统一由 `data/*/recipe_io_profiles/*.json` 声明。profile 可以按服务端 `RecipeType`、运行时配方类或类名前缀限定作用范围；没有选择器的 profile 是所有配方共用的默认结构词表：
 

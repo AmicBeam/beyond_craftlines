@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Set;
 
 public record BindMachinePayload(long targetPosition, int targetFace, List<String> jeiRecipeTypes,
-                                 boolean remove) implements CustomPacketPayload
+                                 List<String> inputGroups, boolean remove) implements CustomPacketPayload
 {
     public static final Type<BindMachinePayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "bind_machine"));
@@ -31,14 +31,16 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             ByteBufCodecs.VAR_INT, BindMachinePayload::targetFace,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(256), 32),
             BindMachinePayload::jeiRecipeTypes,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
+            BindMachinePayload::inputGroups,
             ByteBufCodecs.BOOL, BindMachinePayload::remove,
             BindMachinePayload::new);
 
     public static BindMachinePayload of(BlockPos target, Set<ResourceLocation> types,
-                                        net.minecraft.core.Direction face, boolean remove)
+                                        net.minecraft.core.Direction face, List<String> inputGroups, boolean remove)
     { return new BindMachinePayload(target.asLong(), face.get3DDataValue(),
             types.stream().map(Object::toString).sorted().limit(32).toList(),
-            remove); }
+            inputGroups.stream().limit(512).toList(), remove); }
 
     public static void handle(BindMachinePayload payload, IPayloadContext context)
     {
@@ -52,6 +54,8 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             LinkedHashSet<ResourceLocation> types = new LinkedHashSet<>();
             payload.jeiRecipeTypes().stream().limit(32).map(ResourceLocation::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(types::add);
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry
+                    .rememberEncoded(payload.inputGroups());
             boolean connectionMode = DeviceBindingRegistry.hasProvisionerConnectionSelection(player);
             boolean provisionerRecipeMode = DeviceBindingRegistry.hasProvisionerRecipeSelection(player);
             if (payload.remove() && !connectionMode)

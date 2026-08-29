@@ -92,7 +92,9 @@ public final class NetworkLinkerItem extends Item
                         context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
                 Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
                 PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(), true));
+                        context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
+                                .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
+                                .JeiCatalystIndex.inputGroupsFor(types)), true));
             }
             return InteractionResult.SUCCESS;
         }
@@ -102,7 +104,9 @@ public final class NetworkLinkerItem extends Item
                     context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
             Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
             PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                    context.getClickedFace(), false));
+                    context.getClickedFace(), com.amicbeam.beyondcraftlines.common.crafting
+                            .JeiInputGroupRegistry.encode(com.amicbeam.beyondcraftlines.client.integration.jei
+                            .JeiCatalystIndex.inputGroupsFor(types)), false));
         }
         return InteractionResult.SUCCESS;
     }

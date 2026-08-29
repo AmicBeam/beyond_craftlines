@@ -4,6 +4,7 @@ import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import mezz.jei.api.runtime.IJeiRuntime;
 import mezz.jei.api.recipe.IRecipeManager;
 import mezz.jei.api.recipe.category.IRecipeCategory;
+import mezz.jei.api.recipe.RecipeIngredientRole;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -26,6 +27,7 @@ public final class JeiCatalystIndex
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static volatile Map<Identifier, Set<Identifier>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<Identifier, Component> TITLES_BY_TYPE = Map.of();
+    private static volatile Map<Identifier, Set<String>> INPUT_GROUPS_BY_TYPE = Map.of();
     private static volatile Map<Identifier, RecipeHolder<?>> RECIPES_BY_ID = Map.of();
     private static volatile IJeiRuntime runtime;
 
@@ -37,6 +39,7 @@ public final class JeiCatalystIndex
         Map<Identifier, LinkedHashSet<Identifier>> building = new HashMap<>();
         Map<Identifier, Component> titles = new HashMap<>();
         Map<Identifier, RecipeHolder<?>> recipes = new LinkedHashMap<>();
+        Map<Identifier, Set<String>> inputGroups = new HashMap<>();
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
             try
@@ -49,7 +52,7 @@ public final class JeiCatalystIndex
                         .map(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()))
                         .forEach(item -> building.computeIfAbsent(item, ignored ->
                                 new LinkedHashSet<>()).add(typeId));
-                collectRecipes(manager, category, recipes);
+                inputGroups.put(typeId, collectRecipes(runtime, category, recipes));
             }
             catch (RuntimeException | LinkageError exception)
             {
@@ -61,6 +64,7 @@ public final class JeiCatalystIndex
         building.forEach((item, types) -> frozen.put(item, Set.copyOf(types)));
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
+        INPUT_GROUPS_BY_TYPE = Map.copyOf(inputGroups);
         RECIPES_BY_ID = Map.copyOf(recipes);
         RecipeCatalog.setClientRecipes(recipes.values());
     }
@@ -88,6 +92,13 @@ public final class JeiCatalystIndex
         return TITLES_BY_TYPE.keySet();
     }
 
+    public static Map<Identifier, Set<String>> inputGroupsFor(Set<Identifier> types)
+    {
+        Map<Identifier, Set<String>> result = new HashMap<>();
+        types.forEach(type -> result.put(type, INPUT_GROUPS_BY_TYPE.getOrDefault(type, Set.of())));
+        return Map.copyOf(result);
+    }
+
     /** Uses the synced client recipe access to mirror the server's representative-hint validation. */
     public static Set<Identifier> recipeTypes(Set<String> loadedFamilies,
                                                     Map<String, Set<String>> aliases,
@@ -102,28 +113,40 @@ public final class JeiCatalystIndex
         runtime = null;
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
+        INPUT_GROUPS_BY_TYPE = Map.of();
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
         RECIPES_BY_ID = Map.of();
         RecipeCatalog.clearClient();
     }
 
-    private static <T> void collectRecipes(IRecipeManager manager,
+    private static <T> Set<String> collectRecipes(IJeiRuntime runtime,
                                            IRecipeCategory<T> category,
                                            Map<Identifier, RecipeHolder<?>> recipes)
     {
+        IRecipeManager manager = runtime.getRecipeManager();
+        LinkedHashSet<String> groups = new LinkedHashSet<>();
+        var focuses = runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup();
         manager.createRecipeLookup(category.getRecipeType()).includeHidden().get().forEach(value -> {
             RecipeHolder<?> holder;
             if (value instanceof RecipeHolder<?> recipeHolder)
             {
                 recipes.putIfAbsent(recipeHolder.id().identifier(), recipeHolder);
-                return;
             }
-            if (!(value instanceof Recipe<?> recipe)) return;
-            Identifier id = category.getIdentifier(value);
-            if (id == null) return;
-            holder = holder(id, recipe);
-            recipes.putIfAbsent(id, holder);
+            else if (value instanceof Recipe<?> recipe)
+            {
+                Identifier id = category.getIdentifier(value);
+                if (id != null)
+                {
+                    holder = holder(id, recipe);
+                    recipes.putIfAbsent(id, holder);
+                }
+            }
+            manager.createRecipeLayoutDrawable(category, value, focuses).ifPresent(layout ->
+                    layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).forEach(slot ->
+                            groups.add(com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup
+                                    .fromSlotName(slot.getSlotName().orElse("")))));
         });
+        return Set.copyOf(groups);
     }
 
     private static <R extends Recipe<?>> RecipeHolder<R> holder(Identifier id, R recipe)

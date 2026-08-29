@@ -230,4 +230,5 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xmaxerrs', '1000'])
 }
+tasks.withType(Jar).configureEach { includeEmptyDirs = false }
 tasks.named('test', Test) { useJUnitPlatform() }

@@ -1,6 +1,5 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -13,9 +12,9 @@ public final class JeiSlotGroupResolver
 
     public static List<String> resolve(List<Slot> slots)
     {
-        List<String> groups = new ArrayList<>(java.util.Collections.nCopies(
+        List<String> groups = new java.util.ArrayList<>(java.util.Collections.nCopies(
                 slots.size(), RecipeResourceResolver.VANILLA_INPUT_GROUP));
-        List<Integer> unnamed = new ArrayList<>();
+        List<Integer> unnamed = new java.util.ArrayList<>();
         for (int index = 0; index < slots.size(); index++)
         {
             Slot slot = slots.get(index);
@@ -40,22 +39,6 @@ public final class JeiSlotGroupResolver
             return List.copyOf(groups);
         }
 
-        List<Integer> columns = unnamed.stream().map(index -> slots.get(index).x())
-                .filter(java.util.Objects::nonNull).distinct().sorted().toList();
-        if (columns.size() < 2) return List.copyOf(groups);
-        for (int index : unnamed)
-        {
-            Integer x = slots.get(index).x();
-            if (x == null) continue;
-            int column = columns.indexOf(x);
-            groups.set(index, columns.size() == 2 ? (column == 0 ? "input_left" : "input_right")
-                    : columns.size() == 3 ? switch (column)
-                    {
-                        case 0 -> "input_left";
-                        case 1 -> "input_center";
-                        default -> "input_right";
-                    } : "input_column_" + (column + 1));
-        }
         return List.copyOf(groups);
     }
 
@@ -70,7 +53,7 @@ public final class JeiSlotGroupResolver
         return value.substring(0, Math.min(48, value.length()));
     }
 
-    public record Slot(String rawName, Set<String> ingredientTypes, Integer x)
+    public record Slot(String rawName, Set<String> ingredientTypes)
     {
         public Slot
         {

@@ -87,3 +87,4 @@ tasks.named('processResources', ProcessResources) {
     from('THIRD_PARTY_NOTICES.md') { into 'META-INF' }
 }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+tasks.withType(Jar).configureEach { includeEmptyDirs = false }

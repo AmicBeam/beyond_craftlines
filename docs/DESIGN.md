@@ -143,7 +143,7 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络连接器
 
 实验版的第三方机器关系只来自 JEI 正式 recipe catalyst。客户端以 JEI category UID 作为唯一运行时 family，并从当前 JEI 布局上传有界输入槽、精确资源键、产物与数量；服务端不读取或推断 `RecipeType`，也不加载 alias 或分类白名单。
 
-每个虚拟输入槽同时上传规范化后的 JEI slot name。`catalyst`、`activation_item`、`chemical_input` 等语义名称形成独立材料子标签；空名称以及 `input_0`、`input_1` 等普通编号槽统一归入 `ingredients`。JEI runtime 初始化不创建代表布局；首次打开某个机器分类的配置时，只把该分类加入独立的有预算物化队列，收集完成后再同步给服务端，因此仍不要求玩家先下单，也不会把任意全局布局上限当作分类存在性判断。子标签参与供给器选择、材料路由、虚拟配方确定性 ID 与服务端校验。
+每个虚拟输入槽同时上传规范化后的 JEI slot name。`catalyst`、`activation_item`、`chemical_input` 等语义名称形成独立材料子标签；空名称以及 `input_0`、`input_1` 等普通编号槽在 ingredient type 相同时统一归入 `ingredients`，混合资源类型只按 JEI ingredient type 分组，不得按展示坐标猜测业务语义。对 Ars Nouveau 附魔装置、Malum 精魂灌注这类上游未命名但配方对象具有稳定输入段的分类，客户端从 `jei_input_group_profiles` 按 JEI UID、配方类及 public 字段/accessor 的单值或集合长度显式分段；只有分段总数与实际 JEI INPUT 槽完全一致时才应用，否则整体回退到通用规则。JEI runtime 初始化不创建代表布局；首次打开某个机器分类的配置时，只把该分类加入独立的有预算物化队列，收集完成后再同步给服务端，因此仍不要求玩家先下单，也不会把任意全局布局上限当作分类存在性判断。子标签参与供给器选择、材料路由、虚拟配方确定性 ID 与服务端校验。
 
 JEI runtime 只建立分类、催化剂和标题的轻量索引；目标产物和首次打开的机器分类按需进入客户端预算队列，每帧最多处理 32 个 drawable 且不超过 2ms。客户端递归规划只读取已经惰性物化的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。`recipe_io_profiles` 及其数据文件已从实验版删除。
 

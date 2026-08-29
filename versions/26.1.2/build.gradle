@@ -71,4 +71,5 @@ tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add('-Xmaxerrs')
     options.compilerArgs.add('1000')
 }
+tasks.withType(Jar).configureEach { includeEmptyDirs = false }
 tasks.named('test', Test) { useJUnitPlatform() }

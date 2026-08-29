@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.common.crafting.JeiSlotGroupResolver;
+import com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
@@ -26,24 +27,21 @@ public final class JeiVirtualRecipeLayouts
                 .stream().map(slot -> new SlotCapture(new JeiSlotGroupResolver.Slot(
                                 slot.getSlotName().orElse(""), slot.getAllIngredients()
                                 .map(typed -> String.valueOf(typed.getType().getUid()))
-                                .collect(java.util.stream.Collectors.toUnmodifiableSet()), slotX(slot)),
+                                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
                         slot.getAllIngredients().map(typed -> RecipeResourceResolver.fromStack(
                                         typed.getIngredient())).filter(java.util.Objects::nonNull)
                                 .distinct().limit(64).toList()))
                 .filter(slot -> !slot.candidates().isEmpty()).limit(32).toList();
-        List<String> groups = JeiSlotGroupResolver.resolve(slots.stream()
-                .map(SlotCapture::groupSlot).toList());
+        List<String> profileGroups = JeiInputGroupProfileRegistry.resolve(
+                type.toString(), layout.getRecipe(), slots.size());
+        List<String> groups = profileGroups.isEmpty() ? JeiSlotGroupResolver.resolve(slots.stream()
+                .map(SlotCapture::groupSlot).toList()) : profileGroups;
         List<OpenOrderMenuPayload.VirtualInput> inputs = java.util.stream.IntStream.range(0, slots.size())
                 .mapToObj(index -> new OpenOrderMenuPayload.VirtualInput(
                         groups.get(index), slots.get(index).candidates())).toList();
         return inputs.isEmpty() ? null : new Captured(type, output, inputs);
     }
 
-    private static Integer slotX(mezz.jei.api.gui.ingredient.IRecipeSlotView slot)
-    {
-        return slot instanceof mezz.jei.api.gui.ingredient.IRecipeSlotDrawable drawable
-                ? drawable.getAreaIncludingBackground().getX() : null;
-    }
     public static net.minecraft.world.item.crafting.RecipeHolder<?> register(Captured captured)
     {
         return VirtualProvisionerRecipeRegistry.register(captured.type().toString(), captured.output().key(),

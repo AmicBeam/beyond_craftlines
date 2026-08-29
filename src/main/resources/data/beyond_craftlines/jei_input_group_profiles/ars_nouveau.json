@@ -1,0 +1,18 @@
+{
+  "jei_type": "ars_nouveau:enchanting_apparatus",
+  "recipe_classes": [
+    "com.hollingsworth.arsnouveau.common.crafting.recipes.EnchantingApparatusRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "reagent",
+      "members": ["reagent"],
+      "cardinality": "single"
+    },
+    {
+      "group": "pedestal_items",
+      "members": ["pedestalItems"],
+      "cardinality": "collection"
+    }
+  ]
+}

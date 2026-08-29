@@ -44,6 +44,8 @@ public final class JeiCatalystIndex
     public static void rebuild(IJeiRuntime runtime)
     {
         JeiCatalystIndex.runtime = runtime;
+        com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(
+                net.minecraft.client.Minecraft.getInstance().getResourceManager());
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
         SEARCH_QUEUE.clear();
         GROUP_QUEUE.clear();
@@ -162,6 +164,7 @@ public final class JeiCatalystIndex
     public static void clear()
     {
         runtime = null;
+        com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
         SEARCH_QUEUE.clear();
         GROUP_QUEUE.clear();
         REQUESTED_OUTPUTS.clear();

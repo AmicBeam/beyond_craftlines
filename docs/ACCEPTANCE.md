@@ -193,6 +193,8 @@
 4. 在尚未从该分类下过单时，打开包含 `catalyst` 与 `input_0`/`input_1` slot name 的 JEI 分类对应供给器，确认客户端按帧预算完成该分类布局物化后打开配置，并直接显示 `catalyst` 与 `ingredients` 子标签；随后下单确认虚拟配方沿用相同标签。
 5. 使用两个 JEI 子分类共享同一个服务端 `RecipeType` 的配方，确认两个 JEI UID 仍是互相隔离的运行时 family。
 6. 使用包含 2、4、5、8、16 个 slot 子标签的分类，分别从供给器和已绑定设备打开配置 GUI，确认子标签按实际数量换行且每行不超过 4 个；父类型、子标签与底部控件互不重叠，翻页后点击命中正确。
+7. 绑定 Ars Nouveau 附魔装置，确认只显示 `reagent`（中心素材）与 `pedestal_items`（基座素材），同为中央 X 坐标的顶部基座素材不得混入中心素材。
+8. 绑定 Malum 精魂灌注，确认只显示 `spirits`（精魂）、`extra_items`（旁路素材）与 `input`（中心素材），不得出现 `input_left`、`input_center`、`input_right` 或 `input_column_N`。
 
 预期结果：
 
@@ -202,6 +204,7 @@
 - 空白供给器的手动模式只允许保存一个 JEI UID；全部分类统一走 JEI-only 临时配方；
 - 不加载 `recipe_type_aliases`、`jei_only_recipe_types` 或服务端 RecipeType 验证配置；
 - 子标签来自 JEI slot name，并随虚拟输入协议传到服务端；
+- 上游未命名但具有显式 `jei_input_group_profiles` 的分类按配方 public 字段/accessor 的输入段数量生成稳定语义标签，数量不匹配时整体回退而不按坐标猜测；
 - 子标签每行最多显示 4 个，超过后动态增加行数；当前页空间不足时父类型列表动态分页；
 - 普通能力式机器可直接绑定 JEI-only 分类，并以分类 UID 作为兼容配方族接受虚拟配方投料和产物抽取；铁砧、酿造台、堆肥桶、锻造台和切石机仍只能作为供给器目标；
 - 原配置不会因非法提交而改变。

@@ -1310,7 +1310,8 @@ public final class RecipeOrderService
         {
             long offered = 0;
             for (InputChunk chunk : result)
-                if (material.key().isSame(chunk.key()))
+                if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), chunk.key()))
                     offered = SaturatingLongMath.add(offered, chunk.amount());
             // A full input tank/slot containing this same resource already satisfies this kind
             // for the current machine cycle. Keep its outstanding order amount for later rounds,
@@ -1362,7 +1363,8 @@ public final class RecipeOrderService
         {
             long offered = result.stream().map(RoutedInputChunk::chunk)
                     .filter(chunk -> material.inputGroup().equals(chunk.inputGroup())
-                            && material.key().isSame(chunk.key()))
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()))
                     .mapToLong(InputChunk::amount).reduce(0, SaturatingLongMath::add);
             long present = 0;
             if (offered <= 0) for (RecipeOrderJob.MachineLocation machine : machines)
@@ -1373,7 +1375,9 @@ public final class RecipeOrderService
                         level, machine.position(), material.key()));
             }
             boolean deferred = deferredByResourceConflict.stream().anyMatch(chunk ->
-                    material.inputGroup().equals(chunk.inputGroup()) && material.key().isSame(chunk.key()));
+                    material.inputGroup().equals(chunk.inputGroup())
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()));
             if (!InputGroupRouteLogic.canContinuePartialRound(offered, present, deferred)) return List.of();
         }
         return List.copyOf(result);
@@ -1397,7 +1401,9 @@ public final class RecipeOrderService
         List<RecipePlan.Material> remaining = new ArrayList<>();
         for (RecipePlan.Material material : requested)
         {
-            KeyAmount stock = available.stream().filter(value -> material.key().isSame(value.key()))
+            KeyAmount stock = available.stream().filter(value ->
+                            com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                    .exact(material.key(), value.key()))
                     .findFirst().orElse(null);
             if (stock == null)
             {
@@ -1430,7 +1436,8 @@ public final class RecipeOrderService
             for (int i = 0; i < delivered.size() && left > 0; i++)
             {
                 if (!material.inputGroup().equals(delivered.get(i).inputGroup())
-                        || !material.key().isSame(delivered.get(i).key())) continue;
+                        || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), delivered.get(i).key())) continue;
                 long used = Math.min(left, unused.get(i));
                 left -= used;
                 unused.set(i, unused.get(i) - used);
@@ -1449,7 +1456,8 @@ public final class RecipeOrderService
         if (needed <= 0) return 0;
         for (var entry : available.entrySet())
         {
-            if (entry.getValue() <= 0 || !requested.isSame(entry.getKey())) continue;
+            if (entry.getValue() <= 0 || !com.amicbeam.beyondcraftlines.common.crafting
+                    .StackKeyMatch.exact(requested, entry.getKey())) continue;
             if (ingredient != null && (!(entry.getKey() instanceof ItemStackKey itemKey)
                     || !ingredient.test(itemKey.getReadOnlyStack()))) continue;
             long amount = Math.min(entry.getValue(), needed);

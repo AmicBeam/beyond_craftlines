@@ -773,6 +773,10 @@ public final class RecipeOrderService
                     working, step, wait.remainingInputs());
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
+            if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
+                    server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
+                dispatch = dispatchableInputsAcross(
+                        server, directLocations, wait.remainingInputs(), selection.chunks());
             if (selection == null || dispatch.isEmpty())
                 debugFeedingStall(server, working, step, wait, directLocations,
                         selection == null ? "selection_missing" : "no_insert_capacity");
@@ -1481,6 +1485,45 @@ public final class RecipeOrderService
         LOGGER.debug("Craftlines feeding stall: order={}, step={}/{}, family={}, reason={}, remaining={}, "
                         + "reserved={}, capacities={}, contents={}", job.id(), job.nextStep() + 1, job.stepCount(),
                 step.family(), reason, remaining, reserved, capacities, contents);
+    }
+
+    /** Returns stale same-channel inputs that prevent a bound machine from starting the next recipe step. */
+    private static boolean returnIncompatibleMachineInputs(
+            MinecraftServer server, UnifiedStorage storage,
+            List<RecipeOrderJob.MachineLocation> machines, List<RecipePlan.Material> requested)
+    {
+        boolean moved = false;
+        Set<MachineKey> visited = new java.util.HashSet<>();
+        for (RecipeOrderJob.MachineLocation machine : machines)
+        {
+            MachineKey machineKey = new MachineKey(machine.dimension(), machine.position());
+            if (!visited.add(machineKey)) continue;
+            ServerLevel level = server.getLevel(machine.dimension());
+            if (level == null) continue;
+            for (KeyAmount present : BoundMachineAutomation.visibleCapabilityStacks(
+                    level, machine.position()))
+            {
+                boolean sameChannel = requested.stream().anyMatch(material ->
+                        material.key().getTypeId().equals(present.key().getTypeId()));
+                boolean stillRequested = requested.stream().anyMatch(material ->
+                        com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                .exact(material.key(), present.key()));
+                if (!sameChannel || stillRequested) continue;
+                KeyAmount simulatedRemainder = storage.insert(present.key(), present.amount(), true);
+                long transferable = present.amount() - simulatedRemainder.amount();
+                if (transferable <= 0) continue;
+                for (KeyAmount extracted : BoundMachineAutomation.extractStacks(
+                        level, machine.position(), present.key(), transferable))
+                {
+                    KeyAmount remainder = storage.insert(extracted.key(), extracted.amount(), false);
+                    long accepted = extracted.amount() - remainder.amount();
+                    if (accepted > 0) moved = true;
+                    if (!remainder.isEmpty()) BoundMachineAutomation.insert(
+                            level, machine.position(), remainder.key(), remainder.amount());
+                }
+            }
+        }
+        return moved;
     }
 
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,

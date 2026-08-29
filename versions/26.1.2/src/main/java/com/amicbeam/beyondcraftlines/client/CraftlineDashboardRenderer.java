@@ -144,8 +144,8 @@ public final class CraftlineDashboardRenderer implements BlockEntityRenderer<
             case SOUTH -> pose.mulPose(Axis.YP.rotationDegrees(180));
             case WEST -> pose.mulPose(Axis.YP.rotationDegrees(90));
             case EAST -> pose.mulPose(Axis.YP.rotationDegrees(-90));
-            case UP -> pose.mulPose(Axis.XP.rotationDegrees(-90));
-            case DOWN -> pose.mulPose(Axis.XP.rotationDegrees(90));
+            case UP -> pose.mulPose(Axis.XP.rotationDegrees(90));
+            case DOWN -> pose.mulPose(Axis.XP.rotationDegrees(-90));
             default -> { }
         }
     }

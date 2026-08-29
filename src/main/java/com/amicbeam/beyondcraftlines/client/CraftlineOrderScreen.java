@@ -1553,9 +1553,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static Component localizedRecipeType(RecipeHolder<?> recipe)
     {
-        ResourceLocation type = BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
+        String family = com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.family(recipe);
+        ResourceLocation type = recipe.value().getType() == null ? ResourceLocation.tryParse(family)
+                : BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
         if (type == null) return Component.translatable("tooltip.beyond_craftlines.recipe_type",
-                recipe.value().getType().toString()).withStyle(ChatFormatting.GRAY);
+                family == null ? "unknown" : family).withStyle(ChatFormatting.GRAY);
         return JeiCatalystIndex.recipeTypeTitle(type)
                 .<Component>map(title -> Component.translatable("tooltip.beyond_craftlines.recipe_type_localized",
                         type, title).withStyle(ChatFormatting.GRAY))

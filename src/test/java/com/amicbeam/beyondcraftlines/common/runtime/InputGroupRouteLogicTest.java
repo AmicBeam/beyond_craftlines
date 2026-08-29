@@ -7,6 +7,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class InputGroupRouteLogicTest
@@ -58,6 +59,17 @@ final class InputGroupRouteLogicTest
                 "an input already present in the altar satisfies this round");
         assertFalse(InputGroupRouteLogic.canContinuePartialRound(0, 0, false),
                 "a genuinely unwritable input still freezes the round");
+    }
+
+    @Test
+    void itemAndChemicalInputsUseIndependentCapacityChannels()
+    {
+        var item = InputGroupRouteLogic.resourceChannel("machine", "beyonddimensions:stack_type/item");
+        var chemical = InputGroupRouteLogic.resourceChannel("machine", "beyonddimensions:stack_type/chemical");
+        var anotherItem = InputGroupRouteLogic.resourceChannel("machine", "beyonddimensions:stack_type/item");
+
+        assertNotEquals(item, chemical);
+        assertEquals(item, anotherItem);
     }
 
     private static InputGroupRouteLogic.Candidate<String> direct(String id, int priority)

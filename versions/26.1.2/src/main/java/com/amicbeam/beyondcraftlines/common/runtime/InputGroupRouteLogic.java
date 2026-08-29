@@ -10,6 +10,8 @@ final class InputGroupRouteLogic
 {
     enum Kind { DIRECT_MACHINE, PROVISIONER }
 
+    record ResourceChannel<T>(T endpoint, String stackType) {}
+
     record Candidate<T>(T endpoint, Kind kind, int groupPriority, int endpointPriority, String orderKey)
     {
         Candidate
@@ -41,4 +43,7 @@ final class InputGroupRouteLogic
     /** A different resource planned for the same machine may be committed first and retried next tick. */
     static boolean canContinuePartialRound(long offered, long present, boolean deferredByResourceConflict)
     { return offered > 0 || present > 0 || deferredByResourceConflict; }
+
+    static <T> ResourceChannel<T> resourceChannel(T endpoint, Object stackType)
+    { return new ResourceChannel<>(endpoint, String.valueOf(stackType)); }
 }

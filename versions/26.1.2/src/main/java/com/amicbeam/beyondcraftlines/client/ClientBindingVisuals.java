@@ -36,6 +36,7 @@ public final class ClientBindingVisuals
     private static final double SURFACE_OFFSET = 0.003D;
     private static final Map<Long, List<PositionedVisual>> BY_CHUNK = new HashMap<>();
     private static Identifier dimension;
+    private static boolean snapshotReady;
     private static BlockPos selectedProvisioner;
     private static List<BoundFace> boundFaces = List.of();
 
@@ -50,6 +51,7 @@ public final class ClientBindingVisuals
     {
         BY_CHUNK.clear();
         dimension = null;
+        snapshotReady = false;
         selectedProvisioner = null;
         boundFaces = List.of();
         ClientPacketDistributor.sendToServer(new RequestBindingVisualsPayload());
@@ -59,6 +61,7 @@ public final class ClientBindingVisuals
     {
         BY_CHUNK.clear();
         dimension = null;
+        snapshotReady = false;
         selectedProvisioner = null;
         boundFaces = List.of();
     }
@@ -68,6 +71,13 @@ public final class ClientBindingVisuals
         return BY_CHUNK.getOrDefault(ChunkPos.pack(position.getX() >> 4, position.getZ() >> 4), List.of())
                 .stream().anyMatch(entry -> entry.position().equals(position)
                         && entry.visual().blockId().equals(blockId));
+    }
+
+    public static boolean bindingSnapshotReady()
+    {
+        Minecraft minecraft = Minecraft.getInstance();
+        return snapshotReady && minecraft.level != null
+                && minecraft.level.dimension().identifier().equals(dimension);
     }
 
     public static boolean isEditingProvisionerConnections()
@@ -83,6 +93,7 @@ public final class ClientBindingVisuals
         if (!currentDimension.equals(dimension))
         {
             dimension = currentDimension;
+            snapshotReady = false;
             BY_CHUNK.clear();
             selectedProvisioner = null;
             boundFaces = List.of();
@@ -409,6 +420,7 @@ public final class ClientBindingVisuals
         }
         boundFaces = List.copyOf(connections);
         dimension = payloadDimension;
+        snapshotReady = true;
     }
 
     private record BindingVisual(Identifier blockId, boolean provisionerTarget) {}

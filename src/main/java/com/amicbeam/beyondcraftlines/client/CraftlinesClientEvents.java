@@ -113,7 +113,14 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent public static void render(RenderLevelStageEvent event)
-        { ClientBindingVisuals.render(event); }
+        {
+            ClientBindingVisuals.render(event);
+            if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES)
+            {
+                com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
+                flushPendingBoundConfig();
+            }
+        }
 
         @SubscribeEvent public static void recipesUpdated(RecipesUpdatedEvent event)
         {
@@ -141,9 +148,13 @@ public final class CraftlinesClientEvents
             var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
             boolean provisioner = state.is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks
                     .CRAFTLINE_PROVISIONER.get());
-            if (!provisioner && !ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId))
+            boolean knownBound = !provisioner && ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId);
+            LinkerAttackPolicy.Action action = LinkerAttackPolicy.decide(
+                    provisioner, knownBound, ClientBindingVisuals.bindingSnapshotReady());
+            if (action == LinkerAttackPolicy.Action.IGNORE) return;
+            if (action == LinkerAttackPolicy.Action.VERIFY_WITH_SERVER)
             {
-                event.setCanceled(true);
+                sendBoundConfig(hit.getBlockPos(), java.util.Set.of());
                 return;
             }
             var types = new java.util.LinkedHashSet<>(
@@ -159,7 +170,7 @@ public final class CraftlinesClientEvents
                 pendingBoundConfig = new PendingBoundConfig(hit.getBlockPos().immutable(), Set.copyOf(types));
             }
             else sendBoundConfig(hit.getBlockPos(), types);
-            event.setCanceled(true);
+            event.setCanceled(action == LinkerAttackPolicy.Action.OPEN_AND_CANCEL_ATTACK);
         }
 
         private static void flushPendingBoundConfig()

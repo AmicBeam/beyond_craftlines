@@ -1328,7 +1328,7 @@ public final class RecipeOrderService
     {
         List<RoutedInputChunk> result = new ArrayList<>();
         List<InputChunk> deferredByResourceConflict = new ArrayList<>();
-        Map<MachineKey, PlannedInput> planned = new java.util.HashMap<>();
+        Map<InputGroupRouteLogic.ResourceChannel<MachineKey>, PlannedInput> planned = new java.util.HashMap<>();
         for (InputChunk chunk : selected)
         {
             long remaining = chunk.amount();
@@ -1338,7 +1338,8 @@ public final class RecipeOrderService
                 ServerLevel level = server.getLevel(machine.dimension());
                 if (level == null) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
-                PlannedInput previous = planned.get(key);
+                var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
+                PlannedInput previous = planned.get(channel);
                 if (previous != null && !previous.key().isSame(chunk.key()))
                 {
                     deferredByResourceConflict.add(chunk);
@@ -1351,7 +1352,7 @@ public final class RecipeOrderService
                 if (offered <= 0) continue;
                 result.add(new RoutedInputChunk(machine, new InputChunk(
                         chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup())));
-                planned.put(key, new PlannedInput(chunk.key(),
+                planned.put(channel, new PlannedInput(chunk.key(),
                         SaturatingLongMath.add(alreadyPlanned, offered)));
                 remaining -= offered;
                 if (remaining <= 0) break;

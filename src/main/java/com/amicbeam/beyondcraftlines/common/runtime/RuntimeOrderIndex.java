@@ -29,5 +29,6 @@ final class RuntimeOrderIndex<N, M>
     }
 
     void occupyMachine(M machine) { occupiedMachines.add(machine); }
+    void releaseMachine(M machine) { occupiedMachines.remove(machine); }
     boolean isMachineOccupied(M machine) { return occupiedMachines.contains(machine); }
 }

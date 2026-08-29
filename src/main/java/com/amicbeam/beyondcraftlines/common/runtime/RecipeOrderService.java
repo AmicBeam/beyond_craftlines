@@ -355,9 +355,18 @@ public final class RecipeOrderService
                     continue;
                 attempted = true;
                 attemptedSteps.add(step);
+                RecipeOrderJob.ExternalWait previousWait = execution.externalWait();
                 working = executeStep(server, working.activate(step), index).deactivate();
                 if (working.status() == RecipeOrderJob.Status.ERROR) return working;
-                if (working.executions().get(step).externalWait() != null)
+                RecipeOrderJob.ExternalWait currentWait = working.executions().get(step).externalWait();
+                if (previousWait != null && currentWait == null)
+                {
+                    previousWait.occupiedMachines().forEach(machine -> index.releaseMachine(
+                            new MachineKey(machine.dimension(), machine.position())));
+                    inFlightOutputs.removeIf(output -> com.amicbeam.beyondcraftlines.common.crafting
+                            .StackKeyMatch.exact(execution.step().outputKey(), output));
+                }
+                if (currentWait != null)
                     inFlightOutputs.add(working.executions().get(step).step().outputKey());
             }
         }

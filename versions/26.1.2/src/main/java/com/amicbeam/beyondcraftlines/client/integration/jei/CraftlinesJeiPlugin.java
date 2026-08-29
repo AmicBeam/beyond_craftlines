@@ -147,7 +147,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     }
 
     public static void orderTarget(IStackKey<?> target)
-    { queueOrder(new OpenOrderMenuPayload(target, "", "")); }
+    {
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client middle-click open page target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+        queueOrder(new OpenOrderMenuPayload(target, "", ""));
+    }
 
     public static @Nullable OpenOrderMenuPayload resolveOrderTarget(IStackKey<?> target)
     { return focusedOrderPayload(target); }
@@ -158,15 +164,33 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static @Nullable OpenOrderMenuPayload focusedOrderPayload(IStackKey<?> target)
     {
         IJeiRuntime current = runtime;
-        if (current == null || target == null || target.isEmpty()) return null;
+        if (current == null || target == null || target.isEmpty())
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                    "{} client JEI search unavailable runtime={} target={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    current != null, com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+            return null;
+        }
         var typed = current.getIngredientManager().createTypedIngredient(target.getReadOnlyStack(), false);
-        if (typed.isEmpty()) return null;
+        if (typed.isEmpty())
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                    "{} client JEI typed ingredient missing target={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+            return null;
+        }
         var focusFactory = current.getJeiHelpers().getFocusFactory();
         var focus = focusFactory.createFocus(RecipeIngredientRole.OUTPUT, typed.get());
         java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses = java.util.List.of(focus);
         var focusGroup = focusFactory.createFocusGroup(focuses);
         var categories = current.getRecipeManager().createRecipeCategoryLookup()
                 .limitFocus(focuses).includeHidden().get().toList();
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client JEI focused search target={} categories={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target), categories.size());
         for (var category : categories)
         {
             OpenOrderMenuPayload payload = focusedOrderPayload(
@@ -179,6 +203,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     current, target, category, focuses, focusGroup, false);
             if (payload != null) return payload;
         }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                "{} client JEI focused search found no recipe target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         return null;
     }
 
@@ -192,6 +220,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         var category = (mezz.jei.api.recipe.category.IRecipeCategory<Object>) rawCategory;
         var recipes = current.getRecipeManager().createRecipeLookup(category.getRecipeType())
                 .limitFocus(focuses).includeHidden().get().toList();
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client JEI category={} recipes={} exactPass={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                category.getRecipeType().getUid(), recipes.size(), exactOnly);
         for (Object recipe : recipes)
         {
             var layout = current.getRecipeManager().createRecipeLayoutDrawable(
@@ -204,12 +236,24 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (exactOnly != exact) continue;
             Identifier serverRecipe = serverCraftingRecipeId(layout);
             if (serverRecipe != null)
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} client JEI match serverRecipe={} exact={} target={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        serverRecipe, exact,
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
                 return new OpenOrderMenuPayload(target, serverRecipe.toString(),
                         captured.type().toString(), java.util.List.of(), captured.output().amount());
+            }
             var focusedCapture = exact ? captured : new JeiVirtualRecipeLayouts.Captured(
                     captured.type(), new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
                     target, captured.output().amount()), captured.inputs());
             Identifier virtualRecipe = JeiVirtualRecipeLayouts.register(focusedCapture).id().identifier();
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                    "{} client JEI match virtualRecipe={} exact={} inputs={} target={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    virtualRecipe, exact, captured.inputs().size(),
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
             return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
                     captured.inputs(), captured.output().amount());
         }
@@ -222,6 +266,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     private static void queueOrder(OpenOrderMenuPayload payload)
     {
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client send open-order recipe={} type={} virtualInputs={} target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                payload.recipeId(), payload.jeiRecipeType(), payload.virtualInputs().size(),
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(payload.target()));
         if (runtime == null)
         {
             ClientPacketDistributor.sendToServer(payload);

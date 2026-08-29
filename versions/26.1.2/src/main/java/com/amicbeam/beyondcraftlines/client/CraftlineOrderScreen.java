@@ -328,23 +328,42 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     "gui.beyond_craftlines.middle_click_recipe_search").getString();
             previewError = "";
         }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client screen initial target={} initialRecipe={} pinned={} selected={} searchPending={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
+                menu.initialRecipe(), menu.initialRecipePinned(),
+                selected == null ? "null" : selected.id().identifier(), targetRecipeSearchPending);
         rebuildTree();
         requestNetworkAmount();
     }
 
     private void resolveTargetRecipeInsideScreen()
     {
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client page search start target={} network={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
+                menu.networkId());
         targetRecipeSearchPending = false;
         var payload = com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                 .resolveOrderTarget(menu.initialTarget());
         if (payload == null)
         {
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                    "{} client page search failed target={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
             loadingStatus = "";
             previewError = localizedPlanningMessage(
                     "error.beyond_craftlines.middle_click_recipe_not_found");
             rebuildTree(false);
             return;
         }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client page search resolved recipe={} type={} virtualInputs={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                payload.recipeId(), payload.jeiRecipeType(), payload.virtualInputs().size());
         loadingStatus = Component.translatable(
                 "gui.beyond_craftlines.middle_click_recipe_search").getString();
         com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
@@ -444,6 +463,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (orderButton != null) orderButton.active = false;
             return;
         }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client submit nonce={} count={} stockRevision={} recipeEpoch={} target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                previewNonce, amountValue(), proposalStockRevision, proposalRecipeEpoch,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
         ClientPacketDistributor.sendToServer(new SubmitOrderPayload(
                 menu.targetToken(), amountValue(), blockingMode,
                 outputDestination.id(), previewNonce, proposalStockRevision, proposalRecipeEpoch));
@@ -2031,6 +2055,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     loadingStatus = "";
                     if (completedFailure != null)
                     {
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                                "{} client plan failed nonce={} target={} error={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                nonce, com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target),
+                                completedFailure.toString(), completedFailure);
                         if (completedFailure instanceof CancellationException
                                 || "client planning cancelled".equals(completedFailure.getMessage())) return;
                         if (refreshSnapshotIfMissing)
@@ -2055,6 +2084,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             new IngredientSlotKey(key.recipe(), key.slot()), value));
                     if (!completed.craftable())
                     {
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                                "{} client plan missing nonce={} recipes={} ingredients={} missing={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                nonce, completed.recipes().size(), completed.ingredients().size(),
+                                completed.missing().size());
                         if (refreshSnapshotIfMissing)
                         {
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
@@ -2067,6 +2101,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         rebuildTree(false);
                         return;
                     }
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                            "{} client plan ready nonce={} recipes={} ingredients={} extraction={} target={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            nonce, completed.recipes().size(), completed.ingredients().size(),
+                            completed.extraction().size(),
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+                    completed.recipes().forEach((key, recipe) ->
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                                    "{} client plan recipe key={} recipe={}",
+                                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(key), recipe));
                     uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
                     clearDisplayMetrics();
                     completed.extraction().entrySet().stream().filter(entry -> !target.isSame(entry.getKey()))

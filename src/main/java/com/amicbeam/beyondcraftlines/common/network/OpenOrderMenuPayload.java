@@ -88,6 +88,12 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     ? null : ResourceLocation.tryParse(payload.recipeId());
             ResourceLocation requestedType = payload.jeiRecipeType().isBlank()
                     ? null : ResourceLocation.tryParse(payload.jeiRecipeType());
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                    "{} server open-order request player={} recipe={} type={} virtualInputs={} target={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    player.getGameProfile().getName(), requestedRecipe, requestedType,
+                    payload.virtualInputs().size(),
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
             if (target == null || target.isEmpty()
                     || (!payload.jeiRecipeType().isBlank() && requestedType == null)
                     || (!payload.recipeId().isBlank() && requestedRecipe == null))
@@ -135,6 +141,12 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 }
                 catch (IllegalArgumentException exception)
                 {
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                            "{} server virtual recipe rejected recipe={} type={} target={} error={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            requestedRecipe, requestedType,
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target),
+                            exception.toString(), exception);
                     player.displayClientMessage(Component.translatable(
                             "error.beyond_craftlines.invalid_order_target"), false);
                     return;
@@ -192,6 +204,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                                       ResourceLocation recipe, boolean pinned,
                                       java.util.Set<String> families, String initialError)
     {
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} server open menu network={} recipe={} pinned={} families={} error={} target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                networkId, recipe, pinned, families.size(), initialError,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                 new CraftlineOrderMenu(id, inventory, networkId, target, recipe, pinned, families),
                 Component.translatable("menu.beyond_craftlines.order")), buffer -> {

@@ -1091,13 +1091,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private RecipeHolder<?> selectedResourceRecipe(IStackKey<?> output, RecipeHolder<?> fallback)
     {
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(output);
-        if (candidates.isEmpty()) return fallback;
         String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(output);
-        ResourceLocation selectedId = resourceRecipeOverrides.get(token);
-        if (selectedId == null) selectedId = automaticResourceRecipes.get(token);
+        ResourceLocation manualId = resourceRecipeOverrides.get(token);
+        ResourceLocation automaticId = automaticResourceRecipes.get(token);
+        ResourceLocation selectedId = manualId;
+        if (selectedId == null) selectedId = automaticId;
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().equals(selectedId)) return candidate;
+        NodeMetric metric = nodeMetric(output);
+        ResourceLocation plannedId = metric == null ? null : metric.recipe();
+        // The server preview keys node metrics by the complete resource, so unlike the coarse
+        // recipe-choice map it can distinguish two SlashBlade states in the same tree.
+        if (manualId == null && plannedId != null && menu.recipeProduces(plannedId, token))
+        {
+            RecipeHolder<?> planned = menu.recipe(plannedId);
+            if (planned != null) return planned;
+        }
+        if (candidates.isEmpty()) return fallback;
         return fallback != null && candidates.stream().anyMatch(candidate -> candidate.id().equals(fallback.id()))
                 ? fallback : candidates.getFirst();
     }

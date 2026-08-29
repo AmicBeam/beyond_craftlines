@@ -1087,13 +1087,22 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private RecipeHolder<?> selectedResourceRecipe(IStackKey<?> output, RecipeHolder<?> fallback)
     {
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(output);
-        if (candidates.isEmpty()) return fallback;
         String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(output);
-        Identifier selectedId = resourceRecipeOverrides.get(token);
-        if (selectedId == null) selectedId = automaticResourceRecipes.get(token);
+        Identifier manualId = resourceRecipeOverrides.get(token);
+        Identifier automaticId = automaticResourceRecipes.get(token);
+        Identifier selectedId = manualId;
+        if (selectedId == null) selectedId = automaticId;
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().identifier().equals(selectedId)) return candidate;
+        NodeMetric metric = nodeMetric(output);
+        Identifier plannedId = metric == null ? null : metric.recipe();
+        if (manualId == null && plannedId != null && menu.recipeProduces(plannedId, token))
+        {
+            RecipeHolder<?> planned = menu.recipe(plannedId);
+            if (planned != null) return planned;
+        }
+        if (candidates.isEmpty()) return fallback;
         return fallback != null && candidates.stream().anyMatch(candidate -> candidate.id().identifier().equals(fallback.id().identifier()))
                 ? fallback : candidates.getFirst();
     }

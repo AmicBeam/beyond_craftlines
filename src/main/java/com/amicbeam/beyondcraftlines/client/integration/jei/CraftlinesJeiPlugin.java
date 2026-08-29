@@ -61,16 +61,15 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
                 if (output == null) return null;
-                boolean virtualRecipe = JeiCatalystIndex.shouldUploadVirtualRecipe(recipeType);
-                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = virtualRecipe
-                        ? virtualInputs(recipeLayoutDrawable) : java.util.List.of();
-                if (virtualRecipe && virtualInputs.isEmpty()) return null;
-                ResourceLocation recipe = virtualRecipe
-                        ? com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                        .register(recipeType.toString(), output.key(), output.amount(), virtualInputs.stream()
-                                .map(OpenOrderMenuPayload.VirtualInput::candidates).toList()).id()
-                        : findRecipeId(recipeLayoutDrawable);
-                return recipe == null ? null : new OrderButtonController(
+                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = virtualInputs(recipeLayoutDrawable);
+                if (virtualInputs.isEmpty()) return null;
+                ResourceLocation recipe = com.amicbeam.beyondcraftlines.common.crafting
+                        .VirtualProvisionerRecipeRegistry.register(recipeType.toString(), output.key(),
+                                output.amount(), virtualInputs.stream().map(input ->
+                                        new com.amicbeam.beyondcraftlines.common.crafting
+                                                .VirtualProvisionerRecipeRegistry.InputSlot(
+                                                input.inputGroup(), input.candidates())).toList()).id();
+                return new OrderButtonController(
                         output.key(), recipe, recipeType, virtualInputs, output.amount(), scaledIcon);
             }
         });
@@ -187,11 +186,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             IRecipeLayoutDrawable<?> layout)
     {
         return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).stream()
-                .map(slot -> slot.getAllIngredients()
-                        .map(typed -> RecipeResourceResolver.fromStack(typed.getIngredient()))
-                        .filter(java.util.Objects::nonNull).distinct().limit(64).toList())
-                .filter(values -> !values.isEmpty()).limit(32)
-                .map(OpenOrderMenuPayload.VirtualInput::new).toList();
+                .map(slot -> new OpenOrderMenuPayload.VirtualInput(
+                        com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup.fromSlotName(
+                                slot.getSlotName().orElse("")),
+                        slot.getAllIngredients().map(typed -> RecipeResourceResolver.fromStack(
+                                        typed.getIngredient())).filter(java.util.Objects::nonNull)
+                                .distinct().limit(64).toList()))
+                .filter(input -> !input.candidates().isEmpty()).limit(32).toList();
     }
 
     private static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)

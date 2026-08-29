@@ -1,23 +1,14 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
-import com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint;
-import com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeTypeVisibility;
-import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
-import mezz.jei.api.recipe.IRecipeManager;
-import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.RecipeHolder;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -27,7 +18,6 @@ public final class JeiCatalystIndex
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static volatile Map<Item, Set<ResourceLocation>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<ResourceLocation, Component> TITLES_BY_TYPE = Map.of();
-    private static volatile Map<ResourceLocation, List<RecipeFamilyHint>> HINTS_BY_TYPE = Map.of();
     private static volatile IJeiRuntime runtime;
 
     private JeiCatalystIndex() {}
@@ -37,7 +27,6 @@ public final class JeiCatalystIndex
         JeiCatalystIndex.runtime = runtime;
         Map<Item, LinkedHashSet<ResourceLocation>> building = new HashMap<>();
         Map<ResourceLocation, Component> titles = new HashMap<>();
-        Map<ResourceLocation, List<RecipeFamilyHint>> hints = new HashMap<>();
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
             try
@@ -50,7 +39,6 @@ public final class JeiCatalystIndex
                         .map(ItemStack::getItem)
                         .forEach(item -> building.computeIfAbsent(item, ignored ->
                                 new LinkedHashSet<>()).add(typeId));
-                hints.put(typeId, collectHints(manager, category, typeId));
             }
             catch (RuntimeException | LinkageError exception)
             {
@@ -62,7 +50,6 @@ public final class JeiCatalystIndex
         building.forEach((item, types) -> frozen.put(item, Set.copyOf(types)));
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
-        HINTS_BY_TYPE = Map.copyOf(hints);
     }
 
     public static void refresh()
@@ -101,33 +88,7 @@ public final class JeiCatalystIndex
                                                     boolean debugMappings)
     {
         if (TITLES_BY_TYPE.isEmpty()) refresh();
-        Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(ResourceLocation::toString)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        Set<String> visible = ManualRecipeTypeVisibility.visibleOrAllWhenUnresolved(
-                allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
-        return visible.stream().map(ResourceLocation::parse)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
-
-    public static boolean usesCompatibilityMode(ResourceLocation type, Set<String> loadedFamilies,
-                                                Map<String, Set<String>> aliases)
-    {
-        return ManualRecipeTypeVisibility.usesCompatibilityMode(type.toString(), loadedFamilies,
-                aliases, verifiedHintFamilies());
-    }
-
-    public static boolean shouldUploadVirtualRecipe(ResourceLocation type)
-    {
-        return !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
-                .serverRecipeValidationEnabled()
-                || com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.contains(type);
-    }
-
-    public static List<RecipeFamilyHint> hintsFor(Set<ResourceLocation> types)
-    {
-        return types.stream().sorted(java.util.Comparator.comparing(ResourceLocation::toString))
-                .flatMap(type -> HINTS_BY_TYPE.getOrDefault(type, List.of()).stream())
-                .limit(128).toList();
+        return recipeTypes();
     }
 
     public static void clear()
@@ -135,56 +96,6 @@ public final class JeiCatalystIndex
         runtime = null;
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
-        HINTS_BY_TYPE = Map.of();
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
     }
-
-    private static <T> List<RecipeFamilyHint> collectHints(IRecipeManager manager,
-                                                            IRecipeCategory<T> category,
-                                                            ResourceLocation typeId)
-    {
-        Map<String, RecipeFamilyHint> byFamily = new java.util.LinkedHashMap<>();
-        manager.createRecipeLookup(category.getRecipeType()).includeHidden().get().limit(64).forEach(value -> {
-            RecipeHolder<?> holder = null;
-            if (value instanceof RecipeHolder<?> recipeHolder) holder = recipeHolder;
-            else if (value instanceof Recipe<?> recipe)
-            {
-                ResourceLocation id = category.getRegistryName(value);
-                if (id != null) holder = holder(id, recipe);
-            }
-            if (holder == null) return;
-            try
-            {
-                String family = RecipePlanningService.family(holder);
-                if (family == null || family.isBlank()) return;
-                byFamily.putIfAbsent(family, new RecipeFamilyHint(
-                        typeId.toString(), family, holder.id().toString()));
-            }
-            catch (RuntimeException ignored)
-            {
-                // A malformed third-party JEI recipe must not abort the entire catalyst index.
-            }
-        });
-        return List.copyOf(byFamily.values());
-    }
-
-    private static Map<String, Set<String>> verifiedHintFamilies()
-    {
-        var level = Minecraft.getInstance().level;
-        if (level == null) return Map.of();
-        Map<String, LinkedHashSet<String>> verified = new HashMap<>();
-        HINTS_BY_TYPE.forEach((type, hints) -> hints.forEach(hint -> {
-            ResourceLocation recipeId = ResourceLocation.tryParse(hint.recipeId());
-            if (recipeId == null) return;
-            var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
-            if (holder != null && hint.family().equals(RecipePlanningService.family(holder)))
-                verified.computeIfAbsent(type.toString(), ignored -> new LinkedHashSet<>()).add(hint.family());
-        }));
-        Map<String, Set<String>> frozen = new HashMap<>();
-        verified.forEach((type, families) -> frozen.put(type, Set.copyOf(families)));
-        return Map.copyOf(frozen);
-    }
-
-    private static <R extends Recipe<?>> RecipeHolder<R> holder(ResourceLocation id, R recipe)
-    { return new RecipeHolder<>(id, recipe); }
 }

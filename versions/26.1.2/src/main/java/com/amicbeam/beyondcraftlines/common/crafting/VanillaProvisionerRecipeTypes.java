@@ -28,8 +28,7 @@ public final class VanillaProvisionerRecipeTypes
     { return type != null && PROVISIONER_ONLY.contains(type.toString()); }
 
     public static boolean isJeiOnly(Object type)
-    { return type != null && (!JeiOnlyRecipeTypeRegistry.serverRecipeValidationEnabled()
-            || JeiOnlyRecipeTypeRegistry.contains(type)); }
+    { return type != null; }
 
     public static String categoryForBlock(Object blockId)
     { return blockId == null ? null : CATEGORY_BY_BLOCK.get(blockId.toString()); }
@@ -42,10 +41,7 @@ public final class VanillaProvisionerRecipeTypes
     }
 
     public static <T> Set<T> executable(Set<T> requested)
-    {
-        return requested.stream().filter(type -> !isJeiOnly(type))
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
+    { return Set.of(); }
 
     public static <T> Set<T> directBindable(Set<T> requested)
     {
@@ -55,7 +51,7 @@ public final class VanillaProvisionerRecipeTypes
 
     public static Set<String> directFamiliesForType(Object type, Set<String> mapped)
     {
-        return isJeiOnly(type) || mapped.isEmpty() ? Set.of(type.toString()) : mapped;
+        return type == null ? Set.of() : Set.of(type.toString());
     }
 
     public static <T> boolean acceptsAll(Set<T> requested, Set<T> mapped)
@@ -63,17 +59,15 @@ public final class VanillaProvisionerRecipeTypes
 
     public static <T> Set<String> provisionerFamilies(Set<T> requested, Set<String> mapped)
     {
-        LinkedHashSet<String> families = new LinkedHashSet<>(mapped);
+        LinkedHashSet<String> families = new LinkedHashSet<>();
         for (T type : requested)
         {
             String id = String.valueOf(type);
-            if (isJeiOnly(type)) families.add(id);
-            else if ("minecraft:smithing".equals(id)) families.add("minecraft:smithing");
-            else if ("minecraft:stonecutting".equals(id)) families.add("stonecutting");
+            families.add(id);
         }
         return Set.copyOf(families);
     }
 
     public static Set<String> familiesForType(Object type, Set<String> mapped)
-    { return isJeiOnly(type) ? Set.of(type.toString()) : mapped; }
+    { return type == null ? Set.of() : Set.of(type.toString()); }
 }

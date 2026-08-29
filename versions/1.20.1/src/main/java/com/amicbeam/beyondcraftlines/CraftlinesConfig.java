@@ -42,14 +42,8 @@ public final class CraftlinesConfig {
     public static final ForgeConfigSpec.BooleanValue RESET_PROVISIONER_ROUND_ROBIN_ON_ACTIVATION = SERVER_BUILDER
             .comment("Restart round-robin supply from the first wireless binding whenever a recipe request activates a provisioner. Blocking orders activate once per feeding round.")
             .define("resetRoundRobinOnRecipeActivation", true);
-    public static final ForgeConfigSpec.BooleanValue DEBUG_RECIPE_TYPE_MAPPINGS = SERVER_BUILDER
-            .pop().push("crafting")
-            .comment("Show server-authoritative recipe ids and RecipeType mapping diagnostics to the player after explicit JEI order or provisioner actions.")
-            .define("debugRecipeTypeMappings", false);
-    public static final ForgeConfigSpec.BooleanValue VERIFY_SERVER_RECIPE_TYPES = SERVER_BUILDER
-            .comment("Validate JEI categories against server RecipeTypes. When disabled, every JEI category uses the bounded JEI-only compatibility path.")
-            .define("verifyServerRecipeTypes", false);
     public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
+            .pop().push("crafting")
             .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
             .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);
     public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK = SERVER_BUILDER

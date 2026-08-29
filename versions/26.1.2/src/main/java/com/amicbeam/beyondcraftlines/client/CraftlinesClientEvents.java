@@ -62,8 +62,7 @@ public final class CraftlinesClientEvents
                 var types = com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .recipeTypesFor(catalyst);
                 ClientPacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(),
-                        com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types), remove));
+                        context.getClickedFace(), remove));
                 return net.minecraft.world.InteractionResult.SUCCESS;
             };
         }
@@ -151,8 +150,7 @@ public final class CraftlinesClientEvents
                         .VanillaProvisionerRecipeTypes.categoryForBlock(blockId);
                 types.add(vanillaCategory == null ? blockId : Identifier.parse(vanillaCategory));
             }
-            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
+            ClientPacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types));
             event.setCanceled(true);
         }
 

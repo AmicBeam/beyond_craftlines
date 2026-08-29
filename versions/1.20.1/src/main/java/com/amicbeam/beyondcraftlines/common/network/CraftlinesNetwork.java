@@ -75,8 +75,6 @@ public final class CraftlinesNetwork {
                 JeiNetworkAvailabilityPayload::handle);
         client(RecipeIoProfilePayload.class, RecipeIoProfilePayload.STREAM_CODEC,
                 RecipeIoProfilePayload::handle);
-        client(JeiOnlyRecipeTypesPayload.class, JeiOnlyRecipeTypesPayload.STREAM_CODEC,
-                JeiOnlyRecipeTypesPayload::handle);
         client(DashboardStatusPayload.class, DashboardStatusPayload.STREAM_CODEC,
                 DashboardStatusPayload::handle);
     }

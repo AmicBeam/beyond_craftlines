@@ -92,9 +92,6 @@ public final class CraftlinesEvents
     public static void onDatapackSync(OnDatapackSyncEvent event)
     {
         var server = event.getPlayerList().getServer();
-        com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
-                .setServerRecipeValidationEnabled(
-                        com.amicbeam.beyondcraftlines.CraftlinesConfig.VERIFY_SERVER_RECIPE_TYPES.get());
         if (event.getPlayer() == null)
         {
             if (recipeAliasServer == server)
@@ -102,31 +99,21 @@ public final class CraftlinesEvents
                         .invalidatePersistedServerIndex(server);
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
         }
-        if (event.getPlayer() == null || recipeAliasServer != server
-                || com.amicbeam.beyondcraftlines.common.crafting
-                .RecipeFamilyAliasRegistry.aliases().isEmpty())
+        if (event.getPlayer() == null || recipeAliasServer != server)
         {
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
-                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
-            com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.reload(
-                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
-            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
             recipeAliasServer = server;
         }
         var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
-        var jeiOnlyTypes = com.amicbeam.beyondcraftlines.common.network.JeiOnlyRecipeTypesPayload.snapshot(server);
         if (event.getPlayer() != null)
         {
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), profiles);
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), jeiOnlyTypes);
         }
         else server.getPlayerList().getPlayers().forEach(player ->
         {
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, profiles);
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, jeiOnlyTypes);
         });
     }
 }

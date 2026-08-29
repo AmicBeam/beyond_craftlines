@@ -196,7 +196,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void sendConfiguration()
     { ClientPacketDistributor.sendToServer(ConfigureProvisionerPayload.of(
-            menu.position(), selected, selectedGroups, JeiCatalystIndex.hintsFor(selected), priority)); }
+            menu.position(), selected, selectedGroups, priority)); }
 
     private void refresh()
     {
@@ -284,8 +284,6 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         Identifier type = options.get(index);
         selected.clear();
         selected.add(type);
-        if (usesCompatibilityMode(type))
-            com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry.enableSyncedType(type);
         selectedGroups.clear();
         selectedGroups.put(type, new LinkedHashSet<>());
         search.setFocused(false);
@@ -326,21 +324,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                     .orElse(type.toString());
             String text = title + "  ·  " + type;
             graphics.text(font, font.plainSubstrByWidth(text, width - 8),
-                    x + 4, rowY + 2, compatibilityColor(type), false);
+                    x + 4, rowY + 2, 0xFFD8F3FF, false);
         }
-    }
-
-    private int compatibilityColor(Identifier type)
-    {
-        return usesCompatibilityMode(type) ? 0xFFFFA64D : 0xFFD8F3FF;
-    }
-
-    private boolean usesCompatibilityMode(Identifier type)
-    {
-        return com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
-                .serverRecipeValidationEnabled()
-                && JeiCatalystIndex.usesCompatibilityMode(type, menu.manualLoadedFamilies(),
-                menu.manualRecipeAliases());
     }
 
     @Override public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick)

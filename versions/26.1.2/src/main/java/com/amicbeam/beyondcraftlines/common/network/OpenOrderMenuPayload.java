@@ -1,7 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
-import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -44,6 +43,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         buffer.writeVarInt(payload.virtualInputs().size());
         for (VirtualInput input : payload.virtualInputs())
         {
+            buffer.writeUtf(input.inputGroup(), 64);
             buffer.writeVarInt(input.candidates().size());
             for (KeyAmount candidate : input.candidates())
             {
@@ -64,13 +64,14 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         java.util.List<VirtualInput> inputs = new java.util.ArrayList<>();
         for (int slot = 0; slot < slots; slot++)
         {
+            String inputGroup = buffer.readUtf(64);
             int candidates = buffer.readVarInt();
             if (candidates < 1 || candidates > 64)
                 throw new IllegalArgumentException("invalid virtual candidate count");
             java.util.List<KeyAmount> values = new java.util.ArrayList<>();
             for (int candidate = 0; candidate < candidates; candidate++)
                 values.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
-            inputs.add(new VirtualInput(values));
+            inputs.add(new VirtualInput(inputGroup, values));
         }
         return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong());
     }
@@ -106,16 +107,15 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             {
                 try
                 {
-                    if (requestedType == null || (CraftlinesConfig.VERIFY_SERVER_RECIPE_TYPES.get()
-                            && !com.amicbeam.beyondcraftlines.common.crafting.JeiOnlyRecipeTypeRegistry
-                            .containsDatapackType(requestedType)
-                            && !DeviceBindingRegistry.supportsJeiOnlyCompatibility(
-                            player.level().getServer(), networkId, requestedType)))
+                    if (requestedType == null || !DeviceBindingRegistry.supportsJeiType(
+                            player.level().getServer(), networkId, requestedType, requestedType.toString()))
                         throw new IllegalArgumentException("invalid virtual recipe category");
                     var holder = com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.register(requestedType.toString(), target,
-                            payload.virtualOutputAmount(), payload.virtualInputs().stream()
-                                    .map(VirtualInput::candidates).toList());
+                            payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->
+                                    new com.amicbeam.beyondcraftlines.common.crafting
+                                            .VirtualProvisionerRecipeRegistry.InputSlot(
+                                            input.inputGroup(), input.candidates())).toList());
                     if (requestedRecipe == null || !holder.id().identifier().equals(requestedRecipe))
                         throw new IllegalArgumentException("virtual recipe id mismatch");
                 }
@@ -132,8 +132,6 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     net.minecraft.core.registries.Registries.RECIPE, requestedRecipe))
                     .or(() -> com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();
-            if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
-                showRecipeDebug(player, payload, candidates);
             var recipe = candidates.stream()
                     .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
@@ -170,24 +168,15 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         });
     }
 
-    private static void showRecipeDebug(ServerPlayer player, OpenOrderMenuPayload payload,
-                                        java.util.List<net.minecraft.world.item.crafting.RecipeHolder<?>> candidates)
-    {
-        String families = candidates.stream().map(RecipePlanningService::family)
-                .filter(java.util.Objects::nonNull).filter(family -> !family.isBlank())
-                .distinct().sorted().collect(java.util.stream.Collectors.joining(", "));
-        Component actual = families.isEmpty()
-                ? Component.translatable("message.beyond_craftlines.debug_recipe_type_not_found")
-                : Component.literal(families);
-        player.sendSystemMessage(Component.translatable(
-                "message.beyond_craftlines.debug_order_recipe", payload.recipeId(),
-                payload.jeiRecipeType(), actual));
-    }
-
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
 
-    public record VirtualInput(java.util.List<KeyAmount> candidates)
+    public record VirtualInput(String inputGroup, java.util.List<KeyAmount> candidates)
     {
-        public VirtualInput { candidates = java.util.List.copyOf(candidates); }
+        public VirtualInput
+        {
+            if (!com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup.isValid(inputGroup))
+                throw new IllegalArgumentException("invalid virtual input group");
+            candidates = java.util.List.copyOf(candidates);
+        }
     }
 }

@@ -37,7 +37,7 @@ public final class VirtualProvisionerRecipeRegistry
     private VirtualProvisionerRecipeRegistry() {}
 
     public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
-                                           List<List<KeyAmount>> inputs)
+                                           List<InputSlot> inputs)
     {
         Descriptor descriptor = new Descriptor(family, output, outputAmount, inputs);
         Identifier id = descriptor.id();
@@ -110,35 +110,38 @@ public final class VirtualProvisionerRecipeRegistry
         return 0D;
     }
 
+    public record InputSlot(String inputGroup, List<KeyAmount> candidates)
+    {
+        public InputSlot
+        {
+            if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
+                    || candidates.size() > 64 || candidates.stream().anyMatch(value -> value == null
+                    || value.isEmpty() || value.amount() < 1))
+                throw new IllegalArgumentException("invalid virtual provisioner ingredient");
+            candidates = List.copyOf(candidates);
+        }
+    }
+
     public record Descriptor(String family, IStackKey<?> output, long outputAmount,
-                             List<List<KeyAmount>> inputs)
+                             List<InputSlot> inputs)
     {
         public Descriptor
         {
-            if (!JeiOnlyRecipeTypeRegistry.isValidType(family)
+            if (Identifier.tryParse(family) == null || family.length() > 256
                     || output == null || output.isEmpty() || outputAmount < 1
                     || inputs == null || inputs.isEmpty() || inputs.size() > 32)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");
-            List<List<KeyAmount>> copied = new ArrayList<>();
-            for (List<KeyAmount> slot : inputs)
-            {
-                if (slot == null || slot.isEmpty() || slot.size() > 64)
-                    throw new IllegalArgumentException("invalid virtual provisioner ingredient");
-                if (slot.stream().anyMatch(value -> value == null || value.isEmpty() || value.amount() < 1))
-                    throw new IllegalArgumentException("invalid virtual provisioner ingredient");
-                copied.add(List.copyOf(slot));
-            }
-            inputs = List.copyOf(copied);
+            inputs = List.copyOf(inputs);
         }
 
         public Identifier id()
         {
             StringBuilder canonical = new StringBuilder(family).append('|')
                     .append(RecipeResourceResolver.sortKey(output)).append('@').append(outputAmount);
-            for (List<KeyAmount> slot : inputs)
+            for (InputSlot slot : inputs)
             {
-                canonical.append('|');
-                slot.stream().map(value -> RecipeResourceResolver.sortKey(value.key()) + '@' + value.amount())
+                canonical.append('|').append(slot.inputGroup()).append(':');
+                slot.candidates().stream().map(value -> RecipeResourceResolver.sortKey(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }
             UUID uuid = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));

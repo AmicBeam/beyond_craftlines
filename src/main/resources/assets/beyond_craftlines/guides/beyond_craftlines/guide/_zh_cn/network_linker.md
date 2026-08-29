@@ -22,7 +22,7 @@ item_ids:
 
 配方类型由 JEI 催化剂和服务端配方类型共同确定。Beyond Dimensions 网络组件（包括原生网络熔炉）不能绑定，因为 Craftlines 会直接调度它们。
 
-服务端配置 `verifyServerRecipeTypes` 默认关闭，此时所有 JEI 分类都走 JEI-only 兼容模式；具有可自动化物品能力的普通机器可以直接右击绑定，原版五种供给器专用工作站除外。开启验证后，能映射的分类使用服务端配方；不能映射的分类自动使用兼容模式，并在供给器手动下拉列表中以橙色显示。整合包可在 `data/*/jei_only_recipe_types/*.json` 中用 `jei_type` 或 `jei_types` 预声明兼容分类。
+该实验版始终走 JEI-only 链路，并把 JEI category UID 保存为运行时 family；不加载 RecipeType alias 或分类白名单。JEI 输入 slot name 会保留为供给器材料子标签，普通编号输入槽统一归入 `ingredients`。
 
 如果一种配方公开多个逻辑材料组，不同端点可以分别负责不同组。显式选择材料组的端点优先于未筛选的通配端点；匹配等级相同时，配置数值更高的优先级先被选择。
 

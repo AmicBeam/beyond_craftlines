@@ -22,7 +22,7 @@ The Network Linker associates real recipe machines and Craftline Provisioners wi
 
 Recipe types are resolved from JEI catalysts and server recipe types. Beyond Dimensions network components, including its native network furnaces, cannot be bound because Craftlines handles them directly.
 
-The server option `verifyServerRecipeTypes` defaults to false, so every JEI category uses the JEI-only compatibility path. Capability-backed machines can be bound directly in this mode; the five vanilla provisioner-only workstations remain exceptions. When validation is enabled, mapped categories use server recipes while unmapped categories automatically use compatibility mode and appear in orange in the manual provisioner picker. Modpacks can predeclare compatible categories with `jei_type` or `jei_types` in `data/*/jei_only_recipe_types/*.json`.
+This experimental build always uses the JEI-only path and stores the JEI category UID as its runtime family. It does not load RecipeType aliases or category allowlists. JEI input slot names are preserved as provisioner sublabels; numbered generic input slots fold into `ingredients`.
 
 If a recipe exposes several logical material groups, different endpoints may handle different groups. An explicitly selected group is preferred over an unrestricted endpoint; among equal matches, the higher configured priority wins.
 

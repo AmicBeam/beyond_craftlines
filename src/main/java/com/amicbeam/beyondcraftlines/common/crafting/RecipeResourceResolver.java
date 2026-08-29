@@ -105,7 +105,10 @@ public final class RecipeResourceResolver
         {
             List<ResourceIngredient> result = new ArrayList<>();
             for (int slot = 0; slot < virtual.inputs().size(); slot++)
-                result.add(new ResourceIngredient(slot, virtual.inputs().get(slot), null, VANILLA_INPUT_GROUP));
+            {
+                var input = virtual.inputs().get(slot);
+                result.add(new ResourceIngredient(slot, input.candidates(), null, input.inputGroup()));
+            }
             return List.copyOf(result);
         }
         return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true);

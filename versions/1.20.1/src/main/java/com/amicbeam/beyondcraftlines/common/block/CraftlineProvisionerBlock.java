@@ -64,21 +64,13 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
             var binding = BindingSavedData.get(serverPlayer.getServer()).at(level.dimension(), pos);
             int priority = binding == null ? 0 : binding.priority();
             boolean manualSelection = candidates.isEmpty() && configured.isEmpty();
-            boolean debugMappings = manualSelection
-                    && com.amicbeam.beyondcraftlines.CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get();
-            var loadedFamilies = manualSelection
-                    ? com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.loadedFamilies(level)
-                    : java.util.Set.<String>of();
-            var aliases = manualSelection
-                    ? com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.aliases()
-                    : java.util.Map.<String, java.util.Set<String>>of();
             NetworkHooks.openScreen(serverPlayer, new SimpleMenuProvider((id, inventory, ignored) ->
                     new ProvisionerConfigMenu(id, inventory, pos, candidates, configured,
                             availableGroups, selectedGroups, priority, be),
                     Component.translatable("menu.beyond_craftlines.provisioner")), buffer -> {
                 ProvisionerConfigMenu.writeOptions(buffer, pos, candidates, configured,
                         availableGroups, selectedGroups, false, priority,
-                        debugMappings, loadedFamilies, aliases);
+                        false, java.util.Set.of(), java.util.Map.of());
             });
     }
 

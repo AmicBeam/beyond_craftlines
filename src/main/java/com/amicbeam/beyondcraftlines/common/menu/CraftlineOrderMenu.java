@@ -144,6 +144,11 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
+    public boolean canPlanTarget(IStackKey<?> output)
+    {
+        return recipeForResourceOutput(output) != null || initialRecipePinned && initialRecipe != null
+                && initialRecipeHolder != null && recipeProduces(initialRecipe, targetToken());
+    }
     public RecipeHolder<?> recipe(ResourceLocation id)
     {
         RecipeHolder<?> holder = findDisplayRecipe(player.level(), id);

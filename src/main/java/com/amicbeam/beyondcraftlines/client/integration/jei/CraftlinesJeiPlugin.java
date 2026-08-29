@@ -155,6 +155,13 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public static void orderTarget(IStackKey<?> target)
     {
         OpenOrderMenuPayload focused = focusedOrderPayload(target);
+        if (runtime != null && focused == null)
+        {
+            if (Minecraft.getInstance().player != null)
+                Minecraft.getInstance().player.displayClientMessage(Component.translatable(
+                        "error.beyond_craftlines.middle_click_recipe_not_found"), false);
+            return;
+        }
         queueOrder(focused == null ? new OpenOrderMenuPayload(target, "", "") : focused);
     }
 
@@ -173,7 +180,16 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         for (var category : categories)
         {
             OpenOrderMenuPayload payload = focusedOrderPayload(
-                    current, target, category, focuses, focusGroup);
+                    current, target, category, focuses, focusGroup, true);
+            if (payload != null) return payload;
+        }
+        // Dynamic recipes may expose only a base getResultItem while JEI's focused layout
+        // represents the concrete assemble() result. The focus is authoritative here; preserve
+        // the clicked target components instead of falling back to every same-item recipe.
+        for (var category : categories)
+        {
+            OpenOrderMenuPayload payload = focusedOrderPayload(
+                    current, target, category, focuses, focusGroup, false);
             if (payload != null) return payload;
         }
         return null;
@@ -184,7 +200,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             IJeiRuntime current, IStackKey<?> target,
             mezz.jei.api.recipe.category.IRecipeCategory<?> rawCategory,
             java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses,
-            mezz.jei.api.recipe.IFocusGroup focusGroup)
+            mezz.jei.api.recipe.IFocusGroup focusGroup, boolean exactOnly)
     {
         var category = (mezz.jei.api.recipe.category.IRecipeCategory<Object>) rawCategory;
         var recipes = current.getRecipeManager().createRecipeLookup(category.getRecipeType())
@@ -195,13 +211,18 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     category, recipe, focusGroup).orElse(null);
             if (layout == null) continue;
             var captured = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
-            if (captured == null || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
-                    .exact(target, captured.output().key())) continue;
+            if (captured == null) continue;
+            boolean exact = com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(target, captured.output().key());
+            if (exactOnly != exact) continue;
             ResourceLocation serverRecipe = serverCraftingRecipeId(layout);
             if (serverRecipe != null)
                 return new OpenOrderMenuPayload(target, serverRecipe.toString(),
                         captured.type().toString(), java.util.List.of(), captured.output().amount());
-            ResourceLocation virtualRecipe = JeiVirtualRecipeLayouts.register(captured).id();
+            var focusedCapture = exact ? captured : new JeiVirtualRecipeLayouts.Captured(
+                    captured.type(), new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
+                    target, captured.output().amount()), captured.inputs());
+            ResourceLocation virtualRecipe = JeiVirtualRecipeLayouts.register(focusedCapture).id();
             return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
                     captured.inputs(), captured.output().amount());
         }

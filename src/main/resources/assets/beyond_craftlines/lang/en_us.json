@@ -92,6 +92,7 @@
   "message.beyond_craftlines.no_permission": "You do not have permission to bind this device.",
   "error.beyond_craftlines.network_required": "A Beyond Dimensions network is required.",
   "error.beyond_craftlines.invalid_order_target": "The selected JEI recipe has no orderable item output.",
+  "error.beyond_craftlines.middle_click_recipe_not_found": "No JEI recipe output exactly matches this item's NBT/components.",
   "error.beyond_craftlines.order_failed": "Order failed: %s",
   "error.beyond_craftlines.order_failed_generic": "Order failed due to an internal execution error.",
   "error.beyond_craftlines.order_submit_cooldown": "Orders are being submitted too quickly; wait a moment and try again.",

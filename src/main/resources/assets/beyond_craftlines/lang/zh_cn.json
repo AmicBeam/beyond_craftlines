@@ -78,7 +78,7 @@
   "tooltip.jade.beyond_craftlines.provisioner_recipe.unknown": "未知配方类型",
   "tooltip.jade.beyond_craftlines.provisioner_connections": "供应：%s，抽取：%s",
   "error.beyond_craftlines.provisioner_connection_limit": "无线绑定失败：此供给器已达到配置的设备连接上限。",
-  "error.beyond_craftlines.machine_recipe_type_unknown": "无法从 JEI 催化剂识别该机器对应的配方类型。",
+  "error.beyond_craftlines.machine_recipe_type_unknown": "绑定失败：该设备没有在 JEI 中注册为任何配方催化剂（应用设备）。",
   "error.beyond_craftlines.machine_binding_failed": "机器绑定失败。",
   "error.beyond_craftlines.machine_binding_no_network_permission": "绑定失败：你不是当前 BD 网络的管理员。",
   "error.beyond_craftlines.machine_capability_unsupported": "绑定失败：机器没有公开受支持的物品、流体或化学品能力。",

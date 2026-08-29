@@ -74,6 +74,12 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
                     ? !types.isEmpty()
                     : !types.isEmpty() && com.amicbeam.beyondcraftlines.common.crafting
                     .VanillaProvisionerRecipeTypes.directBindable(types).size() == types.size();
+            if (!connectionMode && types.isEmpty())
+            {
+                player.sendSystemMessage(Component.translatable(
+                        "error.beyond_craftlines.machine_recipe_type_unknown"));
+                return;
+            }
             if (!connectionMode && !supported)
             {
                 player.sendSystemMessage(Component.translatable(

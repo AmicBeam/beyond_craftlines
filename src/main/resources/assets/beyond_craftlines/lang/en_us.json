@@ -78,7 +78,7 @@
   "tooltip.jade.beyond_craftlines.provisioner_recipe.unknown": "Unknown recipe type",
   "tooltip.jade.beyond_craftlines.provisioner_connections": "Supply: %s, Extract: %s",
   "error.beyond_craftlines.provisioner_connection_limit": "Wireless binding failed: this provisioner reached its configured device limit.",
-  "error.beyond_craftlines.machine_recipe_type_unknown": "No recipe family could be resolved from this machine's JEI catalysts.",
+  "error.beyond_craftlines.machine_recipe_type_unknown": "Binding failed: this device is not registered in JEI as a catalyst (crafting station) for any recipe category.",
   "error.beyond_craftlines.machine_binding_failed": "Machine binding failed.",
   "error.beyond_craftlines.machine_binding_no_network_permission": "Binding failed: you are not an administrator of the current BD network.",
   "error.beyond_craftlines.machine_capability_unsupported": "Binding failed: the machine does not expose a supported item, fluid, or chemical capability.",

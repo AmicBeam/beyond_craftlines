@@ -59,6 +59,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             {
                 Identifier recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
+                Identifier craftingRecipe = serverCraftingRecipeId(recipeLayoutDrawable);
+                if (craftingRecipe != null)
+                {
+                    var output = findOutput(recipeLayoutDrawable);
+                    return output == null ? null : new OrderButtonController(
+                            output.key(), craftingRecipe, recipeType, java.util.List.of(),
+                            output.amount(), scaledIcon);
+                }
                 var captured = JeiVirtualRecipeLayouts.capture(recipeType, recipeLayoutDrawable);
                 if (captured == null) return null;
                 Identifier recipe = JeiVirtualRecipeLayouts.register(captured).id().identifier();
@@ -184,6 +192,19 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return intrinsic != null ? intrinsic : layout.getRecipeCategory().getIdentifier(layout.getRecipe());
     }
 
+    /** Real crafting recipes must keep their server id so SimulatedCrafting can execute them. */
+    private static <T> @Nullable Identifier serverCraftingRecipeId(IRecipeLayoutDrawable<T> layout)
+    {
+        Object displayed = layout.getRecipe();
+        net.minecraft.world.item.crafting.Recipe<?> recipe = displayed instanceof
+                net.minecraft.world.item.crafting.RecipeHolder<?> holder ? holder.value()
+                : displayed instanceof net.minecraft.world.item.crafting.Recipe<?> value ? value : null;
+        return recipe != null && JeiRecipeExecutionSource.usesServerRecipe(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService
+                        .family(recipe.getType()))
+                ? findRecipeId(layout) : null;
+    }
+
     /** Prefer the server recipe identity over a JEI-only presentation or bookmark identity. */
     private static @Nullable Identifier intrinsicRecipeId(Object recipe)
     {
@@ -195,6 +216,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 if (method.getParameterCount() != 0) continue;
                 Object value = method.invoke(recipe);
                 if (value instanceof Identifier id) return id;
+                if (value instanceof net.minecraft.resources.ResourceKey<?> key) return key.identifier();
             }
             catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
         return null;

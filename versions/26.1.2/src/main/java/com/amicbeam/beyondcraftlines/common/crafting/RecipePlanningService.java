@@ -156,7 +156,10 @@ public final class RecipePlanningService
             List<RecipeHolder<?>> selected = new ArrayList<>();
             for (Identifier id : overrides.selectedRecipes())
             {
-                RecipeHolder<?> holder = VirtualProvisionerRecipeRegistry.find(id).orElse(null);
+                RecipeHolder<?> holder = RecipeCatalog.forLevel(level).stream()
+                        .filter(candidate -> candidate.id().identifier().equals(id))
+                        .filter(candidate -> "crafting".equals(family(candidate)))
+                        .findFirst().orElseGet(() -> VirtualProvisionerRecipeRegistry.find(id).orElse(null));
                 if (holder != null) selected.add(holder);
             }
             candidates = selected;

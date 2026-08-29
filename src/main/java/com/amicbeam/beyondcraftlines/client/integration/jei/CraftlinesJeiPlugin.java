@@ -59,6 +59,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             {
                 ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
+                ResourceLocation craftingRecipe = serverCraftingRecipeId(recipeLayoutDrawable);
+                if (craftingRecipe != null)
+                {
+                    var output = findOutput(recipeLayoutDrawable);
+                    return output == null ? null : new OrderButtonController(
+                            output.key(), craftingRecipe, recipeType, java.util.List.of(),
+                            output.amount(), scaledIcon);
+                }
                 var captured = JeiVirtualRecipeLayouts.capture(recipeType, recipeLayoutDrawable);
                 if (captured == null) return null;
                 ResourceLocation recipe = JeiVirtualRecipeLayouts.register(captured).id();
@@ -194,6 +202,19 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         Object displayedRecipe = layout.getRecipe();
         ResourceLocation intrinsic = intrinsicRecipeId(displayedRecipe);
         return intrinsic != null ? intrinsic : layout.getRecipeCategory().getRegistryName(layout.getRecipe());
+    }
+
+    /** Real crafting recipes must keep their server id so SimulatedCrafting can execute them. */
+    private static <T> @Nullable ResourceLocation serverCraftingRecipeId(IRecipeLayoutDrawable<T> layout)
+    {
+        Object displayed = layout.getRecipe();
+        net.minecraft.world.item.crafting.Recipe<?> recipe = displayed instanceof
+                net.minecraft.world.item.crafting.RecipeHolder<?> holder ? holder.value()
+                : displayed instanceof net.minecraft.world.item.crafting.Recipe<?> value ? value : null;
+        return recipe != null && JeiRecipeExecutionSource.usesServerRecipe(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService
+                        .family(recipe.getType()))
+                ? findRecipeId(layout) : null;
     }
 
     /**

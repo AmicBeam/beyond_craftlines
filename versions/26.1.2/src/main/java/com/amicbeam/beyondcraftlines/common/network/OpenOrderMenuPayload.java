@@ -128,8 +128,13 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             var candidates = requestedRecipe == null
                     ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
-                    : com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                    .find(requestedRecipe).stream().toList();
+                    : java.util.stream.Stream.concat(
+                            com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
+                                    .forLevel(player.level()).stream()
+                                    .filter(holder -> holder.id().identifier().equals(requestedRecipe))
+                                    .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))),
+                            com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                                    .find(requestedRecipe).stream()).limit(1).toList();
             var recipe = candidates.stream()
                     .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))

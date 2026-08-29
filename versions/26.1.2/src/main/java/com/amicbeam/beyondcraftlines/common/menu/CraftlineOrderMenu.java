@@ -42,6 +42,7 @@ import com.google.gson.Gson;
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
     private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
+    private static final Map<Object, ClientRecipeIndex> CLIENT_RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
             java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private static final Gson INDEX_GSON = new Gson();
@@ -97,9 +98,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardDesired = Math.max(1, initialDashboardDesired);
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         var level = player.level();
-        this.recipeIndex = new RecipeIndex(com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.recipes(), level);
-        this.initialRecipeHolder = initialRecipe == null ? null : findRecipe(level, initialRecipe);
+        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(displayRecipes(level), level);
+        this.initialRecipeHolder = initialRecipe == null ? null : findDisplayRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
         updateServerIndexProgress();
     }
@@ -118,16 +118,12 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public long initialDashboardDesired() { return initialDashboardDesired; }
     public String initialDashboardStockMode() { return initialDashboardStockMode; }
     public List<RecipeHolder<?>> recipes()
-    {
-        return available(com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.recipes());
-    }
+    { return available(displayRecipes(player.level())); }
     public RecipeHolder<?> recipeForOutput(Identifier output)
     { return recipesForOutput(output).stream().findFirst().orElse(null); }
     public List<RecipeHolder<?>> recipesForOutput(Identifier output)
     {
-        List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
+        List<RecipeHolder<?>> virtual = recipes().stream()
                 .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
                         .anyMatch(value -> value.key() instanceof ItemStackKey item
                                 && net.minecraft.core.registries.BuiltInRegistries.ITEM
@@ -136,8 +132,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
-        List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
+        List<RecipeHolder<?>> virtual = recipes().stream()
                 .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
                         .anyMatch(value -> output.isSame(value.key()))).toList();
         return virtual;
@@ -146,13 +141,12 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public RecipeHolder<?> recipe(Identifier id)
     {
-        RecipeHolder<?> holder = com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.find(id).orElse(null);
+        RecipeHolder<?> holder = findDisplayRecipe(player.level(), id);
         return holder != null && available(holder) ? holder : null;
     }
     public Identifier itemOutputForToken(String token)
     {
-        return com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.recipes().stream()
+        return recipes().stream()
                 .flatMap(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream())
                 .filter(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
                         .RecipeResourceResolver.sortKey(value.key())))
@@ -162,8 +156,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
     public boolean recipeProduces(Identifier recipe, String token)
     {
-        ensureRecipeIndexForServer();
-        RecipeHolder<?> holder = recipe(recipe);
+        RecipeHolder<?> holder = findDisplayRecipe(player.level(), recipe);
         return holder != null && RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
                 .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
                         .RecipeResourceResolver.sortKey(value.key())));
@@ -232,11 +225,43 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
     }
 
-    private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, Identifier id)
+    private static RecipeIndex clientIndex(net.minecraft.world.level.Level level)
     {
-        return com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                .find(id).orElse(null);
+        Object source = level;
+        long generation = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.generation();
+        synchronized (CLIENT_RECIPE_INDEX_CACHE)
+        {
+            ClientRecipeIndex cached = CLIENT_RECIPE_INDEX_CACHE.get(source);
+            if (cached == null || cached.virtualGeneration() != generation)
+            {
+                cached = new ClientRecipeIndex(generation, new RecipeIndex(displayRecipes(level), level));
+                CLIENT_RECIPE_INDEX_CACHE.put(source, cached);
+            }
+            return cached.index();
+        }
     }
+
+    private static List<RecipeHolder<?>> displayRecipes(net.minecraft.world.level.Level level)
+    {
+        List<RecipeHolder<?>> crafting = RecipePlanningService.visibleRecipes(level).stream()
+                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))).toList();
+        return mergeRecipes(crafting, com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.recipes());
+    }
+
+    private static RecipeHolder<?> findDisplayRecipe(net.minecraft.world.level.Level level, Identifier id)
+    {
+        RecipeHolder<?> crafting = com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
+                .forLevel(level).stream().filter(holder -> holder.id().identifier().equals(id))
+                .filter(holder -> "crafting".equals(RecipePlanningService.family(holder)))
+                .findFirst().orElse(null);
+        return crafting != null ? crafting : com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.find(id).orElse(null);
+    }
+
+    private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, Identifier id)
+    { return findDisplayRecipe(level, id); }
 
     private static Path indexPath(MinecraftServer server)
     {
@@ -253,6 +278,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public static void clearRecipeIndexCache()
     {
         synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
+        synchronized (CLIENT_RECIPE_INDEX_CACHE) { CLIENT_RECIPE_INDEX_CACHE.clear(); }
     }
 
     public static void rebuildServerRecipeIndex(MinecraftServer server)
@@ -522,6 +548,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                                   Map<String, List<String>> recipesByOutput,
                                   Map<String, List<String>> outputsByRecipe,
                                   com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.Snapshot epoch) {}
+
+    private record ClientRecipeIndex(long virtualGeneration, RecipeIndex index) {}
 
     public boolean canAccessNetwork(Player player)
     {

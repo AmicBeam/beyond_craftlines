@@ -131,8 +131,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             var candidates = requestedRecipe == null
                     ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
-                    : com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                    .find(requestedRecipe).stream().toList();
+                    : level.getRecipeManager().byKey(requestedRecipe)
+                    .filter(holder -> "crafting".equals(RecipePlanningService.family(holder)))
+                    .or(() -> com.amicbeam.beyondcraftlines.common.crafting
+                            .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();
             if (requestedRecipe != null && candidates.isEmpty())
             {
                 reject(player, payload, "not_loaded", "error.beyond_craftlines.order_recipe_not_loaded",

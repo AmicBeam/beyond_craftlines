@@ -97,8 +97,6 @@ public final class CraftlinesClientEvents
     @EventBusSubscriber(modid = BeyondCraftlines.MOD_ID, value = Dist.CLIENT)
     public static final class GameBus
     {
-        private static PendingBoundConfig pendingBoundConfig;
-
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
         {
             ClientBindingVisuals.onLoggingIn(event);
@@ -107,7 +105,6 @@ public final class CraftlinesClientEvents
 
         @SubscribeEvent public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event)
         {
-            pendingBoundConfig = null;
             ClientBindingVisuals.onLoggingOut(event);
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingOut();
         }
@@ -118,7 +115,6 @@ public final class CraftlinesClientEvents
             if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES)
             {
                 com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
-                flushPendingBoundConfig();
             }
         }
 
@@ -131,7 +127,6 @@ public final class CraftlinesClientEvents
         @SubscribeEvent public static void advanceJeiRecipeIndex(ScreenEvent.Render.Post event)
         {
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
-            flushPendingBoundConfig();
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -164,21 +159,10 @@ public final class CraftlinesClientEvents
             if (!provisioner && types.isEmpty()) types.add(blockId);
             if (!types.isEmpty() && !com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                     .inputGroupsReady(types))
-            {
                 com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                         .requestInputGroupsFor(types);
-                pendingBoundConfig = new PendingBoundConfig(hit.getBlockPos().immutable(), Set.copyOf(types));
-            }
-            else sendBoundConfig(hit.getBlockPos(), types);
+            sendBoundConfig(hit.getBlockPos(), types);
             event.setCanceled(action == LinkerAttackPolicy.Action.OPEN_AND_CANCEL_ATTACK);
-        }
-
-        private static void flushPendingBoundConfig()
-        {
-            if (pendingBoundConfig == null || !com.amicbeam.beyondcraftlines.client.integration.jei
-                    .JeiCatalystIndex.inputGroupsReady(pendingBoundConfig.types())) return;
-            sendBoundConfig(pendingBoundConfig.position(), pendingBoundConfig.types());
-            pendingBoundConfig = null;
         }
 
         private static void sendBoundConfig(net.minecraft.core.BlockPos position, Set<ResourceLocation> types)
@@ -240,8 +224,6 @@ public final class CraftlinesClientEvents
             }
         }
 
-        private record PendingBoundConfig(net.minecraft.core.BlockPos position,
-                                          Set<ResourceLocation> types) {}
     }
 
     public static void showBindFeedback(String rawType)

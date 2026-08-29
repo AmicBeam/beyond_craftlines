@@ -101,7 +101,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(displayRecipes(level), level);
+        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null : findDisplayRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
         updateServerIndexProgress();

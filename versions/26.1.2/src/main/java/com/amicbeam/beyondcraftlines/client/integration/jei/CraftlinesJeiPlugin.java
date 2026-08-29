@@ -276,9 +276,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             ClientPacketDistributor.sendToServer(payload);
             return;
         }
-        if (!payload.jeiRecipeType().isBlank())
-            JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
-        JeiCatalystIndex.requestRecipesFor(payload.target());
+        boolean initialPageOpen = payload.recipeId().isBlank()
+                && payload.jeiRecipeType().isBlank() && payload.virtualInputs().isEmpty();
+        if (!initialPageOpen)
+        {
+            if (!payload.jeiRecipeType().isBlank())
+                JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
+            JeiCatalystIndex.requestRecipesFor(payload.target());
+        }
         ClientPacketDistributor.sendToServer(payload);
     }
 

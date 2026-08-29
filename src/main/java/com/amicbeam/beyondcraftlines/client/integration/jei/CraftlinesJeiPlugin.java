@@ -285,9 +285,16 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             PacketDistributor.sendToServer(payload);
             return;
         }
-        if (!payload.jeiRecipeType().isBlank())
-            JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
-        JeiCatalystIndex.requestRecipesFor(payload.target());
+        boolean initialPageOpen = payload.recipeId().isBlank()
+                && payload.jeiRecipeType().isBlank() && payload.virtualInputs().isEmpty();
+        // Opening the empty order page is latency-sensitive. Its screen starts the budgeted JEI
+        // warmup itself, so doing it here only stalls the click before any UI can be rendered.
+        if (!initialPageOpen)
+        {
+            if (!payload.jeiRecipeType().isBlank())
+                JeiCatalystIndex.prewarmRecipeTypes(java.util.List.of(payload.jeiRecipeType()));
+            JeiCatalystIndex.requestRecipesFor(payload.target());
+        }
         PacketDistributor.sendToServer(payload);
     }
 

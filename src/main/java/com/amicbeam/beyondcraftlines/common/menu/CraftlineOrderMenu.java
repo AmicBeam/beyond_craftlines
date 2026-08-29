@@ -100,7 +100,9 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(displayRecipes(level), level);
+        // The server-side menu only synchronizes state; recipe lookup and incremental indexing are
+        // client-owned. Enumerating every display recipe here delayed the menu-open packet.
+        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null
                 : findDisplayRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);

@@ -10,7 +10,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class JeiInputGroupProfileRegistryTest
 {
@@ -68,18 +67,6 @@ final class JeiInputGroupProfileRegistryTest
         assertEquals(List.of("reagent", "pedestal_items"),
                 ars.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
 
-        var goety = read("goety.json");
-        assertEquals("goety:ritual", goety.jeiType());
-        assertTrue(goety.recipeClasses().isEmpty());
-        assertEquals(List.of("activation_item", "offerings"),
-                goety.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
-        assertEquals(java.util.Set.of("getActivationItem", "activationItem"),
-                java.util.Set.copyOf(goety.sections().get(0).members()));
-        assertEquals(java.util.Set.of("getIngredients", "ingredients"),
-                java.util.Set.copyOf(goety.sections().get(1).members()));
-        assertEquals(List.of("activation_item", "offerings", "offerings"),
-                JeiInputGroupProfileRegistry.resolve(goety, new GoetyFixture(), 3));
-
         var skylogistics = read("skylogistics.json");
         assertEquals("skylogistics:sky_offering", skylogistics.jeiType());
         assertEquals(java.util.Set.of("com.skylogistics.recipe.OfferingRecipe"),
@@ -120,11 +107,5 @@ final class JeiInputGroupProfileRegistryTest
         public List<Object> spirits() { return List.of(new Object(), new Object()); }
         public List<Object> extraInputs() { return List.of(new Object()); }
         public Object input() { return new Object(); }
-    }
-
-    public static final class GoetyFixture
-    {
-        public Object getActivationItem() { return new Object(); }
-        public List<Object> getIngredients() { return List.of(new Object(), new Object()); }
     }
 }

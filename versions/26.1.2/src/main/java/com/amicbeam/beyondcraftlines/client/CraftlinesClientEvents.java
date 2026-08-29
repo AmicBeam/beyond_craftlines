@@ -167,6 +167,11 @@ public final class CraftlinesClientEvents
                     provisioner, knownBound, ClientBindingVisuals.bindingSnapshotReady());
             if (action == LinkerAttackPolicy.Action.IGNORE) return;
             pendingBoundConfig = null;
+            if (action == LinkerAttackPolicy.Action.VERIFY_WITH_SERVER)
+            {
+                sendBoundConfig(hit.getBlockPos(), java.util.Set.of());
+                return;
+            }
             var types = new java.util.LinkedHashSet<>(
                     provisioner ? java.util.Set.<Identifier>of()
                             : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex

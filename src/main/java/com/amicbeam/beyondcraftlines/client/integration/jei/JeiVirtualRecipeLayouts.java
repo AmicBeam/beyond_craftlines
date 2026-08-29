@@ -45,7 +45,9 @@ public final class JeiVirtualRecipeLayouts
 
     public static net.minecraft.world.item.crafting.RecipeHolder<?> register(Captured captured)
     {
-        return VirtualProvisionerRecipeRegistry.register(captured.type().toString(), captured.output().key(),
+        String family = com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
+                .executionFamily(captured.type().toString());
+        return VirtualProvisionerRecipeRegistry.register(family, captured.output().key(),
                 captured.output().amount(), captured.inputs().stream().map(input ->
                         new VirtualProvisionerRecipeRegistry.InputSlot(
                                 input.inputGroup(), input.candidates())).toList());

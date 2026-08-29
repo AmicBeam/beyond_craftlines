@@ -107,11 +107,18 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             {
                 try
                 {
-                    if (requestedType == null || !DeviceBindingRegistry.supportsJeiType(
-                            player.level().getServer(), networkId, requestedType, requestedType.toString()))
+                    String executionFamily = requestedType == null ? ""
+                            : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
+                            .executionFamily(requestedType.toString());
+                    boolean nativeFurnaceAvailable = requestedType != null
+                            && com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
+                            .isAvailable(requestedType.toString(), availableFamilies);
+                    if (requestedType == null || (!nativeFurnaceAvailable
+                            && !DeviceBindingRegistry.supportsJeiType(
+                            player.level().getServer(), networkId, requestedType, executionFamily)))
                         throw new IllegalArgumentException("invalid virtual recipe category");
                     var holder = com.amicbeam.beyondcraftlines.common.crafting
-                            .VirtualProvisionerRecipeRegistry.register(requestedType.toString(), target,
+                            .VirtualProvisionerRecipeRegistry.register(executionFamily, target,
                             payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->
                                     new com.amicbeam.beyondcraftlines.common.crafting
                                             .VirtualProvisionerRecipeRegistry.InputSlot(

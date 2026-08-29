@@ -1162,6 +1162,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().equals(selectedId)) return candidate;
+        // The material proposal is the authoritative expansion result. Dynamic recipes can produce
+        // the requested component state even when their static display output does not compare
+        // equal to it, so the exact resource-token choice must still drive the visible tree.
+        if (manualId == null && automaticId != null)
+        {
+            RecipeHolder<?> planned = menu.recipe(automaticId);
+            if (planned != null) return planned;
+        }
         NodeMetric metric = nodeMetric(output);
         ResourceLocation plannedId = metric == null ? null : metric.recipe();
         // The server preview keys node metrics by the complete resource, so unlike the coarse

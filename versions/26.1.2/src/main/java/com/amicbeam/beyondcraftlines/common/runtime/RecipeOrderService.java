@@ -276,25 +276,28 @@ public final class RecipeOrderService
         if (network == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
         UnifiedStorage storage = network.getUnifiedStorage();
-        KeyAmount taken = storage.extract(outputKey, job.requested(), false, false);
-        if (taken.amount() != job.requested())
-        {
-            if (!taken.isEmpty()) storage.insert(taken.key(), taken.amount(), false);
+        List<KeyAmount> taken = CompletedOutputExtractor.extract(
+                job.networkId(), storage, outputKey, job.requested());
+        if (taken.isEmpty())
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_final_output"));
-        }
-        if (!(taken.key() instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey takenItemKey))
+        if (taken.stream().anyMatch(value -> !(value.key() instanceof
+                com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey)))
         {
-            storage.insert(taken.key(), taken.amount(), false);
+            taken.forEach(value -> storage.insert(value.key(), value.amount(), false));
             return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
         }
-        long remaining = taken.amount();
-        while (remaining > 0)
+        for (KeyAmount value : taken)
         {
-            int count = (int) Math.min(remaining, takenItemKey.getReadOnlyStack().getMaxStackSize());
-            net.minecraft.world.item.ItemStack stack = takenItemKey.getReadOnlyStack().copyWithCount(count);
-            player.getInventory().add(stack);
-            if (!stack.isEmpty()) throw new IllegalStateException("inventory capacity changed during delivery");
-            remaining -= count;
+            var takenItemKey = (com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey) value.key();
+            long remaining = value.amount();
+            while (remaining > 0)
+            {
+                int count = (int) Math.min(remaining, takenItemKey.getReadOnlyStack().getMaxStackSize());
+                net.minecraft.world.item.ItemStack stack = takenItemKey.getReadOnlyStack().copyWithCount(count);
+                player.getInventory().add(stack);
+                if (!stack.isEmpty()) throw new IllegalStateException("inventory capacity changed during delivery");
+                remaining -= count;
+            }
         }
         return job.with(RecipeOrderJob.Status.COMPLETE, "");
     }

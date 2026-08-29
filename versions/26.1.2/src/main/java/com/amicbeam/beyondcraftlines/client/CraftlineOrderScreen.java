@@ -1158,6 +1158,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().identifier().equals(selectedId)) return candidate;
+        if (manualId == null && automaticId != null)
+        {
+            RecipeHolder<?> planned = menu.recipe(automaticId);
+            if (planned != null) return planned;
+        }
         NodeMetric metric = nodeMetric(output);
         Identifier plannedId = metric == null ? null : metric.recipe();
         if (manualId == null && plannedId != null && menu.recipeProduces(plannedId,

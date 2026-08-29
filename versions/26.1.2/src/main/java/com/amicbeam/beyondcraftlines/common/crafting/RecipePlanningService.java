@@ -193,7 +193,7 @@ public final class RecipePlanningService
     private static void resolve(ServerLevel level, IStackKey<?> resource, long needed,
                                 Ingredient requiredIngredient,
                                 Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
-                                Set<String> visiting, PlanningState state,
+                                Set<IStackKey<?>> visiting, PlanningState state,
                                 RecipeResolutionOverrides overrides, ResolutionMode mode, int depth, int maxDepth,
                                 PlanningBudget budget)
     {
@@ -217,7 +217,7 @@ public final class RecipePlanningService
             return;
         }
         String resourceId = RecipeResourceResolver.sortKey(resource);
-        if (!visiting.add(resourceId))
+        if (!visiting.add(resource))
             throw new PlanningCycleBranch.Cycle();
 
         try
@@ -272,13 +272,13 @@ public final class RecipePlanningService
             }
             state.replaceWith(Objects.requireNonNull(best));
         }
-        finally { visiting.remove(resourceId); }
+        finally { visiting.remove(resource); }
     }
 
     private static void resolveRecipe(ServerLevel level, IStackKey<?> outputKey, long remainder,
                                       RecipeHolder<?> holder,
                                       Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
-                                      Set<String> visiting, PlanningState state,
+                                      Set<IStackKey<?>> visiting, PlanningState state,
                                       RecipeResolutionOverrides overrides, ResolutionMode mode, int depth, int maxDepth,
                                       PlanningBudget budget)
     {
@@ -331,15 +331,20 @@ public final class RecipePlanningService
     private static void resolveRecipeVariant(ServerLevel level, IStackKey<?> outputKey, long remainder,
                                              RecipeHolder<?> holder,
                                              Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
-                                             Set<String> visiting, PlanningState state,
+                                             Set<IStackKey<?>> visiting, PlanningState state,
                                              RecipeResolutionOverrides overrides, ResolutionMode mode,
                                              int depth, int maxDepth,
                                              PlanningBudget budget,
                                              List<KeyAmount> variant)
     {
         int dependencyStart = state.steps.size();
-        KeyAmount result = RecipeOutputResolver.outputs(holder.value(), level).stream()
-                .filter(value -> outputKey.isSame(value.key())).findFirst().orElseThrow();
+        List<KeyAmount> recipeOutputs = RecipeOutputResolver.outputs(holder.value(), level);
+        KeyAmount result = recipeOutputs.stream()
+                .filter(value -> StackKeyMatch.exact(outputKey, value.key())).findFirst()
+                // Explicit JEI roots can represent dynamic assemble() output more precisely than
+                // Recipe#getResultItem. Retain item-family fallback only for that execution shape.
+                .orElseGet(() -> recipeOutputs.stream()
+                        .filter(value -> outputKey.isSame(value.key())).findFirst().orElseThrow());
         long perCraft = Math.max(1, result.amount());
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
@@ -360,7 +365,7 @@ public final class RecipePlanningService
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
-            if (!outputKey.isSame(choice.key())) continue;
+            if (!StackKeyMatch.exact(outputKey, choice.key())) continue;
             seedPerCraft = SaturatingLongMath.add(seedPerCraft, choice.amount());
             if (!(ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]))
                 consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, choice.amount());
@@ -373,7 +378,7 @@ public final class RecipePlanningService
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
             boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
-            boolean selfInput = shape.selfIncrement() && outputKey.isSame(choice.key());
+            boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(outputKey, choice.key());
             long inputAmount = selfInput ? choice.amount()
                     : PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
@@ -384,14 +389,14 @@ public final class RecipePlanningService
                     ? null : ingredient.itemIngredient());
         }
         for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
-            if (shape.selfIncrement() && outputKey.isSame(dependency.getKey()))
+            if (shape.selfIncrement() && StackKeyMatch.exact(outputKey, dependency.getKey()))
                 consumeLeaf(dependency.getKey(), dependency.getValue(), state);
             else resolve(level, dependency.getKey(), dependency.getValue(),
                         dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
                         overrides, mode, depth + 1, maxDepth, budget);
         for (var dependency : PlanningDependencyBatcher.aggregate(reusableDependencyInputs).entrySet())
         {
-            if (shape.selfIncrement() && outputKey.isSame(dependency.getKey()))
+            if (shape.selfIncrement() && StackKeyMatch.exact(outputKey, dependency.getKey()))
             {
                 consumeLeaf(dependency.getKey(), dependency.getValue(), state);
                 continue;

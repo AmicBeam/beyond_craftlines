@@ -81,7 +81,6 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace(', HolderLookup.Provider registries', '')
             .replace(', registries)', ')')
             .replace('serializeNBT(registries)', 'serializeNBT()')
-            .replace('serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())', 'serializeNBT()')
             .replace('player.registryAccess()', '')
             .replace('new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME', 'RecipeOrderSavedData::load, RecipeOrderSavedData::new, NAME')
             .replace('new Factory<>(BindingSavedData::new, BindingSavedData::load), NAME', 'BindingSavedData::load, BindingSavedData::new, NAME')

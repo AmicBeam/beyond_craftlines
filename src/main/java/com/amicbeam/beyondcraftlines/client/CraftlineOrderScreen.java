@@ -763,7 +763,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         return com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                 .outputs(recipe.value(), minecraft.level.registryAccess()).stream()
-                .filter(value -> output.isSame(value.key())).findFirst()
+                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(output, value.key())).findFirst()
                 .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1));
     }
 
@@ -778,13 +779,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             treeNodes = List.of();
             return;
         }
-        RecipeHolder<?> rootRecipe = selected;
         IStackKey<?> rootKey = menu.initialTarget();
+        RecipeHolder<?> rootRecipe = selectedResourceRecipe(rootKey, selected);
         ItemStack rootStack = rootKey instanceof ItemStackKey itemKey
                 ? itemKey.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY;
         ResourceLocation rootItem = rootKey instanceof ItemStackKey itemKey
                 ? BuiltInRegistries.ITEM.getKey(itemKey.getSource()) : null;
-        if (rootItem != null) rootRecipe = selectedRecipe(rootItem, selected);
         treeRoot = buildTree(rootKey, rootStack, rootItem, rootRecipe,
                 null, -1, 0, amountValue(), false, false,
                 new HashSet<>(), new TreeStock(planningResources));
@@ -862,7 +862,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private GraphNode buildTree(ItemStack stack, RecipeHolder<?> recipe, ResourceLocation parentRecipe,
                                 int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
-                                boolean selfIncrementInput, Set<String> expanding, TreeStock stock)
+                                boolean selfIncrementInput, Set<IStackKey<?>> expanding, TreeStock stock)
     {
         ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         ItemStackKey resourceKey = new ItemStackKey(stack.copyWithCount(1));
@@ -875,12 +875,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                 RecipeHolder<?> recipe, ResourceLocation parentRecipe,
                                 int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
                                 boolean selfIncrementInput,
-                                Set<String> expanding,
+                                Set<IStackKey<?>> expanding,
                                 TreeStock stock)
     {
-        String expansionKey = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                .sortKey(resourceKey);
-        boolean cyclic = !selfIncrementInput && expanding.contains(expansionKey);
+        boolean cyclic = !selfIncrementInput && expanding.contains(resourceKey);
         // A repeated ancestor is only a visual cycle marker. It is not another material demand and
         // must not consume stock. Every non-cyclic occurrence keeps its local demand; repeated
         // resources are aggregated only after the complete tree has been built.
@@ -912,7 +910,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selfIncrementInput) return node;
         if (node.stockSatisfied) return node;
         if (recipe == null) return node;
-        expanding.add(expansionKey);
+        expanding.add(resourceKey);
         List<SelectedTreeInput> selectedInputs = new ArrayList<>();
         List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.IngredientSelection> selections =
                 new ArrayList<>();
@@ -993,7 +991,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ItemStack input = itemKey.getReadOnlyStack().copyWithCount(
                         (int) Math.min(Integer.MAX_VALUE, inputGroup.amount));
                 ResourceLocation inputId = BuiltInRegistries.ITEM.getKey(input.getItem());
-                RecipeHolder<?> childRecipe = selectedRecipe(inputId, menu.recipeForOutput(inputId));
+                RecipeHolder<?> childRecipe = selectedResourceRecipe(
+                        inputKey, menu.recipeForResourceOutput(inputKey));
                 child = buildTree(input, childRecipe, recipe.id(), firstSlot.slot(), depth + 1,
                         inputGroup.amount, inputGroup.reusableOnly, inputGroup.selfIncrement, expanding, stock);
             }
@@ -1014,7 +1013,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (child.cyclic) node.cycleBlocked = true;
             node.children.add(child);
         }
-        expanding.remove(expansionKey);
+        expanding.remove(resourceKey);
         return node;
     }
 
@@ -1044,7 +1043,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         long result = 0;
         for (var entry : planningResources.entrySet())
-            if (requested.isSame(entry.getKey()))
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(
+                    requested, entry.getKey()))
             {
                 long amount = Math.max(0, entry.getValue());
                 result = result > Long.MAX_VALUE - amount ? Long.MAX_VALUE : result + amount;
@@ -1057,7 +1057,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NodeMetric exact = nodeMetrics.get(requested);
         if (exact != null) return exact;
         for (var entry : nodeMetrics.entrySet())
-            if (requested.isSame(entry.getKey())) return entry.getValue();
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(
+                    requested, entry.getKey())) return entry.getValue();
         return null;
     }
 
@@ -1133,11 +1134,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         List<GraphNode> all = new ArrayList<>();
         collectExpandedNodes(root, all);
-        Map<String, List<GraphNode>> groups = new LinkedHashMap<>();
+        Map<IStackKey<?>, List<GraphNode>> groups = new LinkedHashMap<>();
         for (GraphNode node : all)
             if (!node.selfIncrement)
             groups.computeIfAbsent(displayIdentity(node.key), ignored -> new ArrayList<>()).add(node);
-        Map<String, GraphNode> canonical = new LinkedHashMap<>();
+        Map<IStackKey<?>, GraphNode> canonical = new LinkedHashMap<>();
         for (var entry : groups.entrySet())
         {
             GraphNode selected = entry.getValue().stream()
@@ -1168,7 +1169,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             List<GraphNode> visible = new ArrayList<>();
             collectVisibleNodes(root, visible);
             Set<GraphNode> visibleSet = new HashSet<>(visible);
-            Map<String, GraphNode> visibleByIdentity = new LinkedHashMap<>();
+            Map<IStackKey<?>, GraphNode> visibleByIdentity = new LinkedHashMap<>();
             for (GraphNode node : visible)
                 visibleByIdentity.putIfAbsent(displayIdentity(node.key), node);
             for (var entry : canonical.entrySet())
@@ -1237,8 +1238,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             for (GraphNode child : node.children) collectVisibleNodes(child, nodes);
     }
 
-    private static String displayIdentity(IStackKey<?> key)
-    { return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(key); }
+    private static IStackKey<?> displayIdentity(IStackKey<?> key) { return key; }
 
     private boolean openIngredientPicker(GraphNode node)
     {
@@ -1559,7 +1559,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new RecipePreviewTooltip(inputs,
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                                 .outputs(recipe.value(), minecraft.level.registryAccess()).stream()
-                                .filter(value -> output.isSame(value.key())).findFirst()
+                                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                        .exact(output, value.key())).findFirst()
                         .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))),
                 output instanceof ItemStackKey itemKey ? itemKey.getReadOnlyStack() : ItemStack.EMPTY,
                 mouseX, mouseY);
@@ -1923,7 +1924,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             minecraft.execute(() -> {
                     if (generation != planningGeneration) return;
                     planningTask = null;
-                    if (nonce != previewNonce || selected == null || !target.isSame(menu.initialTarget())) return;
+                    if (nonce != previewNonce || selected == null
+                            || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(target, menu.initialTarget())) return;
                     loadingStatus = "";
                     if (completedFailure != null)
                     {
@@ -2400,7 +2403,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             long positive = Math.max(1, amount);
             for (var entry : reusableRequirements.entrySet())
             {
-                if (!requested.isSame(entry.getKey())) continue;
+                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(requested, entry.getKey())) continue;
                 long previous = entry.getValue();
                 if (positive <= previous) return 0;
                 entry.setValue(positive);
@@ -2417,7 +2421,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             for (var entry : remaining.entrySet())
             {
                 if (left == 0) break;
-                if (!requested.isSame(entry.getKey())) continue;
+                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(requested, entry.getKey())) continue;
                 long take = Math.min(left, entry.getValue());
                 if (take == 0) continue;
                 entry.setValue(entry.getValue() - take);

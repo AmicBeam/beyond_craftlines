@@ -9,8 +9,6 @@ public final class StackKeyMatch
 
     public static boolean exact(IStackKey<?> left, IStackKey<?> right)
     {
-        return SymmetricMatch.either(left, right,
-                (candidate, available) -> candidate.equals(available) || candidate.isSame(available),
-                IStackKey::isSameTypeSameComponents);
+        return SymmetricMatch.exact(left, right, IStackKey::isSameTypeSameComponents);
     }
 }

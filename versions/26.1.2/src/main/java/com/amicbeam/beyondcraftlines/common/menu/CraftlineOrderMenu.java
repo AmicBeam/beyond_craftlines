@@ -138,7 +138,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     {
         List<RecipeHolder<?>> virtual = recipes().stream()
                 .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
-                        .anyMatch(value -> output.isSame(value.key()))).toList();
+                        .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting
+                                .StackKeyMatch.exact(output, value.key()))).toList();
         return virtual;
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)

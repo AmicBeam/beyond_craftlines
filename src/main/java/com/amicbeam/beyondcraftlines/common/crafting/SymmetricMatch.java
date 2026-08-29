@@ -7,6 +7,9 @@ final class SymmetricMatch
 {
     private SymmetricMatch() {}
 
+    static <T> boolean exact(T left, T right, BiPredicate<T, T> compatible)
+    { return either(left, right, Object::equals, compatible); }
+
     static <T> boolean either(T left, T right, BiPredicate<T, T> primary,
                               BiPredicate<T, T> compatible)
     {

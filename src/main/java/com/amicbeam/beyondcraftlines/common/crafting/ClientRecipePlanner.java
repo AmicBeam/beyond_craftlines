@@ -151,7 +151,7 @@ public final class ClientRecipePlanner
     }
 
     private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
-                                Set<String> visiting, State state,
+                                Set<IStackKey<?>> visiting, State state,
                                 Map<String, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, ResourceLocation> manualIngredients,
                                 int depth, int maxDepth, ClientPlanningBudget budget)
@@ -166,7 +166,7 @@ public final class ClientRecipePlanner
             state.missing.merge(resource, remainder, SaturatingLongMath::add);
             return;
         }
-        if (!visiting.add(RecipeResourceResolver.sortKey(resource)))
+        if (!visiting.add(resource))
             throw new PlanningCycleBranch.Cycle();
         String resourceId = RecipeResourceResolver.sortKey(resource);
         try
@@ -227,11 +227,11 @@ public final class ClientRecipePlanner
             if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
             else state.replaceWith(best);
         }
-        finally { visiting.remove(RecipeResourceResolver.sortKey(resource)); }
+        finally { visiting.remove(resource); }
     }
 
     private static void resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe,
-                                      Map<IStackKey<?>, List<Recipe>> byOutput, Set<String> visiting,
+                                      Map<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
                                       State state, Map<String, ResourceLocation> manualRecipes,
                                       Map<IngredientKey, ResourceLocation> manualIngredients,
                                       int depth, int maxDepth, ClientPlanningBudget budget)
@@ -292,7 +292,7 @@ public final class ClientRecipePlanner
 
     private static boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe,
                                         Map<IStackKey<?>, List<Recipe>> byOutput,
-                                        Set<String> visiting, State state,
+                                        Set<IStackKey<?>> visiting, State state,
                                         Map<String, ResourceLocation> manualRecipes,
                                         Map<IngredientKey, ResourceLocation> manualIngredients,
                                         int depth, int maxDepth, ClientPlanningBudget budget,
@@ -306,7 +306,7 @@ public final class ClientRecipePlanner
         {
             Slot slot = recipe.slots().get(i);
             Candidate candidate = variant.get(i);
-            if (!output.isSame(candidate.key())) continue;
+            if (!StackKeyMatch.exact(output, candidate.key())) continue;
             seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
             if (!slot.reusable())
                 consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
@@ -325,20 +325,20 @@ public final class ClientRecipePlanner
                 ResourceLocation previous = state.ingredients.putIfAbsent(key, candidateItem);
                 if (previous != null && !previous.equals(candidateItem)) return false;
             }
-            boolean selfInput = shape.selfIncrement() && output.isSame(candidate.key());
+            boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(output, candidate.key());
             long inputAmount = selfInput || slot.reusable() ? candidate.count()
                     : SaturatingLongMath.multiply(crafts, candidate.count());
             (slot.reusable() ? reusableInputs : inputs)
                     .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
-            if (shape.selfIncrement() && output.isSame(input.getKey()))
+            if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
                 consumeLeaf(state, input.getKey(), input.getValue());
             else resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
                         manualIngredients, depth + 1, maxDepth, budget);
         for (var input : reusableInputs.entrySet())
         {
-            if (shape.selfIncrement() && output.isSame(input.getKey()))
+            if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
             {
                 consumeLeaf(state, input.getKey(), input.getValue());
                 continue;

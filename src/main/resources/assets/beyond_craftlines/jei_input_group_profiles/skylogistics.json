@@ -1,0 +1,18 @@
+{
+  "jei_type": "skylogistics:sky_offering",
+  "recipe_classes": [
+    "com.skylogistics.recipe.OfferingRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "main_offering",
+      "members": ["main"],
+      "cardinality": "single"
+    },
+    {
+      "group": "offerings",
+      "members": ["offerings"],
+      "cardinality": "collection"
+    }
+  ]
+}

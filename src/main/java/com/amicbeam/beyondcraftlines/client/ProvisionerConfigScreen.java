@@ -450,6 +450,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
             case "catalyst" -> Component.translatable("gui.beyond_craftlines.provisioner.group.catalyst");
             case "activation_item" -> Component.translatable(
                     "gui.beyond_craftlines.provisioner.group.activation_item");
+            case "main_offering" -> Component.translatable(
+                    "gui.beyond_craftlines.provisioner.group.main_offering");
             case "offerings" -> Component.translatable("gui.beyond_craftlines.provisioner.group.offerings");
             case "reagent", "pedestal_items", "spirits", "extra_items", "input" -> Component.translatable(
                     "gui.beyond_craftlines.provisioner.group." + group);

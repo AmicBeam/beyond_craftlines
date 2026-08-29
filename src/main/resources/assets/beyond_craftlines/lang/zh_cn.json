@@ -58,6 +58,7 @@
   "gui.beyond_craftlines.provisioner.group.ingredients": "材料",
   "gui.beyond_craftlines.provisioner.group.catalyst": "催化物",
   "gui.beyond_craftlines.provisioner.group.activation_item": "激活物品",
+  "gui.beyond_craftlines.provisioner.group.main_offering": "主祭品",
   "gui.beyond_craftlines.provisioner.group.offerings": "供品",
   "gui.beyond_craftlines.provisioner.group.reagent": "中心素材",
   "gui.beyond_craftlines.provisioner.group.pedestal_items": "基座素材",

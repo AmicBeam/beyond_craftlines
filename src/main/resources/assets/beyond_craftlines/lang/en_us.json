@@ -58,6 +58,7 @@
   "gui.beyond_craftlines.provisioner.group.ingredients": "Ingredients",
   "gui.beyond_craftlines.provisioner.group.catalyst": "Catalyst",
   "gui.beyond_craftlines.provisioner.group.activation_item": "Activation item",
+  "gui.beyond_craftlines.provisioner.group.main_offering": "Main offering",
   "gui.beyond_craftlines.provisioner.group.offerings": "Offerings",
   "gui.beyond_craftlines.provisioner.group.reagent": "Center ingredient",
   "gui.beyond_craftlines.provisioner.group.pedestal_items": "Pedestal ingredients",

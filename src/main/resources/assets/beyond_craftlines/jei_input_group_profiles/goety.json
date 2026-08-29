@@ -1,0 +1,18 @@
+{
+  "jei_type": "goety:ritual",
+  "recipe_classes": [
+    "com.Polarice3.Goety.common.crafting.RitualRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "activation_item",
+      "members": ["getActivationItem"],
+      "cardinality": "single"
+    },
+    {
+      "group": "offerings",
+      "members": ["getIngredients"],
+      "cardinality": "collection"
+    }
+  ]
+}

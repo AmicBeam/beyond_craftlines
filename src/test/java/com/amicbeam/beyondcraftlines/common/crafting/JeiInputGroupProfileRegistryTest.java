@@ -56,7 +56,7 @@ final class JeiInputGroupProfileRegistryTest
     }
 
     @Test
-    void shipsArsNouveauAndMalumProfiles()
+    void shipsSupportedSemanticInputGroupProfiles()
     {
         var ars = read("ars_nouveau.json");
         assertEquals("ars_nouveau:enchanting_apparatus", ars.jeiType());
@@ -66,6 +66,24 @@ final class JeiInputGroupProfileRegistryTest
                 ars.recipeClasses());
         assertEquals(List.of("reagent", "pedestal_items"),
                 ars.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
+
+        var goety = read("goety.json");
+        assertEquals("goety:ritual", goety.jeiType());
+        assertEquals(java.util.Set.of("com.Polarice3.Goety.common.crafting.RitualRecipe"),
+                goety.recipeClasses());
+        assertEquals(List.of("activation_item", "offerings"),
+                goety.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
+        assertEquals(List.of("getActivationItem"), goety.sections().get(0).members());
+        assertEquals(List.of("getIngredients"), goety.sections().get(1).members());
+
+        var skylogistics = read("skylogistics.json");
+        assertEquals("skylogistics:sky_offering", skylogistics.jeiType());
+        assertEquals(java.util.Set.of("com.skylogistics.recipe.OfferingRecipe"),
+                skylogistics.recipeClasses());
+        assertEquals(List.of("main_offering", "offerings"),
+                skylogistics.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
+        assertEquals(List.of("main"), skylogistics.sections().get(0).members());
+        assertEquals(List.of("offerings"), skylogistics.sections().get(1).members());
 
         var malum = read("malum.json");
         assertEquals("malum:spirit_infusion", malum.jeiType());

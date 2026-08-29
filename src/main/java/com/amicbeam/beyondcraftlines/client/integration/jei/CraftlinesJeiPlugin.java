@@ -57,12 +57,19 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             public <T> @Nullable IIconButtonController createButtonController(
                     IRecipeLayoutDrawable<T> recipeLayoutDrawable)
             {
-                IStackKey<?> target = findOutput(recipeLayoutDrawable);
-                ResourceLocation recipe = findRecipeId(recipeLayoutDrawable);
+                var output = findOutput(recipeLayoutDrawable);
                 ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
-                return target == null || recipe == null ? null
-                        : new OrderButtonController(target, recipe, recipeType, scaledIcon);
+                if (output == null) return null;
+                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = com.amicbeam.beyondcraftlines
+                        .common.crafting.VanillaProvisionerRecipeTypes.isJeiOnly(recipeType)
+                        ? virtualInputs(recipeLayoutDrawable) : java.util.List.of();
+                ResourceLocation recipe = virtualInputs.isEmpty() ? findRecipeId(recipeLayoutDrawable)
+                        : com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                        .register(recipeType.toString(), output.key(), output.amount(), virtualInputs.stream()
+                                .map(OpenOrderMenuPayload.VirtualInput::candidates).toList()).id();
+                return recipe == null ? null : new OrderButtonController(
+                        output.key(), recipe, recipeType, virtualInputs, output.amount(), scaledIcon);
             }
         });
     }
@@ -164,14 +171,25 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return amount == null ? null : amount.key();
     }
 
-    private static @Nullable IStackKey<?> findOutput(IRecipeLayoutDrawable<?> layout)
+    private static @Nullable com.wintercogs.beyonddimensions.api.storage.key.KeyAmount findOutput(
+            IRecipeLayoutDrawable<?> layout)
     {
         return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.OUTPUT).stream()
                 .flatMap(slot -> slot.getAllIngredients())
                 .map(typed -> RecipeResourceResolver.fromStack(typed.getIngredient()))
                 .filter(java.util.Objects::nonNull)
-                .map(com.wintercogs.beyonddimensions.api.storage.key.KeyAmount::key)
                 .findFirst().orElse(null);
+    }
+
+    private static java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs(
+            IRecipeLayoutDrawable<?> layout)
+    {
+        return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).stream()
+                .map(slot -> slot.getAllIngredients()
+                        .map(typed -> RecipeResourceResolver.fromStack(typed.getIngredient()))
+                        .filter(java.util.Objects::nonNull).distinct().limit(64).toList())
+                .filter(values -> !values.isEmpty()).limit(32)
+                .map(OpenOrderMenuPayload.VirtualInput::new).toList();
     }
 
     private static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)
@@ -229,7 +247,9 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     }
 
     private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe,
-                                         ResourceLocation recipeType, IDrawable icon)
+                                         ResourceLocation recipeType,
+                                         java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs,
+                                         long virtualOutputAmount, IDrawable icon)
             implements IIconButtonController
     {
         @Override
@@ -256,7 +276,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (!input.isSimulate())
             {
                 PacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                        target, recipe.toString(), recipeType.toString()));
+                        target, recipe.toString(), recipeType.toString(), virtualInputs, virtualOutputAmount));
             }
             return true;
         }

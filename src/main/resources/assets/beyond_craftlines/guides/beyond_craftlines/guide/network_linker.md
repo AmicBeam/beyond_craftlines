@@ -32,7 +32,7 @@ If a recipe exposes several logical material groups, different endpoints may han
 
 When only one recipe type is detected, it can be selected automatically. Right-clicking air exits the current linker mode or clears the active selection.
 
-The vanilla brewing stand, smithing table, composter, anvil, and stonecutter are provisioner-only recipe targets. They can label a provisioner without a block entity or item capability, but cannot be bound as direct machines. These bindings are labels only and do not make their menu-based or JEI-only operations executable Craftlines recipe steps.
+The vanilla brewing stand, smithing table, composter, anvil, and stonecutter are provisioner-only recipe targets. They can bind without a block entity or item capability, but cannot be bound as direct machines. Smithing and stonecutting use their server recipes. Brewing, anvil, and composting orders use the exact item components and bounded input choices shown in the selected JEI layout; the provisioner delivers those inputs and waits for the displayed output to return to the network.
 
 ## Wireless provisioner connections
 

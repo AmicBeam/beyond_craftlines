@@ -105,7 +105,9 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
         else
         {
-            candidates = RecipeCatalog.forLevel(level).stream()
+            candidates = java.util.stream.Stream.concat(RecipeCatalog.forLevel(level).stream(),
+                    com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                            .recipes().stream())
                     .sorted(java.util.Comparator.comparing(holder -> holder.id().identifier().toString())).toList();
             synchronized (RECIPE_INDEX_CACHE)
             {
@@ -113,9 +115,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                         new RecipeIndex(candidates, level));
             }
         }
-        this.initialRecipeHolder = initialRecipe == null ? null : (level instanceof ServerLevel serverLevel
-                ? serverLevel.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                        net.minecraft.core.registries.Registries.RECIPE, initialRecipe)).orElse(null)
+        this.initialRecipeHolder = initialRecipe == null ? null : (level instanceof ServerLevel
+                ? findRecipe(level, initialRecipe)
                 : candidates.stream().filter(holder -> holder.id().identifier().equals(initialRecipe))
                         .findFirst().orElse(null));
         addDataSlots(serverIndexProgress);
@@ -218,11 +219,24 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         synchronized (RECIPE_INDEX_CACHE)
         {
             return RECIPE_INDEX_CACHE.computeIfAbsent(source, ignored -> {
-                Collection<RecipeHolder<?>> recipes = level.recipeAccess().getRecipes();
+                Collection<RecipeHolder<?>> recipes = java.util.stream.Stream.concat(
+                        level.recipeAccess().getRecipes().stream(),
+                        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                                .recipes().stream()).toList();
                 return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()),
                         FORCED_SERVER_INDEX_REBUILDS.remove(level.getServer()));
             });
         }
+    }
+
+    private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, Identifier id)
+    {
+        RecipeHolder<?> vanilla = level instanceof ServerLevel serverLevel
+                ? serverLevel.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.RECIPE, id)).orElse(null) : null;
+        return vanilla != null ? vanilla
+                : com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                .find(id).orElse(null);
     }
 
     private static Path indexPath(MinecraftServer server)
@@ -350,9 +364,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             for (String recipeId : recipeIdsByResourceOutput.getOrDefault(token, List.of()))
             {
                 Identifier id = Identifier.tryParse(recipeId);
-                RecipeHolder<?> holder = id == null ? null : serverLevel.recipeAccess().byKey(
-                        net.minecraft.resources.ResourceKey.create(
-                                net.minecraft.core.registries.Registries.RECIPE, id)).orElse(null);
+                RecipeHolder<?> holder = id == null ? null : findRecipe(level, id);
                 if (holder == null || !RecipePlanningService.supported(holder)) continue;
                 boolean produces = RecipeOutputResolver.outputs(holder.value(), level).stream()
                         .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
@@ -363,18 +375,14 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
         private synchronized RecipeHolder<?> recipe(Identifier id)
         {
-            return level instanceof ServerLevel serverLevel ? serverLevel.recipeAccess().byKey(
-                    net.minecraft.resources.ResourceKey.create(
-                            net.minecraft.core.registries.Registries.RECIPE, id)).orElse(null) : recipesById.get(id);
+            return level instanceof ServerLevel ? findRecipe(level, id) : recipesById.get(id);
         }
         private synchronized Identifier itemOutputForToken(String token) { return itemOutputsByToken.get(token); }
         private synchronized boolean recipeProduces(Identifier recipe, String token)
         {
             if (level instanceof ServerLevel serverLevel)
             {
-                RecipeHolder<?> holder = serverLevel.recipeAccess().byKey(
-                        net.minecraft.resources.ResourceKey.create(
-                                net.minecraft.core.registries.Registries.RECIPE, recipe)).orElse(null);
+                RecipeHolder<?> holder = findRecipe(level, recipe);
                 return holder != null && RecipeOutputResolver.outputs(holder.value(), level).stream()
                         .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
                                 .RecipeResourceResolver.sortKey(value.key())));

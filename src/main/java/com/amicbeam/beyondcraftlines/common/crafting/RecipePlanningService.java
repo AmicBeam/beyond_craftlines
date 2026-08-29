@@ -29,7 +29,8 @@ public final class RecipePlanningService
 
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
-        return VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager -> manager.getRecipes().stream()
+        return VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager -> java.util.stream.Stream
+                .concat(manager.getRecipes().stream(), VirtualProvisionerRecipeRegistry.recipes().stream())
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> !RecipeOutputResolver.outputs(
                         holder.value(), level.registryAccess()).isEmpty())
@@ -50,7 +51,8 @@ public final class RecipePlanningService
     public static Set<String> loadedFamilies(Level level)
     {
         RecipeManager manager = level.getRecipeManager();
-        return LOADED_FAMILY_CACHE.computeIfAbsent(manager, ignored -> manager.getRecipes().stream()
+        return LOADED_FAMILY_CACHE.computeIfAbsent(manager, ignored -> java.util.stream.Stream
+                .concat(manager.getRecipes().stream(), VirtualProvisionerRecipeRegistry.recipes().stream())
                 .map(RecipePlanningService::family).collect(java.util.stream.Collectors.toUnmodifiableSet()));
     }
 
@@ -146,7 +148,8 @@ public final class RecipePlanningService
             List<RecipeHolder<?>> selected = new ArrayList<>();
             for (ResourceLocation id : overrides.selectedRecipes())
             {
-                RecipeHolder<?> holder = level.getRecipeManager().byKey(id).orElse(null);
+                RecipeHolder<?> holder = level.getRecipeManager().byKey(id)
+                        .or(() -> VirtualProvisionerRecipeRegistry.find(id)).orElse(null);
                 if (holder != null) selected.add(holder);
             }
             candidates = selected;
@@ -512,6 +515,7 @@ public final class RecipePlanningService
     public static boolean supported(RecipeHolder<?> holder)
     {
         var recipe = holder.value();
+        if (VirtualProvisionerRecipeRegistry.descriptor(recipe) != null) return true;
         // Recipe#isIncomplete treats an empty vanilla getIngredients() list as invalid.
         // Many third-party machine recipes intentionally keep that list empty and expose
         // their inputs through their own API, so only apply the vanilla check when the
@@ -523,6 +527,8 @@ public final class RecipePlanningService
     public static String family(RecipeHolder<?> holder)
     {
         var recipe = holder.value();
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null) return virtual.family();
         RecipeType<?> type = recipe.getType();
         String byType = family(type);
         if (byType != null) return byType;

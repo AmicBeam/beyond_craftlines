@@ -99,7 +99,17 @@ public final class RecipeResourceResolver
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
-    { return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true); }
+    {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null)
+        {
+            List<ResourceIngredient> result = new ArrayList<>();
+            for (int slot = 0; slot < virtual.inputs().size(); slot++)
+                result.add(new ResourceIngredient(slot, virtual.inputs().get(slot), null, VANILLA_INPUT_GROUP));
+            return List.copyOf(result);
+        }
+        return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true);
+    }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)

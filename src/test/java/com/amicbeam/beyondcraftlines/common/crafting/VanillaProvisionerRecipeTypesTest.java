@@ -19,16 +19,33 @@ final class VanillaProvisionerRecipeTypesTest
 
         assertTrue(VanillaProvisionerRecipeTypes.acceptsAll(requested, Set.of()));
         assertEquals(requested, VanillaProvisionerRecipeTypes.accepted(requested, Set.of()));
-        assertEquals(Set.of(), VanillaProvisionerRecipeTypes.executable(requested));
+        assertEquals(Set.of("minecraft:smithing", "minecraft:stonecutting"),
+                VanillaProvisionerRecipeTypes.executable(requested));
     }
 
     @Test
     void keepsAllFiveVanillaWorkstationsOffTheDirectMachinePath()
     {
-        assertTrue(VanillaProvisionerRecipeTypes.isBindOnly("minecraft:smithing"));
-        assertTrue(VanillaProvisionerRecipeTypes.isBindOnly("minecraft:stonecutting"));
-        assertEquals(Set.of("example:pressing"), VanillaProvisionerRecipeTypes.executable(Set.of(
+        assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:smithing"));
+        assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:stonecutting"));
+        assertFalse(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:smithing"));
+        assertFalse(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:stonecutting"));
+        assertEquals(Set.of("minecraft:smithing", "minecraft:stonecutting", "example:pressing"),
+                VanillaProvisionerRecipeTypes.executable(Set.of(
                 "minecraft:smithing", "minecraft:stonecutting", "example:pressing")));
+    }
+
+    @Test
+    void identifiesJeiOnlyCategoriesWithoutServerRecipeHolders()
+    {
+        assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:brewing"));
+        assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:anvil"));
+        assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("minecraft:compostable"));
+        assertEquals(Set.of("minecraft:brewing", "minecraft:anvil", "minecraft:compostable",
+                        "minecraft:smithing", "stonecutting"),
+                VanillaProvisionerRecipeTypes.provisionerFamilies(Set.of(
+                        "minecraft:brewing", "minecraft:anvil", "minecraft:compostable",
+                        "minecraft:smithing", "minecraft:stonecutting"), Set.of()));
     }
 
     @Test

@@ -123,6 +123,7 @@ public final class JeiCatalystIndex
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
         HINTS_BY_TYPE = Map.of();
+        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
         RECIPES_BY_ID = Map.of();
         RecipeCatalog.clearClient();
     }

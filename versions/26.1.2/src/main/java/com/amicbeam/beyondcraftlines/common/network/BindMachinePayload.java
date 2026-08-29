@@ -82,7 +82,8 @@ public record BindMachinePayload(long targetPosition, int targetFace, List<Strin
             boolean supported = provisionerRecipeMode
                     ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                     .acceptsAll(types, mapping.jeiTypes())
-                    : !mapping.isEmpty();
+                    : !mapping.isEmpty() && types.stream().noneMatch(com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes::isProvisionerOnly);
             if (!connectionMode && !supported)
             {
                 com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry

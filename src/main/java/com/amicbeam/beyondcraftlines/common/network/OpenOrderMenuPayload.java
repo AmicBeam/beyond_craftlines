@@ -16,21 +16,67 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
-public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType)
+public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType,
+                                   java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount)
         implements CustomPacketPayload
 {
     public static final Type<OpenOrderMenuPayload> TYPE = new Type<>(
             net.minecraft.resources.ResourceLocation.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "open_order_menu"));
-    public static final StreamCodec<RegistryFriendlyByteBuf, OpenOrderMenuPayload> STREAM_CODEC = StreamCodec.composite(
-            IStackKey.STREAM_CODEC, OpenOrderMenuPayload::target,
-            ByteBufCodecs.stringUtf8(256), OpenOrderMenuPayload::recipeId,
-            ByteBufCodecs.stringUtf8(256), OpenOrderMenuPayload::jeiRecipeType,
-            OpenOrderMenuPayload::new);
+    public static final StreamCodec<RegistryFriendlyByteBuf, OpenOrderMenuPayload> STREAM_CODEC = StreamCodec.of(
+            OpenOrderMenuPayload::encode, OpenOrderMenuPayload::decode);
+
+    public OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType)
+    { this(target, recipeId, jeiRecipeType, java.util.List.of(), 0); }
+
+    public OpenOrderMenuPayload
+    {
+        virtualInputs = java.util.List.copyOf(virtualInputs);
+    }
+
+    private static void encode(RegistryFriendlyByteBuf buffer, OpenOrderMenuPayload payload)
+    {
+        IStackKey.STREAM_CODEC.encode(buffer, payload.target());
+        buffer.writeUtf(payload.recipeId(), 256);
+        buffer.writeUtf(payload.jeiRecipeType(), 256);
+        buffer.writeVarInt(payload.virtualInputs().size());
+        for (VirtualInput input : payload.virtualInputs())
+        {
+            buffer.writeVarInt(input.candidates().size());
+            for (KeyAmount candidate : input.candidates())
+            {
+                IStackKey.STREAM_CODEC.encode(buffer, candidate.key());
+                buffer.writeVarLong(candidate.amount());
+            }
+        }
+        buffer.writeVarLong(payload.virtualOutputAmount());
+    }
+
+    private static OpenOrderMenuPayload decode(RegistryFriendlyByteBuf buffer)
+    {
+        IStackKey<?> target = IStackKey.STREAM_CODEC.decode(buffer);
+        String recipe = buffer.readUtf(256);
+        String type = buffer.readUtf(256);
+        int slots = buffer.readVarInt();
+        if (slots < 0 || slots > 32) throw new IllegalArgumentException("invalid virtual input count");
+        java.util.List<VirtualInput> inputs = new java.util.ArrayList<>();
+        for (int slot = 0; slot < slots; slot++)
+        {
+            int candidates = buffer.readVarInt();
+            if (candidates < 1 || candidates > 64)
+                throw new IllegalArgumentException("invalid virtual candidate count");
+            java.util.List<KeyAmount> values = new java.util.ArrayList<>();
+            for (int candidate = 0; candidate < candidates; candidate++)
+                values.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
+            inputs.add(new VirtualInput(values));
+        }
+        return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong());
+    }
 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
     {
@@ -49,8 +95,32 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 return;
             }
             var level = player.level();
-            var candidates = requestedRecipe == null ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
-                    : level.getRecipeManager().byKey(requestedRecipe).stream().toList();
+            if (!payload.virtualInputs().isEmpty())
+            {
+                try
+                {
+                    if (requestedType == null || !com.amicbeam.beyondcraftlines.common.crafting
+                            .VanillaProvisionerRecipeTypes.isJeiOnly(requestedType))
+                        throw new IllegalArgumentException("invalid virtual recipe category");
+                    var holder = com.amicbeam.beyondcraftlines.common.crafting
+                            .VirtualProvisionerRecipeRegistry.register(requestedType.toString(), target,
+                            payload.virtualOutputAmount(), payload.virtualInputs().stream()
+                                    .map(VirtualInput::candidates).toList());
+                    if (requestedRecipe == null || !holder.id().equals(requestedRecipe))
+                        throw new IllegalArgumentException("virtual recipe id mismatch");
+                }
+                catch (IllegalArgumentException exception)
+                {
+                    player.displayClientMessage(Component.translatable(
+                            "error.beyond_craftlines.invalid_order_target"), false);
+                    return;
+                }
+            }
+            var candidates = requestedRecipe == null
+                    ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
+                    : level.getRecipeManager().byKey(requestedRecipe)
+                    .or(() -> com.amicbeam.beyondcraftlines.common.crafting
+                            .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();
             if (requestedRecipe != null && CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
                 showRecipeDebug(player, payload, candidates);
             DimensionsNet network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
@@ -144,4 +214,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+
+    public record VirtualInput(java.util.List<KeyAmount> candidates)
+    {
+        public VirtualInput { candidates = java.util.List.copyOf(candidates); }
+    }
 }

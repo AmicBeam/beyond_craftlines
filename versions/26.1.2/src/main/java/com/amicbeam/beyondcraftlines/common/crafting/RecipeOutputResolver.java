@@ -20,6 +20,8 @@ public final class RecipeOutputResolver
 
     public static List<KeyAmount> outputs(Recipe<?> recipe, Level level)
     {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null) return List.of(new KeyAmount(virtual.output(), virtual.outputAmount()));
         LinkedHashMap<IStackKey<?>, KeyAmount> result = new LinkedHashMap<>();
         var context = SlotDisplayContext.fromLevel(level);
         recipe.display().stream().flatMap(display -> display.result().resolveForStacks(context).stream())

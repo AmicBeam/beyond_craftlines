@@ -101,11 +101,11 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         else synchronized (RECIPE_INDEX_CACHE)
         {
             this.recipeIndex = RECIPE_INDEX_CACHE.computeIfAbsent(level.getRecipeManager(), ignored ->
-                    new RecipeIndex(level.getRecipeManager().getRecipes().stream()
+                    new RecipeIndex(allRecipes(level).stream()
                             .sorted(java.util.Comparator.comparing(holder -> holder.id().toString())).toList(), level));
         }
         this.initialRecipeHolder = initialRecipe == null ? null
-                : level.getRecipeManager().byKey(initialRecipe).orElse(null);
+                : findRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
         updateServerIndexProgress();
     }
@@ -205,11 +205,25 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         synchronized (RECIPE_INDEX_CACHE)
         {
             return RECIPE_INDEX_CACHE.computeIfAbsent(level.getRecipeManager(), ignored -> {
-                Collection<RecipeHolder<?>> recipes = level.getRecipeManager().getRecipes();
+                Collection<RecipeHolder<?>> recipes = allRecipes(level);
                 return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()),
                         FORCED_SERVER_INDEX_REBUILDS.remove(level.getServer()));
             });
         }
+    }
+
+    private static List<RecipeHolder<?>> allRecipes(net.minecraft.world.level.Level level)
+    {
+        return java.util.stream.Stream.concat(level.getRecipeManager().getRecipes().stream(),
+                com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                        .recipes().stream()).toList();
+    }
+
+    private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, ResourceLocation id)
+    {
+        return level.getRecipeManager().byKey(id).orElseGet(() ->
+                com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                        .find(id).orElse(null));
     }
 
     private static Path indexPath(MinecraftServer server)
@@ -336,7 +350,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             for (String recipeId : recipeIdsByResourceOutput.getOrDefault(token, List.of()))
             {
                 ResourceLocation id = ResourceLocation.tryParse(recipeId);
-                RecipeHolder<?> holder = id == null ? null : level.getRecipeManager().byKey(id).orElse(null);
+                RecipeHolder<?> holder = id == null ? null : findRecipe(level, id);
                 if (holder == null || !RecipePlanningService.supported(holder)) continue;
                 boolean produces = RecipeOutputResolver.outputs(holder.value(), level.registryAccess()).stream()
                         .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
@@ -346,13 +360,13 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             return List.copyOf(result);
         }
         private synchronized RecipeHolder<?> recipe(ResourceLocation id)
-        { return level instanceof ServerLevel ? level.getRecipeManager().byKey(id).orElse(null) : recipesById.get(id); }
+        { return level instanceof ServerLevel ? findRecipe(level, id) : recipesById.get(id); }
         private synchronized ResourceLocation itemOutputForToken(String token) { return itemOutputsByToken.get(token); }
         private synchronized boolean recipeProduces(ResourceLocation recipe, String token)
         {
             if (level instanceof ServerLevel)
             {
-                RecipeHolder<?> holder = level.getRecipeManager().byKey(recipe).orElse(null);
+                RecipeHolder<?> holder = findRecipe(level, recipe);
                 return holder != null && RecipeOutputResolver.outputs(holder.value(), level.registryAccess()).stream()
                         .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
                                 .RecipeResourceResolver.sortKey(value.key())));

@@ -19,6 +19,8 @@ public final class RecipeOutputResolver
     public static List<KeyAmount> outputs(Recipe<?> recipe,
                                           net.minecraft.core.HolderLookup.Provider registries)
     {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null) return List.of(new KeyAmount(virtual.output(), virtual.outputAmount()));
         LinkedHashMap<IStackKey<?>, KeyAmount> result = new LinkedHashMap<>();
         ItemStack item = recipe.getResultItem(registries);
         if (!item.isEmpty()) add(result, new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount()));

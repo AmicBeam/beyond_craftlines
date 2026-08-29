@@ -60,6 +60,10 @@ final class JeiInputGroupProfileRegistryTest
     {
         var ars = read("ars_nouveau.json");
         assertEquals("ars_nouveau:enchanting_apparatus", ars.jeiType());
+        assertEquals(java.util.Set.of(
+                        "com.hollingsworth.arsnouveau.common.crafting.recipes.EnchantingApparatusRecipe",
+                        "com.hollingsworth.arsnouveau.api.enchanting_apparatus.EnchantingApparatusRecipe"),
+                ars.recipeClasses());
         assertEquals(List.of("reagent", "pedestal_items"),
                 ars.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
 

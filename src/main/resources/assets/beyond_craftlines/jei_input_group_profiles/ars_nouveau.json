@@ -1,7 +1,8 @@
 {
   "jei_type": "ars_nouveau:enchanting_apparatus",
   "recipe_classes": [
-    "com.hollingsworth.arsnouveau.common.crafting.recipes.EnchantingApparatusRecipe"
+    "com.hollingsworth.arsnouveau.common.crafting.recipes.EnchantingApparatusRecipe",
+    "com.hollingsworth.arsnouveau.api.enchanting_apparatus.EnchantingApparatusRecipe"
   ],
   "input_sections": [
     {

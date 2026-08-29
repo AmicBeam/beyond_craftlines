@@ -947,8 +947,8 @@ public final class RecipeOrderService
 
     private static List<KeyAmount> recipeOutputs(ServerLevel level, RecipePlan.Step step)
     {
-        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, step.recipe())).orElse(null);
+        var holder = com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                .find(step.recipe()).orElse(null);
         return holder == null ? List.of() : RecipeOutputResolver.outputs(holder.value(), level);
     }
 
@@ -1463,13 +1463,7 @@ public final class RecipeOrderService
     private static Ingredient ingredient(ServerLevel level, RecipePlan.Step step, int slot)
     {
         if (slot < 0) return null;
-        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, step.recipe())).orElse(null);
-        if (holder == null) return null;
-        var ingredients = com.amicbeam.beyondcraftlines.common.crafting.RecipeIngredientResolver
-                .ingredients(holder.value());
-        if (slot >= ingredients.size()) return null;
-        return ingredients.get(slot);
+        return null;
     }
 
     private record InputChunk(com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> key,

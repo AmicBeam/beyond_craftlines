@@ -84,18 +84,8 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.reset_provisioner_round_robin_on_activation")
             .define("resetRoundRobinOnRecipeActivation", true);
 
-    public static final ModConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
-            .pop().push("crafting")
-            .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
-            .translation("config.beyond_craftlines.server_recipe_index_max_per_tick")
-            .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);
-
-    public static final ModConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK = SERVER_BUILDER
-            .comment("Main-thread time budget in milliseconds for background server recipe indexing each tick.")
-            .translation("config.beyond_craftlines.server_recipe_index_max_millis_per_tick")
-            .defineInRange("serverRecipeIndexMaxMillisPerTick", 2, 1, 50);
-
     public static final ModConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
+            .pop().push("crafting")
             .comment("Maximum recursive recipe-tree depth per order.")
             .translation("config.beyond_craftlines.max_planning_depth")
             .defineInRange("maxPlanningDepth", 48, 1, 256);

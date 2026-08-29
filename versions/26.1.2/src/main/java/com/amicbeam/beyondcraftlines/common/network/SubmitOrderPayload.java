@@ -64,8 +64,6 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 if (cooldown > 0 && last > 0 && now >= last && now - last < cooldown)
                     throw new IllegalStateException("orders are being submitted too quickly");
                 long count = Math.max(1, payload.count());
-                if (!menu.serverRecipeIndexComplete())
-                    throw new IllegalStateException("server recipe index is still building");
                 if (!menu.targetToken().equals(payload.itemId())
                         || menu.recipeForResourceOutput(menu.initialTarget()) == null)
                     throw new IllegalArgumentException("target is not available in this order menu");
@@ -74,10 +72,6 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         || !validated.target().isSame(menu.initialTarget()) || validated.count() != count
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
-                long recipeEpoch = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.recipeEpoch(
-                        player.level(), menu.availableFamilies());
-                if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
-                    throw new IllegalStateException("recipes changed; refresh the preview");
                 var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService
                         .capture(menu.networkId());
                 var currentPlan = RecipePlanningService.validateFixed(player.level(), menu.initialTarget(),

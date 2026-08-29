@@ -96,14 +96,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardDesired = Math.max(1, initialDashboardDesired);
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         var level = player.level();
-        if (level instanceof ServerLevel serverLevel)
-            this.recipeIndex = serverIndex(serverLevel);
-        else synchronized (RECIPE_INDEX_CACHE)
-        {
-            this.recipeIndex = RECIPE_INDEX_CACHE.computeIfAbsent(level.getRecipeManager(), ignored ->
-                    new RecipeIndex(level.getRecipeManager().getRecipes().stream()
-                            .sorted(java.util.Comparator.comparing(holder -> holder.id().toString())).toList(), level));
-        }
+        this.recipeIndex = new RecipeIndex(com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.recipes(), level);
         this.initialRecipeHolder = initialRecipe == null ? null
                 : findRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
@@ -125,46 +119,39 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public String initialDashboardStockMode() { return initialDashboardStockMode; }
     public List<RecipeHolder<?>> recipes()
     {
-        ensureRecipeIndexForServer();
-        return mergeRecipes(available(recipeIndex.recipes()), available(com.amicbeam.beyondcraftlines
-                .common.crafting.VirtualProvisionerRecipeRegistry.recipes()));
+        return available(com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.recipes());
     }
     public RecipeHolder<?> recipeForOutput(ResourceLocation output)
     { return recipesForOutput(output).stream().findFirst().orElse(null); }
     public List<RecipeHolder<?>> recipesForOutput(ResourceLocation output)
     {
-        ensureRecipeIndexForServer();
         List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
                 .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
                         .stream().anyMatch(value -> value.key() instanceof ItemStackKey item
                                 && net.minecraft.core.registries.BuiltInRegistries.ITEM
                                 .getKey(item.getSource()).equals(output))).toList();
-        return mergeRecipes(available(recipeIndex.recipesForOutput(output)), virtual);
+        return virtual;
     }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
-        ensureRecipeIndexForServer();
         List<RecipeHolder<?>> virtual = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.recipes().stream().filter(this::available)
                 .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
                         .stream().anyMatch(value -> output.isSame(value.key()))).toList();
-        return mergeRecipes(available(recipeIndex.recipesForResourceOutput(output)), virtual);
+        return virtual;
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public RecipeHolder<?> recipe(ResourceLocation id)
     {
-        ensureRecipeIndexForServer();
         RecipeHolder<?> holder = com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.find(id).orElseGet(() -> recipeIndex.recipe(id));
+                .VirtualProvisionerRecipeRegistry.find(id).orElse(null);
         return holder != null && available(holder) ? holder : null;
     }
     public ResourceLocation itemOutputForToken(String token)
     {
-        ensureRecipeIndexForServer();
-        ResourceLocation indexed = recipeIndex.itemOutputForToken(token);
-        if (indexed != null) return indexed;
         return com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.recipes().stream()
                 .flatMap(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess()).stream())
                 .filter(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
@@ -203,7 +190,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public int indexedRecipeCandidates() { return recipeIndex.completedCandidates(); }
     public int totalRecipeCandidates() { return recipeIndex.totalCandidates(); }
     public boolean serverRecipeIndexComplete()
-    { return serverIndexProgress.get(1) > 0 && serverIndexProgress.get(0) >= serverIndexProgress.get(1); }
+    { return true; }
     public int indexedServerRecipeCandidates() { return serverIndexProgress.get(0); }
     public int totalServerRecipeCandidates() { return serverIndexProgress.get(1); }
 
@@ -227,19 +214,10 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
 
     public static void tickServerRecipeIndex(MinecraftServer server)
-    {
-        ServerLevel level = server.overworld();
-        RecipeIndex index = serverIndex(level);
-        index.advance(CraftlinesConfig.SERVER_RECIPE_INDEX_MAX_PER_TICK.get(),
-                CraftlinesConfig.SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK.get() * 1_000_000L);
-    }
+    {}
 
     public static long serverRecipeEpoch(ServerLevel level, Set<String> availableFamilies)
-    {
-        RecipeIndex index = serverIndex(level);
-        if (!index.complete()) throw new IllegalStateException("server recipe index is still building");
-        return index.epoch(availableFamilies);
-    }
+    { return 0L; }
 
     private static RecipeIndex serverIndex(ServerLevel level)
     {
@@ -255,9 +233,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
 
     private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, ResourceLocation id)
     {
-        return level.getRecipeManager().byKey(id).orElseGet(() ->
-                com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                        .find(id).orElse(null));
+        return com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                .find(id).orElse(null);
     }
 
     private static Path indexPath(MinecraftServer server)

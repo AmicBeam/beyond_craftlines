@@ -42,14 +42,7 @@ public final class CraftlinesConfig {
     public static final ForgeConfigSpec.BooleanValue RESET_PROVISIONER_ROUND_ROBIN_ON_ACTIVATION = SERVER_BUILDER
             .comment("Restart round-robin supply from the first wireless binding whenever a recipe request activates a provisioner. Blocking orders activate once per feeding round.")
             .define("resetRoundRobinOnRecipeActivation", true);
-    public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_PER_TICK = SERVER_BUILDER
-            .pop().push("crafting")
-            .comment("Maximum recipes added to the global server recipe index per tick after a reload.")
-            .defineInRange("serverRecipeIndexMaxPerTick", 128, 1, 65_536);
-    public static final ForgeConfigSpec.IntValue SERVER_RECIPE_INDEX_MAX_MILLIS_PER_TICK = SERVER_BUILDER
-            .comment("Main-thread time budget in milliseconds for background server recipe indexing each tick.")
-            .defineInRange("serverRecipeIndexMaxMillisPerTick", 2, 1, 50);
-    public static final ForgeConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER
+    public static final ForgeConfigSpec.IntValue MAX_PLANNING_DEPTH = SERVER_BUILDER.pop().push("crafting")
             .defineInRange("maxPlanningDepth", 48, 1, 256);
     public static final ForgeConfigSpec.IntValue MAX_PLANNING_NODES = SERVER_BUILDER
             .comment("Maximum candidate branches explored during automatic recipe planning. Fixed client proposals are validated directly and do not consume this budget.")

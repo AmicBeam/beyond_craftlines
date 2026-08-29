@@ -13,7 +13,7 @@ public final class CraftlinesNetwork
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event)
     {
-        var registrar = event.registrar("21");
+        var registrar = event.registrar("22");
         registrar.playToServer(OpenOrderMenuPayload.TYPE, OpenOrderMenuPayload.STREAM_CODEC, OpenOrderMenuPayload::handle);
         registrar.playToServer(OpenOrderStatusMenuPayload.TYPE, OpenOrderStatusMenuPayload.STREAM_CODEC,
                 OpenOrderStatusMenuPayload::handle);
@@ -26,6 +26,8 @@ public final class CraftlinesNetwork
                 SavePlannerPreferencePayload::handle);
         registrar.playToServer(PlanProposalUploadPayload.TYPE, PlanProposalUploadPayload.STREAM_CODEC,
                 PlanProposalUploadPayload::handle);
+        registrar.playToServer(VirtualRecipeUploadPayload.TYPE, VirtualRecipeUploadPayload.STREAM_CODEC,
+                VirtualRecipeUploadPayload::handle);
         registrar.playToServer(RequestOrderStatusPayload.TYPE, RequestOrderStatusPayload.STREAM_CODEC, RequestOrderStatusPayload::handle);
         registrar.playToServer(RequestNetworkAmountPayload.TYPE, RequestNetworkAmountPayload.STREAM_CODEC,
                 RequestNetworkAmountPayload::handle);
@@ -69,8 +71,6 @@ public final class CraftlinesNetwork
                 BindMachineFeedbackPayload::handle);
         registrar.playToClient(JeiNetworkAvailabilityPayload.TYPE, JeiNetworkAvailabilityPayload.STREAM_CODEC,
                 JeiNetworkAvailabilityPayload::handle);
-        registrar.playToClient(RecipeIoProfilePayload.TYPE, RecipeIoProfilePayload.STREAM_CODEC,
-                RecipeIoProfilePayload::handle);
         registrar.playToClient(DashboardStatusPayload.TYPE, DashboardStatusPayload.STREAM_CODEC,
                 DashboardStatusPayload::handle);
     }

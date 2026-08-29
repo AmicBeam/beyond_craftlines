@@ -64,8 +64,6 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
     {
         IStackKey<?> target = menu.initialTarget();
         Header header = payload.header();
-        if (!menu.serverRecipeIndexComplete())
-            throw new IllegalStateException("server recipe index is still building");
         if (header.count() < 1 || header.pageCount() < 1 || header.pageCount() > MAX_PAGES
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
             throw new IllegalArgumentException("invalid proposal page");

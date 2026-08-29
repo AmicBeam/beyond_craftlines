@@ -95,8 +95,6 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络连接器
 
 服务端索引首次完整建立后由专用守护 I/O 线程原子写入世界目录 `data/beyond_craftlines_recipe_index_v1.json`。再次进入同一存档时先异步读取该文件；格式与当前配方总数匹配即可立即恢复输出到配方 ID 的派生映射和按 family 累计的 epoch，不再等待全量索引。磁盘内容不直接持有或信任配方对象：每次命中目标时仍从当前服务端配方注册表按 ID 取回配方，并重新核对支持性与实际输出；最终下单继续线性复算所选链。因此同配方数量下的旧缓存最多导致某个新目标在本次真实重载前无法命中，不会执行错误配方。服务器运行期间发生真实全量数据包重载时删除磁盘索引并后台重建；普通玩家登录同步不删除。
 
-管理员可执行 `/craftlines rebuild_recipe_index` 强制清除内存与磁盘索引并立即开始后台重建。该指令要求命令权限等级 2；强制重建会跳过任何尚未结束的旧缓存读取，完成后仍将新索引写回存档，并沿用索引开始、完成或写入失败的全服提示。
-
 客户端配方索引和规划目录捕获均严格以 `recipeIndexMaxPerTick` 作为每 client tick 的配方条目上限，默认每 tick 最多处理 256 条。服务端独立索引默认每 tick 最多处理 128 条且最多占用 2ms；配方对象解析保守地留在主线程分片执行，避免把非线程安全的模组配方对象交给后台线程，但从玩家交互角度是异步完成。每条配方是不可再切分的最小工作单元。捕获完成后的分支搜索在客户端后台线程执行，目录捕获按配方数据来源和单个配方 ID 缓存，只有配方重载后才重新建立。候选搜索的总墙钟窗口约为 3 秒，偏好方案和去除默认偏好后的 fallback 共用同一个窗口。优化节点预算按唯一物品 ID 计数，同一 ID 即使在多条分支或以不同组件出现也只计一次；非物品资源按完整资源键计数。节点或时间预算耗尽后不再开始新的候选方案，只完成当前确定分支的固定选择验证；已经得到的完整可制造建议仍会上传并接受服务端复算。
 
 客户端后台搜索完成后直接原子更新树、库存汇总并启用下单按钮；过期后台任务或旧 nonce 的结果会被丢弃。同一界面在 1 秒内调整数量或 resolution 会复用客户端只读快照，只重跑后台搜索；从节点进入 JEI 配方查看页再返回同一个订单界面实例时，保留数量、树、固定建议和下单按钮状态，不重新索引或规划。库存快照和建议上传均最多 64 页，未完成上传 10 秒后失效，已完整上传的固定选择缓存 30 秒。
@@ -147,52 +145,13 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络连接器
 
 每个虚拟输入槽同时上传规范化后的 JEI slot name。`catalyst`、`activation_item`、`chemical_input` 等语义名称形成独立材料子标签；空名称以及 `input_0`、`input_1` 等普通编号槽统一归入 `ingredients`。JEI runtime 建索引时会预先创建分类的有界代表布局并收集这些标签，绑定和打开配置时同步给服务端，因此不要求玩家先下单。子标签参与供给器选择、材料路由、虚拟配方确定性 ID 与服务端校验。
 
-第三方配方结构兼容统一由 `data/*/recipe_io_profiles/*.json` 声明。profile 可以按服务端 `RecipeType`、运行时配方类或类名前缀限定作用范围；没有选择器的 profile 是所有配方共用的默认结构词表：
-
-```json
-{
-  "recipe_type": "example:machine_processing",
-  "include_defaults": true,
-  "input_fields": ["inputs", "activationItem"],
-  "distinct_input_fields": ["activationItem"],
-  "output_fields": ["result"],
-  "input_count_semantics": {
-    "inputs": "batch_limit"
-  },
-  "representation_fields": ["getRepresentations"],
-  "counted_wrappers": [
-    {
-      "value_fields": ["ingredient", "getIngredient"],
-      "count_fields": ["count", "getCount"]
-    }
-  ],
-  "structural_wrapper_fields": ["content", "getContent"],
-  "output_wrapper_fields": ["getChemicalStack"],
-  "output_mappings": [
-    {
-      "type": "fluid",
-      "id": "example:byproduct",
-      "amount_field": "byproductAmount"
-    }
-  ]
-}
-```
-
-`recipe_type`/`recipe_types` 按配方族选择；`recipe_classes` 和 `recipe_class_prefixes` 可处理共用同一 RecipeType、但公开结构不同的版本兼容类。`input_fields`、`output_fields` 中的名称会先按无参 public accessor 查找，再按 public 字段查找。`distinct_input_fields` 是 `input_fields` 的子集，用于声明即使候选内容与 `Recipe#getIngredients()` 中的槽位相同也必须保留的独立逻辑输入，例如核心催化物；未声明的反射输入仍按候选签名去除原版 API 的重复别名。`include_defaults` 默认为 `true`；设为 `false` 时，有作用域的 profile 不再合入无选择器的默认 profile。原版配方输入与输出仍走编译期 Minecraft API，不受反射 profile 控制。
-
-`representation_fields` 定义 ingredient representation 入口；`counted_wrappers` 定义“语义值 + 数量”的包装层；`structural_wrapper_fields` 和 `output_wrapper_fields` 定义通用容器及输出专用容器的解包成员。Java 只保留 `Optional`、集合、Map、数组、record 的有界遍历、循环检测、public 无参成员限制和 BD 资源键转换，不再内置具体模组的成员词表。
-
-`directions` 可按 `recipe_classes`、`recipe_class_prefixes`、`output_stack_types`、`output_stack_type_prefixes` 或 `output_fields` 选择一组 `input_fields`，用于双向配方。`input_multipliers` 按输入成员声明正整数倍率，并可用 `when_boolean_field` 限定为某个返回 true 的 public 无参布尔成员；倍率仍使用饱和 `long` 计算，数据包不能执行脚本或任意带参数方法。
-
-`input_count_semantics` 按输入成员名覆盖计数语义。未声明或设为 `required` 时，包装器或 representation 的 `count`/`amount` 是生产一次所需数量；设为 `batch_limit` 时，该数值只表示机器一次最多并行处理的份数，规划中的单份输入量归一为 1。`output_mappings` 可把纯数字 public 字段/无参 accessor 映射为真实资源输出；`type` 当前支持 `item`、`fluid`，`id` 是显式资源 ID，`amount_field` 提供每份产出的数量。
-
-内置 profile 包含通用结构词表、Mekanism 双向输入和按 tick 化学品倍率、Ars Nouveau 附魔装置字段、Actually Additions Empowerer 的基座与四个展示台输入，以及沉浸工程焦炉的 `batch_limit` 和 `creosoteOutput` 流体映射。profile 在数据包重载时一次性解析并同步给远程客户端，因此客户端规划、服务端复算与运行时副产物抽取使用同一配置；实际成员查找仍按“运行时类 + 成员名”缓存。
+JEI runtime 会把所有可解析候选布局注册为有界虚拟描述目录。客户端递归规划只读取该目录；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。`recipe_io_profiles` 不再加载或同步，旧 JSON 仅暂时保留为实验分支回退代码的测试资产，不参与订单路径。
 
 ### 5.3 确定性规划
 
 规划从 BD 网络统一资源库存快照开始。请求数量表示“本次需要制造的数量”，已有目标产物不会抵扣请求。
 
-当一个产物有多个配方时，玩家已保存的配方和 ingredient 偏好优先于自动建议。未固定部分由客户端建议规划器在同一预算内试规划候选分支，依次按缺失材料总量、步骤数和配方 ID 选择当前最佳分支；找到完整可制造分支或优化预算耗尽后即可停止继续比较。配方 ID 只用于同分稳定排序，不再决定主要选择结果。建议上传后，服务端要求每个实际产物都已经固定配方，因此权威复算不再遍历候选分支；若配方已经卸载或不再产出目标物，服务端拒绝建议。
+当一个产物有多个 JEI 候选布局时，玩家已保存的配方和 ingredient 偏好优先于自动建议。未固定部分由客户端建议规划器在同一预算内试规划候选分支，依次按缺失材料总量、步骤数和虚拟配方 ID 选择当前最佳分支。建议上传后，服务端要求每个实际产物都有对应虚拟描述并已固定配方，因此权威复算不再遍历候选分支；缺失描述、ID 不一致或 family 未绑定时拒绝建议。
 
 Ingredient 有多个候选时按以下顺序选择默认值：
 
@@ -386,8 +345,6 @@ Forge/NeoForge 自动生成 client 和 server 配置。服务端配置通常按�
 | 键 | 默认值 | 范围 | 作用 |
 | --- | ---: | ---: | --- |
 | `virtualCraftingNodeIntervalTicks` | `20` | 1–72000 | 模拟合成成功批次之间的最小 tick 间隔 |
-| `serverRecipeIndexMaxPerTick` | `128` | 1–65536 | 数据包加载后，每 tick 最多加入全局服务端索引的配方数 |
-| `serverRecipeIndexMaxMillisPerTick` | `2` | 1–50 | 全局服务端配方索引每 tick 可占用的主线程时间预算（毫秒） |
 | `maxPlanningDepth` | `48` | 1–256 | 单次递归配方树最大深度 |
 | `maxPlanningNodes` | `4096` | 64–1000000 | 客户端建议的唯一资源优化预算，同时限制服务端自动规划时探索的候选分支；已上传的固定方案线性复算不消耗此预算 |
 | `maxPlanningTimeMillis` | `50` | 1–10000 | 自动候选搜索的主线程时间预算（毫秒）；固定方案复算不消耗 |
@@ -429,7 +386,6 @@ Forge/NeoForge 自动生成 client 和 server 配置。服务端配置通常按�
 - 原版及第三方机器：要求 JEI catalyst、可上传的 JEI 布局和可用 `IItemHandler`；不要求服务端 RecipeType 映射。
 - 供给器扫描工作站时不要求目标拥有方块实体或物品能力。原版酿造台、锻造台、堆肥桶、铁砧和切石机只允许绑定供给器，不开放直接机器绑定。其他具有可自动化物品能力的机器既可以走供给器，也可以直接绑定 JEI UID。服务端重新计算包含 slot 子标签的确定性虚拟配方 ID，并要求当前网络存在同 UID 的有效端点。
 - 配方中的 `energy`、`power`、`FE` 等数值元数据不视为 ingredient，也不推断单位或换算关系；机器能量与其他专用工艺条件由真实机器自行处理。公开为 ingredient representations 且能转换为 BD 已注册资源键的物品、流体、化学品等真实输入会正常规划与供应。
-- 内置 `recipe_io_profiles/mekanism.json` 将 Mekanism 按 tick 消耗的机器化学品输入按 JEI 展示语义折算为完整工序总量；1.20.x 的气体加工配方和新版带 `perTickUsage` 标记的配方均按 200 tick 计算，整合包可用更高优先级数据包替换同路径规则。
 - 配方和 ingredient 选择当前按输出物品、配方槽位作用于整棵订单树；相同输出或相同配方槽位的重复节点共享选择。
 - Ingredient 规划按玩家固定或默认选择的物品 ID 统计；真正合成时按该物品 ID、BD `ItemStackKey` 和原配方匹配共同选择具体组件。
 - 真实机器无法证明某个新产物一定由本订单产生，只能通过下单前基线与数量增量隔离；机器应避免被其他自动化同时操作。

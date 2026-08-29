@@ -38,6 +38,7 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
+        if (VirtualProvisionerRecipeRegistry.descriptor(recipe) != null) return ingredients(recipe);
         List<String> inputMethods = directionalInputMethodsForStackType(recipe, output);
         if (inputMethods.isEmpty()) inputMethods = directionalInputMethods(recipe,
                 raw -> matchesOutputDirection(output, raw));

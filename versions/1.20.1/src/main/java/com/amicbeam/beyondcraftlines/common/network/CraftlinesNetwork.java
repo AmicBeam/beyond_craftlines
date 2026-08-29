@@ -17,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "21";
+    private static final String PROTOCOL = "22";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -36,6 +36,8 @@ public final class CraftlinesNetwork {
         server(RequestPlannerPreferencesPayload.class, RequestPlannerPreferencesPayload.STREAM_CODEC, RequestPlannerPreferencesPayload::handle);
         server(SavePlannerPreferencePayload.class, SavePlannerPreferencePayload.STREAM_CODEC, SavePlannerPreferencePayload::handle);
         server(PlanProposalUploadPayload.class, PlanProposalUploadPayload.STREAM_CODEC, PlanProposalUploadPayload::handle);
+        server(VirtualRecipeUploadPayload.class, VirtualRecipeUploadPayload.STREAM_CODEC,
+                VirtualRecipeUploadPayload::handle);
         server(RequestOrderStatusPayload.class, RequestOrderStatusPayload.STREAM_CODEC, RequestOrderStatusPayload::handle);
         server(RequestNetworkAmountPayload.class, RequestNetworkAmountPayload.STREAM_CODEC, RequestNetworkAmountPayload::handle);
         server(CancelOrderPayload.class, CancelOrderPayload.STREAM_CODEC, CancelOrderPayload::handle);
@@ -73,8 +75,6 @@ public final class CraftlinesNetwork {
                 BindMachineFeedbackPayload::handle);
         client(JeiNetworkAvailabilityPayload.class, JeiNetworkAvailabilityPayload.STREAM_CODEC,
                 JeiNetworkAvailabilityPayload::handle);
-        client(RecipeIoProfilePayload.class, RecipeIoProfilePayload.STREAM_CODEC,
-                RecipeIoProfilePayload::handle);
         client(DashboardStatusPayload.class, DashboardStatusPayload.STREAM_CODEC,
                 DashboardStatusPayload::handle);
     }

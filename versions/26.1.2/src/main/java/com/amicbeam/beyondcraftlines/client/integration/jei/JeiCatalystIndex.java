@@ -36,10 +36,12 @@ public final class JeiCatalystIndex
     public static void rebuild(IJeiRuntime runtime)
     {
         JeiCatalystIndex.runtime = runtime;
+        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
         Map<Identifier, LinkedHashSet<Identifier>> building = new HashMap<>();
         Map<Identifier, Component> titles = new HashMap<>();
         Map<Identifier, RecipeHolder<?>> recipes = new LinkedHashMap<>();
         Map<Identifier, Set<String>> inputGroups = new HashMap<>();
+        int[] remainingLayouts = {16_384};
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
             try
@@ -52,7 +54,7 @@ public final class JeiCatalystIndex
                         .map(stack -> BuiltInRegistries.ITEM.getKey(stack.getItem()))
                         .forEach(item -> building.computeIfAbsent(item, ignored ->
                                 new LinkedHashSet<>()).add(typeId));
-                inputGroups.put(typeId, collectRecipes(runtime, category, recipes));
+                inputGroups.put(typeId, collectRecipes(runtime, category, recipes, remainingLayouts));
             }
             catch (RuntimeException | LinkageError exception)
             {
@@ -121,12 +123,15 @@ public final class JeiCatalystIndex
 
     private static <T> Set<String> collectRecipes(IJeiRuntime runtime,
                                            IRecipeCategory<T> category,
-                                           Map<Identifier, RecipeHolder<?>> recipes)
+                                           Map<Identifier, RecipeHolder<?>> recipes,
+                                           int[] remainingLayouts)
     {
         IRecipeManager manager = runtime.getRecipeManager();
         LinkedHashSet<String> groups = new LinkedHashSet<>();
         var focuses = runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup();
-        manager.createRecipeLookup(category.getRecipeType()).includeHidden().get().forEach(value -> {
+        if (remainingLayouts[0] <= 0) return Set.of();
+        manager.createRecipeLookup(category.getRecipeType()).includeHidden().get()
+                .limit(remainingLayouts[0]).forEach(value -> {
             RecipeHolder<?> holder;
             if (value instanceof RecipeHolder<?> recipeHolder)
             {
@@ -141,10 +146,13 @@ public final class JeiCatalystIndex
                     recipes.putIfAbsent(id, holder);
                 }
             }
-            manager.createRecipeLayoutDrawable(category, value, focuses).ifPresent(layout ->
-                    layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).forEach(slot ->
-                            groups.add(com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup
-                                    .fromSlotName(slot.getSlotName().orElse("")))));
+            manager.createRecipeLayoutDrawable(category, value, focuses).ifPresent(layout -> {
+                var captured = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
+                if (captured == null) return;
+                JeiVirtualRecipeLayouts.register(captured);
+                remainingLayouts[0]--;
+                captured.inputs().forEach(input -> groups.add(input.inputGroup()));
+            });
         });
         return Set.copyOf(groups);
     }

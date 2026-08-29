@@ -25,26 +25,8 @@ public final class CraftlinesEvents
     public static void onServerTick(ServerTickEvent.Post event)
     {
         var server = event.getServer();
-        com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(server);
         com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.tick(server);
         com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService.tick(server);
-    }
-
-    @SubscribeEvent
-    public static void onRegisterCommands(RegisterCommandsEvent event)
-    {
-        event.getDispatcher().register(net.minecraft.commands.Commands.literal("craftlines")
-                .requires(source -> source.permissions().hasPermission(
-                        net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
-                .then(net.minecraft.commands.Commands.literal("rebuild_recipe_index")
-                        .executes(context -> {
-                            var server = context.getSource().getServer();
-                            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                                    .rebuildServerRecipeIndex(server);
-                            context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.translatable(
-                                    "command.beyond_craftlines.recipe_index_rebuild_started"), true);
-                            return 1;
-                        })));
     }
 
     @SubscribeEvent
@@ -101,20 +83,9 @@ public final class CraftlinesEvents
         }
         if (event.getPlayer() == null || recipeAliasServer != server)
         {
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
-                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
             com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
-        var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
-        if (event.getPlayer() != null)
-        {
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), profiles);
-        }
-        else server.getPlayerList().getPlayers().forEach(player ->
-        {
-            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, profiles);
-        });
     }
 }

@@ -57,20 +57,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             public <T> @Nullable IIconButtonController createButtonController(
                     IRecipeLayoutDrawable<T> recipeLayoutDrawable)
             {
-                var output = findOutput(recipeLayoutDrawable);
                 Identifier recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
-                if (output == null) return null;
-                java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs = virtualInputs(recipeLayoutDrawable);
-                if (virtualInputs.isEmpty()) return null;
-                Identifier recipe = com.amicbeam.beyondcraftlines.common.crafting
-                        .VirtualProvisionerRecipeRegistry.register(recipeType.toString(), output.key(),
-                                output.amount(), virtualInputs.stream().map(input ->
-                                        new com.amicbeam.beyondcraftlines.common.crafting
-                                                .VirtualProvisionerRecipeRegistry.InputSlot(
-                                                input.inputGroup(), input.candidates())).toList()).id().identifier();
+                var captured = JeiVirtualRecipeLayouts.capture(recipeType, recipeLayoutDrawable);
+                if (captured == null) return null;
+                Identifier recipe = JeiVirtualRecipeLayouts.register(captured).id().identifier();
                 return new OrderButtonController(
-                        output.key(), recipe, recipeType, virtualInputs, output.amount(), scaledIcon);
+                        captured.output().key(), recipe, recipeType, captured.inputs(),
+                        captured.output().amount(), scaledIcon);
             }
         });
     }

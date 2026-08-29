@@ -44,17 +44,7 @@ public final class PlanningSnapshotService
     }
 
     public static long recipeEpoch(Level level, Set<String> availableFamilies)
-    {
-        if (level instanceof net.minecraft.server.level.ServerLevel serverLevel)
-            return com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                    .serverRecipeEpoch(serverLevel, availableFamilies);
-        long hash = offset();
-        for (RecipeIdentity identity : identities(level))
-            if ("crafting".equals(identity.family()) || availableFamilies.contains(identity.family()))
-                hash = mix(hash, identity.value());
-        for (String family : availableFamilies.stream().sorted().toList()) hash = mix(hash, family);
-        return positive(hash);
-    }
+    { return 0L; }
 
     public static void clearRecipeEpochCache() { RECIPE_IDENTITIES.clear(); }
 

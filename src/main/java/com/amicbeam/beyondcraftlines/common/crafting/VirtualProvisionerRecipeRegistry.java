@@ -22,7 +22,7 @@ import java.util.UUID;
 /** Bounded runtime recipes uploaded from JEI for vanilla categories with no server RecipeHolder. */
 public final class VirtualProvisionerRecipeRegistry
 {
-    private static final int MAX_RECIPES = 4_096;
+    private static final int MAX_RECIPES = 16_384;
     private static final Map<ResourceLocation, RecipeHolder<?>> RECIPES = Collections.synchronizedMap(
             new LinkedHashMap<>(64, 0.75F, true)
             {

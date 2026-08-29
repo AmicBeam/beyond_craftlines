@@ -156,9 +156,7 @@ public final class RecipePlanningService
             List<RecipeHolder<?>> selected = new ArrayList<>();
             for (Identifier id : overrides.selectedRecipes())
             {
-                RecipeHolder<?> holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                        net.minecraft.core.registries.Registries.RECIPE, id)).orElse(null);
-                if (holder == null) holder = VirtualProvisionerRecipeRegistry.find(id).orElse(null);
+                RecipeHolder<?> holder = VirtualProvisionerRecipeRegistry.find(id).orElse(null);
                 if (holder != null) selected.add(holder);
             }
             candidates = selected;

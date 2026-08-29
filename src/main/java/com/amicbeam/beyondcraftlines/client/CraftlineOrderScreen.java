@@ -2011,6 +2011,15 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void uploadProposal(long nonce, IStackKey<?> target, long count, long stockRevision,
                                 long recipeEpoch, ClientRecipePlanner.Proposal proposal)
     {
+        java.util.Set<ResourceLocation> selectedVirtualRecipes = java.util.Set.copyOf(proposal.recipes().values());
+        var virtualPages = com.amicbeam.beyondcraftlines.common.network.VirtualRecipeUploadPayload
+                .pages(nonce, selectedVirtualRecipes);
+        if (virtualPages.size() > 64)
+        {
+            previewError = localizedPlanningMessage("error.beyond_craftlines.planning_upload_limit");
+            return;
+        }
+        virtualPages.forEach(page -> PacketDistributor.sendToServer(page));
         List<SubmitOrderPayload.RecipeChoice> recipes = proposal.recipes().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(

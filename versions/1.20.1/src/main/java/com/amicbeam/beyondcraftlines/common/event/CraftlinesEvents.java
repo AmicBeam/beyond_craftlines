@@ -26,25 +26,9 @@ public final class CraftlinesEvents {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(event.getServer());
             NativeFurnaceRegistry.tick(event.getServer());
             RecipeOrderService.tick(event.getServer());
         }
-    }
-
-    @SubscribeEvent
-    public static void onRegisterCommands(RegisterCommandsEvent event) {
-        event.getDispatcher().register(net.minecraft.commands.Commands.literal("craftlines")
-                .requires(source -> source.hasPermission(2))
-                .then(net.minecraft.commands.Commands.literal("rebuild_recipe_index")
-                        .executes(context -> {
-                            var server = context.getSource().getServer();
-                            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                                    .rebuildServerRecipeIndex(server);
-                            context.getSource().sendSuccess(() -> net.minecraft.network.chat.Component.translatable(
-                                    "command.beyond_craftlines.recipe_index_rebuild_started"), true);
-                            return 1;
-                        })));
     }
 
     @SubscribeEvent
@@ -94,18 +78,9 @@ public final class CraftlinesEvents {
             RecipePlanningService.clearRecipeCache();
         }
         if (event.getPlayer() == null || recipeAliasServer != server) {
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
-                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
             com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
-        var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
-        if (event.getPlayer() != null) {
-            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                    .sendToPlayer(event.getPlayer(), profiles);
-        } else server.getPlayerList().getPlayers().forEach(player -> {
-            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork.sendToPlayer(player, profiles);
-        });
     }
 }

@@ -40,6 +40,7 @@ import static com.amicbeam.beyondcraftlines.common.localization.OrderStatusMessa
 
 public final class RecipeOrderService
 {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final String RETURN_AFTER_ERROR = encode("execution_failed_returning");
     private static final Set<String> NATIVE_FURNACE_FAMILIES = Set.of("smelting", "blasting", "smoking");
     private RecipeOrderService() {}
@@ -772,6 +773,9 @@ public final class RecipeOrderService
                     working, step, wait.remainingInputs());
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
+            if (selection == null || dispatch.isEmpty())
+                debugFeedingStall(server, working, step, wait, directLocations,
+                        selection == null ? "selection_missing" : "no_insert_capacity");
             if (!dispatch.isEmpty())
             {
                 // Extract every network-backed chunk before touching the machine. A stock change can
@@ -1446,6 +1450,33 @@ public final class RecipeOrderService
                     material.key(), left, material.ingredientSlot(), material.inputGroup()));
         }
         return List.copyOf(remaining);
+    }
+
+    private static void debugFeedingStall(MinecraftServer server, RecipeOrderJob job,
+                                          RecipePlan.Step step, RecipeOrderJob.ExternalWait wait,
+                                          List<RecipeOrderJob.MachineLocation> machines, String reason)
+    {
+        if (!LOGGER.isDebugEnabled() || server.overworld().getGameTime() % 20 != 0) return;
+        List<String> remaining = wait.remainingInputs().stream().map(material -> material.inputGroup()
+                + ":" + RecipeResourceResolver.sortKey(material.key()) + "@" + material.amount()).toList();
+        List<String> reserved = job.reserved().stream().map(material ->
+                RecipeResourceResolver.sortKey(material.key()) + "@" + material.amount()).toList();
+        List<String> capacities = new ArrayList<>();
+        for (RecipePlan.Material material : wait.remainingInputs())
+            for (RecipeOrderJob.MachineLocation machine : machines)
+            {
+                if (!machine.inputGroup().isBlank()
+                        && !machine.inputGroup().equals(material.inputGroup())) continue;
+                ServerLevel level = server.getLevel(machine.dimension());
+                if (level == null) continue;
+                capacities.add(machine.position().toShortString() + "/" + material.inputGroup()
+                        + "=" + BoundMachineAutomation.insertCapacity(level, machine.position(),
+                        material.key(), material.amount()) + "/present="
+                        + BoundMachineAutomation.countPresent(level, machine.position(), material.key()));
+            }
+        LOGGER.debug("Craftlines feeding stall: order={}, step={}/{}, family={}, reason={}, remaining={}, "
+                        + "reserved={}, capacities={}", job.id(), job.nextStep() + 1, job.stepCount(),
+                step.family(), reason, remaining, reserved, capacities);
     }
 
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,

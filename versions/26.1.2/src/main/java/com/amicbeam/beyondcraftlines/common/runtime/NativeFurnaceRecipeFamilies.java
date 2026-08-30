@@ -11,7 +11,7 @@ public final class NativeFurnaceRecipeFamilies
     {
         return switch (jeiType)
         {
-            case "minecraft:smelting" -> "smelting";
+            case "minecraft:furnace", "minecraft:smelting" -> "smelting";
             case "minecraft:blasting" -> "blasting";
             case "minecraft:smoking" -> "smoking";
             default -> jeiType;

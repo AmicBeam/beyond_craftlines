@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.common.crafting.JeiSlotGroupResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry;
+import com.amicbeam.beyondcraftlines.common.crafting.JeiInputSemantics;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
@@ -24,22 +25,40 @@ public final class JeiVirtualRecipeLayouts
                 .filter(java.util.Objects::nonNull).findFirst().orElse(null);
         if (output == null) return null;
         List<SlotCapture> slots = layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT)
-                .stream().map(slot -> new SlotCapture(new JeiSlotGroupResolver.Slot(
-                                slot.getSlotName().orElse(""), slot.getAllIngredients()
-                                .map(typed -> String.valueOf(typed.getType().getUid()))
-                                .collect(java.util.stream.Collectors.toUnmodifiableSet())),
-                        slot.getAllIngredients().map(typed -> RecipeResourceResolver.fromStack(
-                                        typed.getIngredient())).filter(java.util.Objects::nonNull)
-                                .distinct().limit(64).toList()))
-                .filter(slot -> !slot.candidates().isEmpty()).limit(32).toList();
+                .stream().map(slot -> captureSlot(slot, false, layout.getRecipe()))
+                .filter(java.util.Objects::nonNull).limit(32).toList();
+        List<SlotCapture> catalysts = layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.CRAFTING_STATION)
+                .stream().map(slot -> captureSlot(slot, true, layout.getRecipe()))
+                .filter(java.util.Objects::nonNull).limit(Math.max(0, 32 - slots.size())).toList();
         List<String> profileGroups = JeiInputGroupProfileRegistry.resolve(
                 type.toString(), layout.getRecipe(), slots.size());
         List<String> groups = profileGroups.isEmpty() ? JeiSlotGroupResolver.resolve(slots.stream()
                 .map(SlotCapture::groupSlot).toList()) : profileGroups;
-        List<OpenOrderMenuPayload.VirtualInput> inputs = java.util.stream.IntStream.range(0, slots.size())
-                .mapToObj(index -> new OpenOrderMenuPayload.VirtualInput(
-                        groups.get(index), slots.get(index).candidates())).toList();
-        return inputs.isEmpty() ? null : new Captured(type, output, inputs);
+        List<OpenOrderMenuPayload.VirtualInput> inputs = new java.util.ArrayList<>();
+        for (int index = 0; index < slots.size(); index++)
+            inputs.add(new OpenOrderMenuPayload.VirtualInput(groups.get(index),
+                    slots.get(index).candidates(), slots.get(index).reusable()));
+        for (SlotCapture catalyst : catalysts)
+            inputs.add(new OpenOrderMenuPayload.VirtualInput(
+                    JeiSlotGroupResolver.resolve(List.of(catalyst.groupSlot())).getFirst(),
+                    catalyst.candidates(), catalyst.reusable()));
+        return inputs.isEmpty() ? null : new Captured(type, output, List.copyOf(inputs));
+    }
+
+    private static SlotCapture captureSlot(mezz.jei.api.gui.ingredient.IRecipeSlotView slot,
+                                           boolean catalyst, Object displayedRecipe)
+    {
+        List<KeyAmount> candidates = slot.getAllIngredients().map(typed ->
+                        RecipeResourceResolver.fromStack(typed.getIngredient()))
+                .filter(java.util.Objects::nonNull).distinct().limit(64).toList();
+        if (candidates.isEmpty()) return null;
+        var groupSlot = new JeiSlotGroupResolver.Slot(
+                                slot.getSlotName().orElse(""), slot.getAllIngredients()
+                                .map(typed -> String.valueOf(typed.getType().getUid()))
+                                .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+        boolean reusable = catalyst ? JeiInputSemantics.reusableCatalyst(displayedRecipe, candidates)
+                : JeiInputSemantics.reusableInput(candidates);
+        return new SlotCapture(groupSlot, candidates, reusable);
     }
 
     public static net.minecraft.world.item.crafting.RecipeHolder<?> register(Captured captured)
@@ -49,9 +68,10 @@ public final class JeiVirtualRecipeLayouts
         return VirtualProvisionerRecipeRegistry.register(family, captured.output().key(),
                 captured.output().amount(), captured.inputs().stream().map(input ->
                         new VirtualProvisionerRecipeRegistry.InputSlot(
-                                input.inputGroup(), input.candidates())).toList());
+                                input.inputGroup(), input.candidates(), input.reusable())).toList());
     }
     public record Captured(Identifier type, KeyAmount output,
                            List<OpenOrderMenuPayload.VirtualInput> inputs) {}
-    private record SlotCapture(JeiSlotGroupResolver.Slot groupSlot, List<KeyAmount> candidates) {}
+    private record SlotCapture(JeiSlotGroupResolver.Slot groupSlot, List<KeyAmount> candidates,
+                               boolean reusable) {}
 }

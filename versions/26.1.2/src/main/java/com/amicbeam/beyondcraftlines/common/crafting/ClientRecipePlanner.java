@@ -86,11 +86,11 @@ public final class ClientRecipePlanner
                             .get(ingredient.slot());
                     if (proxy != null) candidate = new Candidate(proxy.key(), proxy.amount(), selectedItem);
                 }
-                candidates.putIfAbsent(RecipeResourceResolver.sortKey(candidate.key()) + "|"
+                candidates.putIfAbsent(RecipeResourceResolver.resolutionKey(candidate.key()) + "|"
                         + Objects.toString(candidate.selectionItem(), ""), candidate);
             }
             if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
-                    List.copyOf(candidates.values()), false));
+                    componentAwareSelections(candidates.values()), false));
         }
         List<RecipePlan.IngredientSelection> baseline = slots.stream()
                 .filter(slotEntry -> slotEntry.candidates().getFirst().selectionItem() != null)
@@ -532,6 +532,15 @@ public final class ClientRecipePlanner
 
     private static Identifier itemId(IStackKey<?> key)
     { return BuiltInRegistries.ITEM.getKey(((ItemStackKey) key).getSource()); }
+
+    static List<Candidate> componentAwareSelections(java.util.Collection<Candidate> candidates)
+    {
+        Set<Identifier> ambiguous = VirtualInputPolicy.ambiguous(candidates.stream()
+                .map(Candidate::selectionItem).toList());
+        return candidates.stream().map(candidate -> candidate.selectionItem() != null
+                        && ambiguous.contains(candidate.selectionItem())
+                ? new Candidate(candidate.key(), candidate.count(), null) : candidate).toList();
+    }
 
     private static String budgetIdentity(IStackKey<?> key)
     {

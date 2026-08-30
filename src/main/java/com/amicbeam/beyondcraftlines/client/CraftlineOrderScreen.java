@@ -133,6 +133,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private long proposalRecipeEpoch;
     private boolean proposalReady;
     private boolean targetRecipeSearchPending;
+    private boolean targetRecipeSearchAttempted;
     private int targetRecipeSearchDelay;
     private boolean submitWhenReady;
     private boolean planningSnapshotValid;
@@ -215,6 +216,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (!initialized)
         {
             initialized = true;
+            if (menu.initialRecipe() == null && menu.initialError().isBlank())
+            {
+                targetRecipeSearchPending = true;
+                targetRecipeSearchDelay = 1;
+                loadingStatus = Component.translatable(
+                        "gui.beyond_craftlines.middle_click_recipe_search").getString();
+            }
             if (!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
                 loadingStatus = jeiTypeIndexingText();
             else if (menu.recipeIndexComplete()) finishRecipeIndex();
@@ -245,6 +253,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
+        if (targetRecipeSearchPending)
+        {
+            if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
+            return;
+        }
         boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
         if (!menu.recipeIndexComplete())
         {
@@ -258,11 +271,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         if (!preferencesLoaded && menu.recipeIndexComplete()) finishRecipeIndex();
-        if (targetRecipeSearchPending)
-        {
-            if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
-            return;
-        }
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
             planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
@@ -321,7 +329,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             else if (!menu.initialRecipePinned())
                 selected = selectedResourceRecipe(menu.initialTarget(), selected);
         }
-        else if (menu.initialRecipe() == null)
+        else if (menu.initialRecipe() == null && !targetRecipeSearchAttempted)
         {
             if (menu.initialError().isBlank())
             {
@@ -356,6 +364,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
                 menu.networkId());
         targetRecipeSearchPending = false;
+        targetRecipeSearchAttempted = true;
         var payload = com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                 .resolveOrderTarget(menu.initialTarget());
         if (payload == null)
@@ -1061,7 +1070,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
                             selectedResource.amount(), recipeCrafts);
             TreeInput merged = inputKey instanceof ItemStackKey ? inputs.stream()
-                    .filter(input -> input.key.isSame(inputKey))
+                    .filter(input -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(input.key, inputKey))
                     .findFirst().orElse(null)
                     : null;
             if (merged != null)
@@ -1117,16 +1127,32 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (selectedId == null) selectedId = automaticIngredients.get(new IngredientSlotKey(recipe, slot));
             if (selectedId == null) selectedId = defaultIngredients.get(new IngredientSlotKey(recipe, slot));
             if (selectedId != null)
-                for (var candidate : ingredient.candidates())
-                    if (candidate.key() instanceof ItemStackKey itemKey
-                            && BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(selectedId)) return candidate;
-            return ingredient.candidates().getFirst();
+            {
+                ResourceLocation finalSelectedId = selectedId;
+                return ingredient.candidates().stream().filter(candidate ->
+                                candidate.key() instanceof ItemStackKey itemKey
+                                        && BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(finalSelectedId))
+                        .sorted(candidateAvailabilityOrder()).findFirst()
+                        .orElse(ingredient.candidates().getFirst());
+            }
+            return ingredient.candidates().stream().sorted(candidateAvailabilityOrder())
+                    .findFirst().orElseThrow();
         }
         return ingredient.candidates().stream().sorted(java.util.Comparator
                 .<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount>comparingLong(
                         value -> resourceAvailable(value.key())).reversed()
                 .thenComparing(value -> com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                         .sortKey(value.key()))).findFirst().orElseThrow();
+    }
+
+    private java.util.Comparator<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount>
+    candidateAvailabilityOrder()
+    {
+        return java.util.Comparator
+                .<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount>comparingLong(
+                        value -> resourceAvailable(value.key())).reversed()
+                .thenComparing(value -> com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeResourceResolver.resolutionKey(value.key()));
     }
 
     private long resourceAvailable(IStackKey<?> requested)

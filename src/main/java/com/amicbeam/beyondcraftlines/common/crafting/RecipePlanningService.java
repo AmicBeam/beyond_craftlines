@@ -223,7 +223,8 @@ public final class RecipePlanningService
         {
             List<RecipeHolder<?>> candidates = recipesFor(byOutput, resource);
             if (requiredIngredient != null) candidates = candidates.stream().filter(holder ->
-                    requiredIngredient.test(holder.value().getResultItem(level.registryAccess()))).toList();
+                    RecipeOutputResolver.matchesIngredient(holder.value(), requiredIngredient,
+                            level.registryAccess())).toList();
             ResourceLocation selectedRecipe = overrides.recipeFor(resource);
             if (selectedRecipe != null)
             {

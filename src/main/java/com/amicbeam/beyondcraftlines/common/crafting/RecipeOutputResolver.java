@@ -31,6 +31,16 @@ public final class RecipeOutputResolver
         return List.copyOf(result.values());
     }
 
+    /** Tests a parent ingredient against a recipe output without invoking remapped virtual recipe methods. */
+    public static boolean matchesIngredient(Recipe<?> recipe, Ingredient ingredient,
+                                            net.minecraft.core.HolderLookup.Provider registries)
+    {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        Object output = virtual == null ? null : virtual.output().getReadOnlyStack();
+        return VirtualRecipeOutputMatch.matches(virtual != null, output, ItemStack.class, ingredient::test,
+                () -> ingredient.test(recipe.getResultItem(registries)));
+    }
+
     private static void addOutput(Recipe<?> recipe, LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)
     {
         // Forge remaps direct calls to Minecraft methods, but reflection by the development name

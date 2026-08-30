@@ -225,7 +225,9 @@ public final class RecipePlanningService
             List<RecipeHolder<?>> candidates = recipesFor(byOutput, resource);
             if (requiredIngredient != null) candidates = candidates.stream().filter(holder ->
                     RecipeOutputResolver.outputs(holder.value(), level).stream().anyMatch(output ->
-                            output.key() instanceof ItemStackKey item && requiredIngredient.test(item.getReadOnlyStack()))).toList();
+                            output.key() instanceof ItemStackKey item && VirtualRecipeOutputMatch.matches(
+                                    item.getReadOnlyStack(), net.minecraft.world.item.ItemStack.class,
+                                    requiredIngredient::test))).toList();
             Identifier selectedRecipe = overrides.recipeFor(resource);
             if (selectedRecipe != null)
             {

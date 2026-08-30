@@ -1704,12 +1704,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             GraphNode node = nodeAt(mouseX, mouseY);
             if (node != null)
             {
+                if (overCandidateBadge(node, mouseX, mouseY) && openIngredientPicker(node)) return true;
                 if (node.jumpTarget != null)
                 {
                     centerTreeOn(node.jumpTarget);
                     return true;
                 }
-                if (overCandidateBadge(node, mouseX, mouseY) && openIngredientPicker(node)) return true;
                 if (com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                         .showRecipesFor(node.key)) return true;
             }

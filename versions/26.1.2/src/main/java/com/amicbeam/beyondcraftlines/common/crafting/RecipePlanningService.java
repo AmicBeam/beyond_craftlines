@@ -289,8 +289,7 @@ public final class RecipePlanningService
         for (RecipeResourceResolver.ResourceIngredient ingredient : recipeIngredients)
         {
             int currentIndex = ingredient.slot();
-            List<KeyAmount> choices = ingredientChoices(holder.id().identifier(), holder.value(), currentIndex,
-                    ingredient, state.stock,
+            List<KeyAmount> choices = ingredientChoices(holder.id().identifier(), currentIndex, ingredient, state.stock,
                     byOutput, overrides, mode, budget);
             if (choices.isEmpty())
                 throw new IllegalArgumentException("ingredient cannot be enumerated for " + holder.id()
@@ -425,8 +424,7 @@ public final class RecipePlanningService
         if (used < amount) state.missing.merge(requested, amount - used, SaturatingLongMath::add);
     }
 
-    private static List<KeyAmount> ingredientChoices(Identifier recipe,
-                                                     net.minecraft.world.item.crafting.Recipe<?> owner, int slot,
+    private static List<KeyAmount> ingredientChoices(Identifier recipe, int slot,
                                                      RecipeResourceResolver.ResourceIngredient ingredient,
                                                      MatchingStock<IStackKey<?>, Identifier> stock,
                                                      Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
@@ -443,8 +441,7 @@ public final class RecipePlanningService
             throw new IllegalArgumentException("selected ingredient is invalid for " + recipe
                     + " slot " + slot + ": " + selected);
         }
-        if (mode != ResolutionMode.SEARCH && VirtualProvisionerRecipeRegistry.descriptor(owner) == null
-                && ingredient.candidates().stream()
+        if (mode != ResolutionMode.SEARCH && ingredient.candidates().stream()
                 .anyMatch(choice -> choice.key() instanceof ItemStackKey))
             throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(

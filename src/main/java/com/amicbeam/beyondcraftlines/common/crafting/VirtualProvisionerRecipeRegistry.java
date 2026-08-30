@@ -108,11 +108,8 @@ public final class VirtualProvisionerRecipeRegistry
         return 0D;
     }
 
-    public record InputSlot(String inputGroup, List<KeyAmount> candidates, boolean reusable)
+    public record InputSlot(String inputGroup, List<KeyAmount> candidates)
     {
-        public InputSlot(String inputGroup, List<KeyAmount> candidates)
-        { this(inputGroup, candidates, false); }
-
         public InputSlot
         {
             if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
@@ -141,7 +138,7 @@ public final class VirtualProvisionerRecipeRegistry
                     .append(RecipeResourceResolver.resolutionKey(output)).append('@').append(outputAmount);
             for (InputSlot slot : inputs)
             {
-                canonical.append('|').append(slot.inputGroup()).append(slot.reusable() ? ":R:" : ":C:");
+                canonical.append('|').append(slot.inputGroup()).append(':');
                 slot.candidates().stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }

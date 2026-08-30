@@ -24,4 +24,18 @@ final class RecipeIngredientResolverTest
 
         assertEquals(List.of("iron", "gold"), copy);
     }
+
+    @Test void treatsThrowingThirdPartyIngredientAccessorsAsEmpty()
+    {
+        assertTrue(RecipeIngredientResolver.<String>safeGet(() -> {
+            throw new UnsupportedOperationException("cached ingredient is locked");
+        }).isEmpty());
+    }
+
+    @Test void treatsMissingThirdPartyClassesAsEmpty()
+    {
+        assertTrue(RecipeIngredientResolver.<String>safeGet(() -> {
+            throw new NoClassDefFoundError("optional recipe API");
+        }).isEmpty());
+    }
 }

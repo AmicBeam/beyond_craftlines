@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.WeakHashMap;
+import java.util.function.Supplier;
 
 /**
  * Reads item inputs from both vanilla recipes and common third-party recipe APIs.
@@ -24,10 +25,20 @@ public final class RecipeIngredientResolver
 
     public static List<Ingredient> ingredients(Recipe<?> recipe)
     {
-        var placement = recipe.placementInfo();
-        List<Ingredient> vanilla = placement == null ? List.of() : safeCopy(placement.ingredients());
+        List<Ingredient> vanilla = safeGet(() -> {
+            var placement = recipe.placementInfo();
+            return placement == null ? List.of() : placement.ingredients();
+        });
         if (!vanilla.isEmpty()) return vanilla;
         return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::customItemInputs);
+    }
+
+    static <T> List<T> safeGet(Supplier<? extends Collection<T>> values)
+    {
+        try
+        { return safeCopy(values.get()); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
     }
 
     static <T> List<T> safeCopy(Collection<T> values)

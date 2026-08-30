@@ -33,7 +33,7 @@ public final class RecipeResourceResolver
     private RecipeResourceResolver() {}
 
     public static List<ResourceIngredient> ingredients(Recipe<?> recipe)
-    { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolve); }
+    { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolveSafely); }
 
     public static Set<String> inputGroups(Recipe<?> recipe)
     {
@@ -47,7 +47,7 @@ public final class RecipeResourceResolver
         List<String> inputMethods = directionalInputMethodsForStackType(recipe, output);
         if (inputMethods.isEmpty()) inputMethods = directionalInputMethods(recipe,
                 raw -> matchesOutputDirection(output, raw));
-        return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
+        return inputMethods.isEmpty() ? ingredients(recipe) : resolveSafely(recipe, inputMethods, false);
     }
 
     private static List<String> directionalInputMethodsForStackType(Recipe<?> recipe, IStackKey<?> output)
@@ -155,13 +155,33 @@ public final class RecipeResourceResolver
         return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true);
     }
 
+    private static List<ResourceIngredient> resolveSafely(Recipe<?> recipe)
+    {
+        try
+        { return resolve(recipe); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
+    }
+
+    private static List<ResourceIngredient> resolveSafely(Recipe<?> recipe, List<String> inputMethods,
+                                                          boolean includeVanillaIngredients)
+    {
+        try
+        { return resolve(recipe, inputMethods, includeVanillaIngredients); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
+    }
+
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)
     {
         List<ResourceIngredient> result = new ArrayList<>();
         int slot = 0;
         if (includeVanillaIngredients)
-            for (Ingredient ingredient : recipe.placementInfo().ingredients())
+            for (Ingredient ingredient : RecipeIngredientResolver.safeGet(() -> {
+                var placement = recipe.placementInfo();
+                return placement == null ? List.of() : placement.ingredients();
+            }))
             {
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (ItemStack stack : ingredient.items().map(ItemStack::new).toList())

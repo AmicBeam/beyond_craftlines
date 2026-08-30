@@ -530,11 +530,9 @@ public final class RecipePlanningService
     {
         var recipe = holder.value();
         if (VirtualProvisionerRecipeRegistry.descriptor(recipe) != null) return true;
-        // Recipe#isIncomplete treats an empty vanilla getIngredients() list as invalid.
-        // Many third-party machine recipes intentionally keep that list empty and expose
-        // their inputs through their own API, so only apply the vanilla check when the
-        // recipe actually uses the vanilla ingredient list.
-        if (!recipe.isSpecial() && recipe.placementInfo().isImpossibleToPlace()) return false;
+        // Resolving the actual candidates is both the completeness check and the safest
+        // compatibility boundary. Third-party placementInfo() implementations may throw,
+        // while IO profiles can still expose usable inputs through their public API.
         return !RecipeResourceResolver.ingredients(recipe).isEmpty();
     }
 

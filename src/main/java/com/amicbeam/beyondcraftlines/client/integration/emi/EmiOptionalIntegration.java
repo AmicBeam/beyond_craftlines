@@ -20,6 +20,8 @@ public final class EmiOptionalIntegration
     private static Method recipeTypesFor;
     private static Method recipeTypeTitle;
     private static Method recipeTypes;
+    private static Method renderRecipeButtons;
+    private static Method orderRecipeButton;
 
     private EmiOptionalIntegration() {}
 
@@ -84,6 +86,25 @@ public final class EmiOptionalIntegration
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return Set.of(); }
     }
 
+    public static void renderRecipeOrderButtons(net.minecraft.client.gui.screens.Screen screen,
+                                                net.minecraft.client.gui.GuiGraphics graphics,
+                                                int mouseX, int mouseY, float partialTick)
+    {
+        initialize();
+        if (renderRecipeButtons == null || screen == null || graphics == null) return;
+        try { renderRecipeButtons.invoke(null, screen, graphics, mouseX, mouseY, partialTick); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+    }
+
+    public static boolean orderRecipeButtonUnderMouse(net.minecraft.client.gui.screens.Screen screen,
+                                                      double mouseX, double mouseY)
+    {
+        initialize();
+        if (orderRecipeButton == null || screen == null) return false;
+        try { return Boolean.TRUE.equals(orderRecipeButton.invoke(null, screen, mouseX, mouseY)); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
+    }
+
     private static synchronized void initialize()
     {
         if (initialized) return;
@@ -97,6 +118,12 @@ public final class EmiOptionalIntegration
             recipeTypesFor = type.getMethod("recipeTypesFor", net.minecraft.world.item.ItemStack.class);
             recipeTypeTitle = type.getMethod("recipeTypeTitle", ResourceLocation.class);
             recipeTypes = type.getMethod("recipeTypes");
+            renderRecipeButtons = type.getMethod("renderRecipeOrderButtons",
+                    net.minecraft.client.gui.screens.Screen.class,
+                    net.minecraft.client.gui.GuiGraphics.class,
+                    int.class, int.class, float.class);
+            orderRecipeButton = type.getMethod("orderRecipeButtonUnderMouse",
+                    net.minecraft.client.gui.screens.Screen.class, double.class, double.class);
         }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored)
         {
@@ -105,6 +132,8 @@ public final class EmiOptionalIntegration
             recipeTypesFor = null;
             recipeTypeTitle = null;
             recipeTypes = null;
+            renderRecipeButtons = null;
+            orderRecipeButton = null;
         }
     }
 }

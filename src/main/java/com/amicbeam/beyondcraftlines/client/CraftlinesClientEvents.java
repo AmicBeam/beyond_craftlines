@@ -131,6 +131,9 @@ public final class CraftlinesClientEvents
         @SubscribeEvent public static void advanceJeiRecipeIndex(ScreenEvent.Render.Post event)
         {
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
+            com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .renderRecipeOrderButtons(event.getScreen(), event.getGuiGraphics(),
+                            event.getMouseX(), event.getMouseY(), event.getPartialTick());
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -216,6 +219,14 @@ public final class CraftlinesClientEvents
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromMiddleClick(ScreenEvent.MouseButtonPressed.Pre event)
         {
+            if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .orderRecipeButtonUnderMouse(event.getScreen(),
+                            event.getMouseX(), event.getMouseY()))
+            {
+                event.setCanceled(true);
+                return;
+            }
             if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE
                     || Minecraft.getInstance().player == null
                     || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;

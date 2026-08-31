@@ -147,7 +147,7 @@ JEI 插件为存在物品产出且具有注册 ID 的配方增加网络连接器
 
 每个虚拟输入槽同时上传规范化后的 JEI slot name 与消费语义：`CONSUMED` 按制作次数消耗，`REUSABLE` 只要求固定数量，`DURABILITY` 按候选工具剩余耐久和每次损耗折算工具数量。普通 JEI `INPUT` 默认消耗；`CATALYST`（26.1.2 为 `CRAFTING_STATION`）常代表工作站，默认不进入材料协议。只有配方公开 `getTool()` 且候选匹配时才纳入 `tool` 组并推断为每次损耗 1 点耐久；公开 `getOutputContainer()`/`getContainer()` 且候选匹配时才纳入按次消耗的 `container` 组。该推断不按物品是否可损坏、角色名称或展示坐标猜测。
 
-EMI 在 1.20.1 Forge 与 1.21.1 NeoForge 中是可选前端：recipe decorator 提供入口，hover API 提供中键目标，隔离反射桥只读 BoM 偏好；所有 EMI 入口必须重新映射到 JEI recipe ID 并由现有 JEI 布局后端验证，EMI-only 配方不进入执行协议。26.1.2 因上游没有对应构件只提供 no-op 桥。EMI 不替换 Craftlines 规划树，也不改变 JEI 为必需执行后端的现状。
+EMI 在 1.20.1 Forge 与 1.21.1 NeoForge 中是可选前端：配方屏幕事件桥在可见配方卡片上提供入口（不依赖生产环境默认关闭的 recipe decorator），hover API 提供中键目标，隔离反射桥只读 BoM 偏好；所有 EMI 入口必须重新映射到 JEI recipe ID 并由现有 JEI 布局后端验证，EMI-only 配方不进入执行协议。EMI/JEMI 元数据完成后必须刷新 JEI 输入分组索引，保留供给器和绑定设备的语义子标签。26.1.2 因上游没有对应构件只提供 no-op 桥。EMI 不替换 Craftlines 规划树，也不改变 JEI 为必需执行后端的现状。
 
 JEI runtime 只同步建立分类、催化剂和标题的轻量索引；当前主网络已启用的机器分类随后进入客户端预算队列，每个 category 在本次 runtime 生命周期内完整物化一次，每帧最多处理 32 个 drawable 且不超过 2ms。首次进入尚未预热的具体 JEI 类型时只补该类型，之后所有配方树直接复用；网络入口在缺少类型快照时才保守地预热全部分类。客户端递归规划只读取已经物化并按确定性 ID 缓存的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。`recipe_io_profiles` 及其数据文件已从实验版删除。
 

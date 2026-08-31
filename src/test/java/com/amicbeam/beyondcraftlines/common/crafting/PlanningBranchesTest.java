@@ -25,7 +25,7 @@ class PlanningBranchesTest
     }
 
     @Test
-    void expiredSearchStillValidatesCurrentCandidateButStartsNoAlternative()
+    void expiredSearchKeepsRecoveringUntilACraftableCandidateExists()
     {
         AtomicLong now = new AtomicLong();
         ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, now::get);

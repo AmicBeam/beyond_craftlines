@@ -929,7 +929,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new IngredientSlotKey(node.parentRecipe, slot))))
             graphics.fill(x + 22, y + 22, x + 26, y + 26, 0xFFB78CFF);
         if (!node.reusableInput) node.key.getRender().renderAmount(graphics, node.needed, iconX, iconY);
-        if (node.ingredientChoices.size() > 1) renderCandidateBadge(graphics, x + 2, y + 2);
+        if(node.ingredientChoices.size()>1||node.fluidContainerAlternative)renderCandidateBadge(graphics,x+2,y+2);
     }
 
     private static void renderCandidateBadge(GuiGraphicsExtractor graphics, int x, int y)
@@ -1019,7 +1019,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             SelectedTreeInput selectedInput = selectedInputs.get(i);
             var proxy = fluidProxies.get(selectedInput.slot());
-            if (proxy != null) selectedInputs.set(i, new SelectedTreeInput(
+            Identifier choice=selectedIngredientChoice(recipe.id().identifier(),selectedInput.slot());
+            if(proxy!=null&&(choice==null||com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.isProxy(choice)))selectedInputs.set(i,new SelectedTreeInput(
                     selectedInput.slot(), selectedInput.ingredient(), proxy));
         }
         long outputPerCraft = com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
@@ -1094,6 +1095,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         inputGroup.reusableOnly, inputGroup.selfIncrement, expanding, stock);
             }
             child.setIngredientChoices(firstSlot.ingredient());
+            child.fluidContainerAlternative|=fluidProxies.containsKey(firstSlot.slot());
             for (int i = 1; i < inputGroup.slots.size(); i++)
             {
                 TreeInputSlot slot = inputGroup.slots.get(i);
@@ -1110,15 +1112,15 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             Identifier recipe, int slot,
             com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
     {
+        Identifier selectedId=selectedIngredientChoice(recipe,slot);
+        if(com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.isProxy(selectedId)){
+            var fluid=ingredient.candidates().stream().filter(candidate->candidate.key() instanceof
+                    com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey).findFirst().orElse(null);
+            if(fluid!=null)return fluid;selectedId=com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.itemOrSelf(selectedId);}
+        if(selectedId!=null)for(var candidate:ingredient.candidates())if(candidate.key() instanceof ItemStackKey itemKey&&
+                BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(selectedId))return candidate;
         if (ingredient.hasOnlyItemCandidates())
         {
-            Identifier selectedId = ingredientOverrides.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId == null) selectedId = automaticIngredients.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId == null) selectedId = defaultIngredients.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId != null)
-                for (var candidate : ingredient.candidates())
-                    if (candidate.key() instanceof ItemStackKey itemKey
-                            && BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(selectedId)) return candidate;
             return ingredient.candidates().getFirst();
         }
         return ingredient.candidates().stream().sorted(java.util.Comparator
@@ -1127,6 +1129,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 .thenComparing(value -> com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                         .sortKey(value.key()))).findFirst().orElseThrow();
     }
+
+    private Identifier selectedIngredientChoice(Identifier recipe,int slot){Identifier selected=ingredientOverrides.get(new IngredientSlotKey(recipe,slot));
+        if(selected==null)selected=automaticIngredients.get(new IngredientSlotKey(recipe,slot));if(selected==null)selected=defaultIngredients.get(new IngredientSlotKey(recipe,slot));return selected;}
 
     private long resourceAvailable(IStackKey<?> requested)
     {
@@ -1291,6 +1296,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static void mergeDisplayedTotals(GraphNode target, GraphNode source)
     {
+        target.fluidContainerAlternative|=source.fluidContainerAlternative;
         boolean reusable = target.reusableInput && source.reusableInput;
         target.reusableInput = reusable;
         if (reusable)
@@ -1346,7 +1352,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean openIngredientPicker(GraphNode node)
     {
         List<ItemStack> candidates = ingredientCandidates(node);
-        if (candidates.size() < 2) return false;
+        if(candidates.size()<2&&!node.fluidContainerAlternative)return false;
         recipePickerNode = null;
         recipePickerRecipes = List.of();
         ingredientPickerNode = node;
@@ -1745,7 +1751,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private boolean overCandidateBadge(GraphNode node, double mouseX, double mouseY)
     {
-        if (node.ingredientChoices.size() < 2) return false;
+        if(node.ingredientChoices.size()<2&&!node.fluidContainerAlternative)return false;
         int x = nodeX(node) + 2;
         int y = nodeY(node) + 2;
         return mouseX >= x && mouseX < x + 8 && mouseY >= y && mouseY < y + 8;
@@ -2497,6 +2503,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         private boolean stockSatisfied;
         private boolean partiallySatisfied;
         private boolean reusableInput;
+        private boolean fluidContainerAlternative;
         private boolean selfIncrement;
         private long stockUsed;
         private GraphNode jumpTarget;
@@ -2525,7 +2532,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
         {
             ingredientChoices.clear();
-            if (!ingredient.hasOnlyItemCandidates()) return;
             for (var candidate : ingredient.candidates())
                 if (candidate.key() instanceof ItemStackKey itemKey)
                     ingredientChoices.putIfAbsent(BuiltInRegistries.ITEM.getKey(itemKey.getSource()),
@@ -2538,7 +2544,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             parentSlots.add(slot);
             Set<Identifier> allowed = new HashSet<>();
-            if (!ingredient.hasOnlyItemCandidates()) return;
             for (var candidate : ingredient.candidates())
                 if (candidate.key() instanceof ItemStackKey itemKey)
                     allowed.add(BuiltInRegistries.ITEM.getKey(itemKey.getSource()));

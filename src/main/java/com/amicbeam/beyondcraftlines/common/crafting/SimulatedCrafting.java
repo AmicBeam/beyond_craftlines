@@ -107,7 +107,7 @@ public final class SimulatedCrafting
     {
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), selection.item());
+            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
         List<ItemStack> samples = new ArrayList<>();
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         for (int i = 0; i < ingredients.size(); i++)
@@ -281,7 +281,7 @@ public final class SimulatedCrafting
                 .map(entry -> new KeyAmount(entry.getKey(), entry.getValue())).toList();
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), selection.item());
+            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
         for (int ingredientIndex = 0; ingredientIndex < ingredients.size(); ingredientIndex++)
         {
             Ingredient ingredient = ingredients.get(ingredientIndex);
@@ -352,7 +352,7 @@ public final class SimulatedCrafting
         if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;
         Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), selection.item());
+            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
         List<ItemStack> samples = new ArrayList<>(ingredients.size());
         for (int i = 0; i < ingredients.size(); i++)
         {

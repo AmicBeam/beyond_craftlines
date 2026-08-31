@@ -84,7 +84,8 @@ public final class ClientRecipePlanner
                     selections.add(new RecipePlan.IngredientSelection(ingredient.slot(), selectedItem));
                     KeyAmount proxy = SimulatedCrafting.bucketFluidInputs(holder, level, selections)
                             .get(ingredient.slot());
-                    if (proxy != null) candidate = new Candidate(proxy.key(), proxy.amount(), selectedItem);
+                    if(proxy!=null){Candidate fluid=new Candidate(proxy.key(),proxy.amount(),FluidContainerChoice.proxy(selectedItem));
+                        candidates.putIfAbsent(RecipeResourceResolver.sortKey(fluid.key())+"|"+fluid.selectionItem(),fluid);}
                 }
                 candidates.putIfAbsent(RecipeResourceResolver.sortKey(candidate.key()) + "|"
                         + Objects.toString(candidate.selectionItem(), ""), candidate);
@@ -207,18 +208,22 @@ public final class ClientRecipePlanner
             }
             State best = null;
             Recipe bestRecipe = null;
+            State cyclicFallback=null;boolean foundCraftable=false;
             for (Recipe recipe : candidates)
             {
-                if (!PlanningBranches.shouldTryCandidate(best != null, budget)) break;
+                if(!PlanningBranches.shouldTryCandidate(foundCraftable,budget))break;
                 State branch = state.copy();
                 Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
                 State attempted = branch;
-                branch = PlanningCycleBranch.evaluate(state, () -> {
+                var evaluated=PlanningCycleBranch.evaluateWithStatus(state, () -> {
                     resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), attempted,
                             manualRecipes, manualIngredients, depth, maxDepth, budget);
                     return attempted;
                 }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
+                branch=evaluated.state();
+                if(evaluated.cyclic()){if(cyclicFallback==null)cyclicFallback=branch;continue;}
+                foundCraftable|=missingAmount(branch.missing)==0;
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -226,7 +231,8 @@ public final class ClientRecipePlanner
                 }
                 if (missingAmount(branch.missing) == 0) break;
             }
-            if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
+            if(best==null&&cyclicFallback!=null)state.replaceWith(cyclicFallback);
+            else if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
             else state.replaceWith(best);
         }
         finally { visiting.remove(resource); }
@@ -274,10 +280,11 @@ public final class ClientRecipePlanner
         String bestKey = null;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if (!PlanningBranches.shouldTryCandidate(best != null, budget)) break;
+            if(!PlanningBranches.shouldTryCandidate(best!=null&&missingAmount(best.missing)==0,budget))break;
             State branch = state.copy();
-            if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
-                    manualIngredients, depth, maxDepth, budget, variant)) continue;
+            try{if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
+                    manualIngredients, depth, maxDepth, budget, variant)) continue;}
+            catch(PlanningCycleBranch.Cycle ignored){continue;}
             String key = variant.stream().map(candidate -> RecipeResourceResolver.sortKey(candidate.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             if (best == null || compare(branch, recipe, best, recipe) < 0
@@ -288,7 +295,7 @@ public final class ClientRecipePlanner
             }
             if (missingAmount(branch.missing) == 0) break;
         }
-        if (best == null) throw new IllegalArgumentException("no valid ingredient proposal for " + recipe.id());
+        if(best==null)throw new PlanningCycleBranch.Cycle();
         state.replaceWith(best);
     }
 

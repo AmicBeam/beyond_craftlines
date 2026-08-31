@@ -254,22 +254,33 @@ public final class RecipePlanningService
             }
             PlanningState best = null;
             ResourceLocation bestRecipe = null;
+            PlanningState cyclicFallback = null;
+            boolean foundNonCyclic = false;
             for (RecipeHolder<?> holder : candidates)
             {
-                if (mode == ResolutionMode.SEARCH) budget.enterBranch();
-                PlanningState branch = PlanningCycleBranch.evaluate(state, () -> {
+                if (mode == ResolutionMode.SEARCH && foundNonCyclic) budget.enterBranch();
+                var evaluated = PlanningCycleBranch.evaluateWithStatus(state, () -> {
                     PlanningState attempted = state.copy();
                     resolveRecipe(level, resource, remainder, holder, byOutput, new HashSet<>(visiting), attempted,
                             overrides, mode, depth, maxDepth, budget);
                     return attempted;
                 }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
+                PlanningState branch = evaluated.state();
+                if (evaluated.cyclic())
+                {
+                    if (cyclicFallback == null) cyclicFallback = branch;
+                    continue;
+                }
+                foundNonCyclic = true;
                 if (best == null || compare(branch, holder.id(), best, bestRecipe) < 0)
                 {
                     best = branch;
                     bestRecipe = holder.id();
                 }
             }
-            state.replaceWith(Objects.requireNonNull(best));
+            if (best != null) state.replaceWith(best);
+            else if (cyclicFallback != null) state.replaceWith(cyclicFallback);
+            else state.missing.merge(resource, remainder, SaturatingLongMath::add);
         }
         finally { visiting.remove(resource); }
     }
@@ -312,8 +323,12 @@ public final class RecipePlanningService
         {
             if (mode == ResolutionMode.SEARCH) budget.enterBranch();
             PlanningState branch = state.copy();
-            resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, branch,
-                    overrides, mode, depth, maxDepth, budget, variant);
+            try
+            {
+                resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, branch,
+                        overrides, mode, depth, maxDepth, budget, variant);
+            }
+            catch (PlanningCycleBranch.Cycle ignored) { continue; }
             String selectionKey = variant.stream().map(value -> RecipeResourceResolver.sortKey(value.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             int comparison = best == null ? -1 : compare(branch, holder.id(), best, holder.id());
@@ -324,7 +339,8 @@ public final class RecipePlanningService
             }
             if (missingAmount(branch.missing) == 0) break;
         }
-        state.replaceWith(Objects.requireNonNull(best));
+        if (best == null) throw new PlanningCycleBranch.Cycle();
+        state.replaceWith(best);
     }
 
     private static void resolveRecipeVariant(ServerLevel level, IStackKey<?> outputKey, long remainder,
@@ -352,18 +368,45 @@ public final class RecipePlanningService
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
                 RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
         List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
+        Map<Integer, ResourceLocation> sampleItems = new LinkedHashMap<>();
         for (int i = 0; i < variant.size(); i++)
             if (variant.get(i).key() instanceof ItemStackKey itemKey)
-                selections.add(new RecipePlan.IngredientSelection(recipeIngredients.get(i).slot(),
-                        BuiltInRegistries.ITEM.getKey(itemKey.getSource())));
+            {
+                ResourceLocation item = BuiltInRegistries.ITEM.getKey(itemKey.getSource());
+                int slot = recipeIngredients.get(i).slot();
+                selections.add(new RecipePlan.IngredientSelection(slot, item));
+                sampleItems.put(slot, item);
+            }
         boolean[] reusableSlots = SimulatedCrafting.reusableIngredientSlots(holder, level, selections);
         Map<Integer, KeyAmount> fluidProxies = SimulatedCrafting.bucketFluidInputs(holder, level, selections);
+        List<RecipePlan.IngredientSelection> finalSelections = new ArrayList<>();
+        List<KeyAmount> selectedChoices = new ArrayList<>(variant.size());
+        for (int i = 0; i < variant.size(); i++)
+        {
+            RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
+            KeyAmount raw = variant.get(i);
+            KeyAmount proxy = fluidProxies.get(ingredient.slot());
+            ResourceLocation override = overrides.ingredientFor(holder.id(), ingredient.slot());
+            boolean forceFluid = FluidContainerChoice.isProxy(override);
+            boolean forceItem = override != null && !forceFluid;
+            long availableFluid = proxy == null ? 0 : state.stock.available(
+                    proxy.key().getTypeId(), proxy.key()::isSame);
+            boolean useFluid = FluidContainerPolicy.useFluid(raw.key() instanceof
+                    com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey,
+                    proxy != null, forceFluid, forceItem, availableFluid);
+            KeyAmount choice = useFluid && proxy != null ? proxy : raw;
+            selectedChoices.add(choice);
+            ResourceLocation item = sampleItems.get(ingredient.slot());
+            if (item == null && override != null) item = FluidContainerChoice.itemOrSelf(override);
+            if (item != null) finalSelections.add(new RecipePlan.IngredientSelection(ingredient.slot(),
+                    useFluid ? FluidContainerChoice.proxy(item) : item));
+        }
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
         for (int i = 0; i < variant.size(); i++)
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
-            KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
+            KeyAmount choice = selectedChoices.get(i);
             VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
                     ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
             if (!StackKeyMatch.exact(outputKey, choice.key())) continue;
@@ -377,7 +420,7 @@ public final class RecipePlanningService
         for (int i = 0; i < variant.size(); i++)
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
-            KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
+            KeyAmount choice = selectedChoices.get(i);
             VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
                     ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
             boolean reusable = use.sharedReusable();
@@ -388,7 +431,8 @@ public final class RecipePlanningService
                     ingredient.inputGroup()));
             (reusable ? reusableDependencyInputs : dependencyInputs)
                     .add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
-            dependencyIngredients.putIfAbsent(choice.key(), fluidProxies.containsKey(ingredient.slot())
+            dependencyIngredients.putIfAbsent(choice.key(), choice.key() instanceof
+                    com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey
                     ? null : ingredient.itemIngredient());
         }
         for (var dependency : PlanningDependencyBatcher.aggregate(dependencyInputs).entrySet())
@@ -414,7 +458,7 @@ public final class RecipePlanningService
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
         state.steps.add(new RecipePlan.Step(holder.id(), family(holder), outputKey,
-                perCraft, crafts, inputs, selections, dependencies, shape.seed()));
+                perCraft, crafts, inputs, finalSelections, dependencies, shape.seed()));
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);
@@ -438,6 +482,13 @@ public final class RecipePlanningService
         ResourceLocation selected = overrides.ingredientFor(recipe, slot);
         if (selected != null)
         {
+            if (FluidContainerChoice.isProxy(selected))
+            {
+                List<KeyAmount> fluids = ingredient.candidates().stream().filter(choice -> choice.key() instanceof
+                        com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey).toList();
+                if (!fluids.isEmpty()) return fluids;
+                selected = FluidContainerChoice.itemOrSelf(selected);
+            }
             for (KeyAmount choice : ingredient.candidates())
                 if (choice.key() instanceof ItemStackKey item
                         && BuiltInRegistries.ITEM.getKey(item.getSource()).equals(selected)) return List.of(choice);

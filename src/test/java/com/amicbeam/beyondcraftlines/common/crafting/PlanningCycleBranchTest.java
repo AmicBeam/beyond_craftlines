@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -30,5 +31,25 @@ final class PlanningCycleBranchTest
 
         assertEquals(List.of("root|missing:intermediate", "craftable"), evaluated);
         assertEquals("craftable", selected);
+    }
+
+    @Test
+    void expiredOptimizationBudgetStillSearchesUntilOneNonCyclicCandidateExists()
+    {
+        AtomicLong now = new AtomicLong(5);
+        ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, now::get);
+        List<String> evaluated = new ArrayList<>();
+        boolean foundNonCyclic = false;
+        for (String candidate : List.of("cyclic_recipe", "cyclic_tag_member", "nether_quartz"))
+        {
+            if (!PlanningBranches.shouldTryCandidate(foundNonCyclic, budget)) break;
+            var result = PlanningCycleBranch.evaluateWithStatus("root", () -> {
+                if (candidate.startsWith("cyclic")) throw new PlanningCycleBranch.Cycle();
+                return candidate;
+            }, ignored -> "cycle");
+            evaluated.add(candidate);
+            foundNonCyclic |= !result.cyclic();
+        }
+        assertEquals(List.of("cyclic_recipe", "cyclic_tag_member", "nether_quartz"), evaluated);
     }
 }

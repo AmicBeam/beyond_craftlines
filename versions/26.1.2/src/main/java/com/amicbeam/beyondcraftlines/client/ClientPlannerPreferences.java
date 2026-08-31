@@ -37,8 +37,8 @@ public final class ClientPlannerPreferences
         try (Reader reader = Files.newBufferedReader(path))
         {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
-            return new Snapshot(readMap(root.getAsJsonObject("recipes")),
-                    readMap(root.getAsJsonObject("ingredients")),
+            return new Snapshot(readResourceMap(root.getAsJsonObject("recipes")),
+                    readSelectionMap(root.getAsJsonObject("ingredients")),
                     OrderOutputDestination.byId(root.has("output_destination")
                             ? root.get("output_destination").getAsString() : "network"));
         }
@@ -66,14 +66,14 @@ public final class ClientPlannerPreferences
         return write(recipes, old.ingredients(), old.outputDestination());
     }
 
-    public static boolean setIngredients(Identifier recipe, Iterable<Integer> slots, Identifier item)
+    public static boolean setIngredients(Identifier recipe, Iterable<Integer> slots, String selection)
     {
         Snapshot old = load();
-        LinkedHashMap<String, Identifier> ingredients = new LinkedHashMap<>(old.ingredients());
+        LinkedHashMap<String, String> ingredients = new LinkedHashMap<>(old.ingredients());
         for (int slot : slots)
         {
             String key = ingredientKey(recipe, slot);
-            if (item == null) ingredients.remove(key); else ingredients.put(key, item);
+            if (selection == null) ingredients.remove(key); else ingredients.put(key, selection);
         }
         return write(old.recipes(), ingredients, old.outputDestination());
     }
@@ -87,7 +87,7 @@ public final class ClientPlannerPreferences
     public static String ingredientKey(Identifier recipe, int slot)
     { return recipe + "#" + slot; }
 
-    private static Map<String, Identifier> readMap(JsonObject object)
+    private static Map<String, Identifier> readResourceMap(JsonObject object)
     {
         if (object == null) return Map.of();
         LinkedHashMap<String, Identifier> result = new LinkedHashMap<>();
@@ -101,8 +101,11 @@ public final class ClientPlannerPreferences
         return Map.copyOf(result);
     }
 
+    private static Map<String,String> readSelectionMap(JsonObject object){if(object==null)return Map.of();LinkedHashMap<String,String> result=new LinkedHashMap<>();
+        for(Map.Entry<String,JsonElement> entry:object.entrySet()){if(result.size()>=MAX_ENTRIES)break;if(!entry.getValue().isJsonPrimitive())continue;String value=entry.getValue().getAsString();if(!value.isBlank()&&value.length()<=512)result.put(entry.getKey(),value);}return Map.copyOf(result);}
+
     private static boolean write(Map<String, Identifier> recipes,
-                                 Map<String, Identifier> ingredients,
+                                 Map<String, String> ingredients,
                                  OrderOutputDestination outputDestination)
     {
         Path path = path();
@@ -114,7 +117,7 @@ public final class ClientPlannerPreferences
             root.addProperty("version", 1);
             root.addProperty("output_destination", outputDestination.id());
             root.add("recipes", toJson(recipes));
-            root.add("ingredients", toJson(ingredients));
+            root.add("ingredients", toStringJson(ingredients));
             try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(root, writer); }
             try
             {
@@ -141,12 +144,13 @@ public final class ClientPlannerPreferences
                 .forEach(entry -> result.addProperty(entry.getKey(), entry.getValue().toString()));
         return result;
     }
+    private static JsonObject toStringJson(Map<String,String> values){JsonObject result=new JsonObject();values.entrySet().stream().limit(MAX_ENTRIES).forEach(entry->result.addProperty(entry.getKey(),entry.getValue()));return result;}
 
     private static Path path()
     { return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve(FILE_NAME); }
 
     public record Snapshot(Map<String, Identifier> recipes,
-                           Map<String, Identifier> ingredients,
+                           Map<String, String> ingredients,
                            OrderOutputDestination outputDestination)
     {
         private static final Snapshot EMPTY = new Snapshot(

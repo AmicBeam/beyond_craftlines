@@ -9,11 +9,11 @@ public final class VirtualInputSemantics
     public static Decision decide(Object displayedRecipe, List<KeyAmount> candidates, boolean catalyst)
     {
         Object recipe = unwrap(displayedRecipe);
-        if (matches(recipe, candidates, "getOutputContainer") || matches(recipe, candidates, "getContainer"))
-            return new Decision(true,"container",VirtualInputUse.CONSUMED);
-        if(matches(recipe,candidates,"getTool"))return new Decision(true,"tool",VirtualInputUse.durability(1));
-        return new Decision(!catalyst,"",VirtualInputUse.CONSUMED);
+        return classify(matches(recipe,candidates,"getOutputContainer")||matches(recipe,candidates,"getContainer"),
+                matches(recipe,candidates,"getTool"),catalyst);
     }
+    static Decision classify(boolean container,boolean tool,boolean catalyst)
+    {if(container)return new Decision(true,"container",VirtualInputUse.CONSUMED);if(tool)return new Decision(true,"tool",VirtualInputUse.durability(1));return new Decision(!catalyst,"",VirtualInputUse.CONSUMED);}
     private static boolean matches(Object recipe, List<KeyAmount> candidates, String accessor)
     {
         Object raw=RecipeReflection.readPublicMember(recipe,accessor);

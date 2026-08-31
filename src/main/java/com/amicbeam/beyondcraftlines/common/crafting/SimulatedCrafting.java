@@ -105,17 +105,17 @@ public final class SimulatedCrafting
     private static List<ItemStack> selectedSamples(RecipeHolder<?> holder,
                                                    List<RecipePlan.IngredientSelection> selections)
     {
-        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        Map<Integer, String> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
+            selectedItems.put(selection.slot(), selection.selection());
         List<ItemStack> samples = new ArrayList<>();
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         for (int i = 0; i < ingredients.size(); i++)
         {
             ItemStack sample = ItemStack.EMPTY;
-            ResourceLocation selected = selectedItems.get(i);
+            String selected = selectedItems.get(i);
             for (ItemStack candidate : ingredients.get(i).getItems())
-                if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+                if (matchesSelection(selected, candidate))
                 { sample = candidate.copyWithCount(Math.max(1, candidate.getCount())); break; }
             samples.add(sample);
         }
@@ -279,9 +279,9 @@ public final class SimulatedCrafting
             combined.merge(available.key(), available.amount(), SaturatingLongMath::add);
         List<KeyAmount> availableStacks = combined.entrySet().stream()
                 .map(entry -> new KeyAmount(entry.getKey(), entry.getValue())).toList();
-        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        Map<Integer, String> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
+            selectedItems.put(selection.slot(), selection.selection());
         for (int ingredientIndex = 0; ingredientIndex < ingredients.size(); ingredientIndex++)
         {
             Ingredient ingredient = ingredients.get(ingredientIndex);
@@ -312,8 +312,8 @@ public final class SimulatedCrafting
                 if (!(available.key() instanceof ItemStackKey key)
                         || available.amount() <= reserved.getOrDefault(key, 0L)) continue;
                 ItemStack candidate = key.getReadOnlyStack();
-                ResourceLocation selectedItem = selectedItems.get(ingredientIndex);
-                if (selectedItem != null && !BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selectedItem))
+                String selectedItem = selectedItems.get(ingredientIndex);
+                if (!matchesSelection(selectedItem, candidate))
                     continue;
                 if (ingredient.test(candidate)) { selected = key; break; }
             }
@@ -329,12 +329,21 @@ public final class SimulatedCrafting
                 List.copyOf(slotAmounts), Set.copyOf(fluidProxies.keySet()));
     }
 
-    private static ItemStack selectedSample(Ingredient ingredient, ResourceLocation selected)
+    private static ItemStack selectedSample(Ingredient ingredient, String selected)
     {
         for (ItemStack candidate : ingredient.getItems())
-            if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+            if (matchesSelection(selected, candidate))
                 return candidate.copyWithCount(1);
         return ItemStack.EMPTY;
+    }
+
+    private static boolean matchesSelection(String selection, ItemStack candidate)
+    {
+        if (selection == null) return true;
+        ResourceLocation container = FluidContainerChoice.itemOrNull(selection);
+        if (FluidContainerChoice.isProxy(selection)) return container != null
+                && container.equals(BuiltInRegistries.ITEM.getKey(candidate.getItem()));
+        return IngredientSelectionKey.matches(selection, new ItemStackKey(candidate));
     }
 
     public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
@@ -350,17 +359,17 @@ public final class SimulatedCrafting
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         boolean[] reusable = new boolean[ingredients.size()];
         if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;
-        Map<Integer, ResourceLocation> selectedItems = new LinkedHashMap<>();
+        Map<Integer, String> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
-            selectedItems.put(selection.slot(), FluidContainerChoice.itemOrSelf(selection.item()));
+            selectedItems.put(selection.slot(), selection.selection());
         List<ItemStack> samples = new ArrayList<>(ingredients.size());
         for (int i = 0; i < ingredients.size(); i++)
         {
             Ingredient ingredient = ingredients.get(i);
             ItemStack sample = ItemStack.EMPTY;
-            ResourceLocation selected = selectedItems.get(i);
+            String selected = selectedItems.get(i);
             for (ItemStack candidate : ingredient.getItems())
-                if (selected == null || BuiltInRegistries.ITEM.getKey(candidate.getItem()).equals(selected))
+                if (matchesSelection(selected, candidate))
                 { sample = candidate.copyWithCount(1); break; }
             samples.add(sample);
         }

@@ -46,13 +46,13 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
                                                 net.minecraft.server.level.ServerLevel level)
     {
         Map<String, ResourceLocation> recipes = new LinkedHashMap<>();
-        Map<Slot, ResourceLocation> ingredients = new LinkedHashMap<>();
+        Map<Slot, String> ingredients = new LinkedHashMap<>();
         for (RecipePlan.Step step : plan.steps())
         {
             recipes.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .resolutionKey(step.outputKey()), step.recipe());
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
-                ingredients.put(new Slot(step.recipe(), selection.slot()), selection.item());
+                ingredients.put(new Slot(step.recipe(), selection.slot()), selection.selection());
         }
         List<SubmitOrderPayload.RecipeChoice> recipeChoices = recipes.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
@@ -60,7 +60,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         List<SubmitOrderPayload.IngredientChoice> ingredientChoices = ingredients.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.IngredientChoice(
                         entry.getKey().recipe().toString(), entry.getKey().slot(),
-                        entry.getValue().toString())).toList();
+                        entry.getValue())).toList();
         PlanDisplayMetrics.Summary summary = PlanDisplayMetrics.summarize(level, plan, theoretical);
         List<DisplayEntry> displayEntries = new ArrayList<>();
         summary.totalCost().forEach((key, amount) -> displayEntries.add(
@@ -81,7 +81,8 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
             var page = pages.get(pageIndex);
             payloads.add(new PlanPreviewPayload(nonce,
                     com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(plan.targetKey()),
-                    new Header(true, "", "", pageIndex, pages.size()), page.first(), page.second(), page.third()));
+                    new Header(true, "", com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.READY.id(),
+                            pageIndex, pages.size()), page.first(), page.second(), page.third()));
         }
         return List.copyOf(payloads);
     }
@@ -89,13 +90,13 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
     public static List<PlanPreviewPayload> missing(long nonce, RecipePlan plan)
     {
         Map<String, ResourceLocation> recipes = new LinkedHashMap<>();
-        Map<Slot, ResourceLocation> ingredients = new LinkedHashMap<>();
+        Map<Slot, String> ingredients = new LinkedHashMap<>();
         for (RecipePlan.Step step : plan.steps())
         {
             recipes.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .resolutionKey(step.outputKey()), step.recipe());
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
-                ingredients.put(new Slot(step.recipe(), selection.slot()), selection.item());
+                ingredients.put(new Slot(step.recipe(), selection.slot()), selection.selection());
         }
         List<SubmitOrderPayload.RecipeChoice> recipeChoices = recipes.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
@@ -103,7 +104,7 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
         List<SubmitOrderPayload.IngredientChoice> ingredientChoices = ingredients.entrySet().stream()
                 .map(entry -> new SubmitOrderPayload.IngredientChoice(
                         entry.getKey().recipe().toString(), entry.getKey().slot(),
-                        entry.getValue().toString())).toList();
+                        entry.getValue())).toList();
         List<DisplayEntry> displayEntries = plan.missing().stream()
                 .map(material -> new DisplayEntry("M", material.key(), "", material.amount(), 0, 0)).toList();
         var pages = PreviewPagePartitioner.partition(recipeChoices, ingredientChoices, displayEntries, 256);
@@ -113,7 +114,10 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
             var page = pages.get(pageIndex);
             payloads.add(new PlanPreviewPayload(nonce,
                     com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(plan.targetKey()),
-                    new Header(true, "", "missing", pageIndex, pages.size()),
+                    new Header(true, "", (plan.steps().isEmpty()
+                            ? com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.NO_RECIPE
+                            : com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.MISSING_INPUTS).id(),
+                            pageIndex, pages.size()),
                     page.first(), page.second(), page.third()));
         }
         return List.copyOf(payloads);
@@ -123,14 +127,17 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
     {
         String message = error == null || error.isBlank() ? "plan preview failed" : error;
         if (message.length() > 512) message = message.substring(0, 512);
-        return new PlanPreviewPayload(nonce, itemId, new Header(false, message, "generic", 0, 1),
+        return new PlanPreviewPayload(nonce, itemId, new Header(false, message,
+                com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.RUNTIME_UNAVAILABLE.id(), 0, 1),
                 List.of(), List.of(), List.of());
     }
 
     public static PlanPreviewPayload stale(long nonce, String itemId)
     {
         return new PlanPreviewPayload(nonce, itemId, new Header(false,
-                "planning snapshot changed; refreshing", "stale", 0, 1), List.of(), List.of(), List.of());
+                "planning snapshot changed; refreshing",
+                com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.STALE.id(), 0, 1),
+                List.of(), List.of(), List.of());
     }
 
     public static void handle(PlanPreviewPayload payload, IPayloadContext context)

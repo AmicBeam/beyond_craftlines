@@ -28,7 +28,7 @@ public final class RecipeResourceResolver
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
     private static final Map<IStackKey<?>, String> RESOLUTION_KEYS =
-            Collections.synchronizedMap(new java.util.WeakHashMap<>());
+            Collections.synchronizedMap(new IdentityHashMap<>());
 
     private RecipeResourceResolver() {}
 

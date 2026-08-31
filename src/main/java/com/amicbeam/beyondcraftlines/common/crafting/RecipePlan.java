@@ -130,12 +130,16 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
         }
     }
 
-    /** Concrete item selected for one recipe ingredient slot. Empty recipe slots are omitted. */
-    public record IngredientSelection(int slot, ResourceLocation item)
+    /** Exact resource selection token for one recipe ingredient slot. Empty recipe slots are omitted. */
+    public record IngredientSelection(int slot, String selection)
     {
+        public IngredientSelection(int slot, ResourceLocation item)
+        { this(slot, IngredientSelectionKey.legacy(item)); }
         public IngredientSelection
         {
-            if (slot < 0 || item == null) throw new IllegalArgumentException("invalid ingredient selection");
+            if (slot < 0 || selection == null || selection.isBlank() || selection.length() > 512)
+                throw new IllegalArgumentException("invalid ingredient selection");
         }
+        public ResourceLocation item() { return FluidContainerChoice.itemOrNull(selection); }
     }
 }

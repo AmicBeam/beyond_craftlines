@@ -17,6 +17,7 @@ Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI r
 - **Controlled batch scheduling**: AE2-style blocking mode sends only one recipe batch at a time and waits until its result has been collected before sending the next batch. It also waits when a target machine already contains inputs for that recipe.
 - **Generic self-increment recipes**: when a recipe consumes its own result and has positive net output, the tree withdraws only one operation's minimum seed, expands other inputs by net growth, and automatically dispatches real machines one operation at a time.
 - **Cycle recovery and bucket/fluid alternatives**: a cycle rejects only the current recipe/tag combination, so sibling candidates remain searchable. Bucket-backed crafting prefers network fluid but retains the real bucket item as a manual and automatic shortage fallback.
+- **0.5.0 planning correctness**: ingredient choices retain full NBT/Data Component identity, so potion variants sharing one item ID cannot cross-match. The tree and material summary accept the same completed plan result, while no-recipe, missing-input, cycle-only, and exhausted-budget outcomes remain distinct.
 - **Craftline Provisioners**: A provisioner accepts order-generated resources for selected recipe types and exposes its inventory for external extraction. The Network Linker can assign both a direct-supply face and a request-time direct-extraction face on the same remote device. Supply supports round-robin, nearest-first, and farthest-first ordering. Each provisioner accepts 16 distinct devices by default (server-configurable), with state shown in its GUI, Jade, world highlights, and edit-mode connection lines.
 - **Craftline Dashboards**: Attach a thin dashboard to a container or network device, then drop an item, fluid, or chemical into its JEI ghost ingredient slot. It stores the maintained amount, network/container monitoring mode, redstone behavior, blocking mode, and a fixed recipe tree. Automatic refill orders do not consume player order slots and default to ten active orders per network.
 - **Persistent orders and status management**: Orders, step progress, and machine bindings survive world saves. Players can inspect network orders, diagnose why a step is waiting, and cancel unfinished work.
@@ -54,9 +55,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 The three artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.4.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.4.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.4.0+26.1.2.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.5.0+1.20.1.jar`
+- `build/libs/beyond_craftlines-0.5.0+1.21.1.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.5.0+26.1.2.jar`
 
 ## Usage Overview
 

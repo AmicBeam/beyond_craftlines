@@ -16,7 +16,7 @@ public final class RecipeResolutionOverrides
     public static final RecipeResolutionOverrides EMPTY = new RecipeResolutionOverrides(List.of(), List.of());
 
     private final Map<String, Identifier> recipes;
-    private final Map<IngredientSlot, Identifier> ingredients;
+    private final Map<IngredientSlot, String> ingredients;
 
     public RecipeResolutionOverrides(List<RecipeChoice> recipeChoices, List<IngredientChoice> ingredientChoices)
     {
@@ -25,9 +25,9 @@ public final class RecipeResolutionOverrides
         SharedResolutionMap<String, Identifier> recipes = new SharedResolutionMap<>();
         for (RecipeChoice choice : recipeChoices)
             recipes.put(choice.output(), choice.recipe(), "duplicate recipe resolution for " + choice.output());
-        SharedResolutionMap<IngredientSlot, Identifier> ingredients = new SharedResolutionMap<>();
+        SharedResolutionMap<IngredientSlot, String> ingredients = new SharedResolutionMap<>();
         for (IngredientChoice choice : ingredientChoices)
-            ingredients.put(new IngredientSlot(choice.recipe(), choice.slot()), choice.item(),
+            ingredients.put(new IngredientSlot(choice.recipe(), choice.slot()), choice.selection(),
                     "duplicate ingredient resolution for " + choice.recipe());
         this.recipes = recipes.copy();
         this.ingredients = ingredients.copy();
@@ -40,7 +40,7 @@ public final class RecipeResolutionOverrides
     }
     public Identifier recipeFor(Identifier output)
     { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(output)))); }
-    public Identifier ingredientFor(Identifier recipe, int slot)
+    public String ingredientFor(Identifier recipe, int slot)
     { return ingredients.get(new IngredientSlot(recipe, slot)); }
     public Set<Identifier> selectedRecipes() { return Set.copyOf(recipes.values()); }
     public List<RecipeChoice> recipeChoices()
@@ -55,7 +55,7 @@ public final class RecipeResolutionOverrides
         {
             if (!step.recipe().equals(recipeFor(step.outputKey()))) return false;
             for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
-                if (!selection.item().equals(ingredientFor(step.recipe(), selection.slot()))) return false;
+                if (!selection.selection().equals(ingredientFor(step.recipe(), selection.slot()))) return false;
         }
         return true;
     }
@@ -68,13 +68,17 @@ public final class RecipeResolutionOverrides
         }
     }
 
-    public record IngredientChoice(Identifier recipe, int slot, Identifier item)
+    public record IngredientChoice(Identifier recipe, int slot, String selection)
     {
+        public IngredientChoice(Identifier recipe, int slot, Identifier item)
+        { this(recipe, slot, IngredientSelectionKey.legacy(item)); }
         public IngredientChoice
         {
-            if (recipe == null || item == null || slot < 0 || slot > 1024)
+            if (recipe == null || selection == null || selection.isBlank()
+                    || selection.length() > 512 || slot < 0 || slot > 1024)
                 throw new IllegalArgumentException("invalid ingredient resolution");
         }
+        public Identifier item() { return FluidContainerChoice.itemOrNull(selection); }
     }
 
     private record IngredientSlot(Identifier recipe, int slot) {}

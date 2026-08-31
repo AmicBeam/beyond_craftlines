@@ -30,7 +30,7 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
         for (var choice : overrides.recipeChoices())
             bytes += utf8(choice.output()) + utf8(choice.recipe().toString()) + 32L;
         for (var choice : overrides.ingredientChoices())
-            bytes += utf8(choice.recipe().toString()) + utf8(choice.item().toString()) + 40L;
+            bytes += utf8(choice.recipe().toString()) + utf8(choice.selection()) + 40L;
         return (int) Math.min(Integer.MAX_VALUE, bytes);
     }
 
@@ -53,7 +53,7 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
             CompoundTag value = new CompoundTag();
             value.putString("recipe", choice.recipe().toString());
             value.putInt("slot", choice.slot());
-            value.putString("item", choice.item().toString());
+            value.putString("item", choice.selection());
             ingredients.add(value);
         }
         root.put("ingredients", ingredients);
@@ -79,9 +79,9 @@ public record DashboardRecipeConfig(RecipeResolutionOverrides overrides, boolean
         {
             CompoundTag value = encodedIngredients.getCompound(index);
             ResourceLocation recipe = ResourceLocation.tryParse(value.getString("recipe"));
-            ResourceLocation item = ResourceLocation.tryParse(value.getString("item"));
+            String item = value.getString("item");
             int slot = value.getInt("slot");
-            if (recipe != null && item != null && slot >= 0)
+            if (recipe != null && !item.isBlank() && slot >= 0)
                 ingredients.add(new RecipeResolutionOverrides.IngredientChoice(recipe, slot, item));
         }
         try { return new DashboardRecipeConfig(

@@ -323,7 +323,7 @@ public final class RecipePlanningService
             try{resolveRecipeVariant(level, outputKey, remainder, holder, byOutput, visiting, branch,
                     overrides, mode, depth, maxDepth, budget, variant);}
             catch(PlanningCycleBranch.Cycle ignored){continue;}
-            String selectionKey = variant.stream().map(value -> RecipeResourceResolver.sortKey(value.key()))
+            String selectionKey = variant.stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             int comparison = best == null ? -1 : compare(branch, holder.id().identifier(), best, holder.id().identifier());
             if (best == null || comparison < 0 || comparison == 0 && selectionKey.compareTo(bestSelectionKey) < 0)
@@ -365,19 +365,19 @@ public final class RecipePlanningService
         for (int i = 0; i < variant.size(); i++)
             if (variant.get(i).key() instanceof ItemStackKey itemKey)
             {Identifier item=BuiltInRegistries.ITEM.getKey(itemKey.getSource());int slot=recipeIngredients.get(i).slot();
-                selections.add(new RecipePlan.IngredientSelection(slot,item));sampleItems.put(slot,item);}
+                selections.add(new RecipePlan.IngredientSelection(slot,IngredientSelectionKey.exact(variant.get(i).key())));sampleItems.put(slot,item);}
         boolean[] reusableSlots = SimulatedCrafting.reusableIngredientSlots(holder, level, selections);
         Map<Integer, KeyAmount> fluidProxies = SimulatedCrafting.bucketFluidInputs(holder, level, selections);
         List<RecipePlan.IngredientSelection> finalSelections=new ArrayList<>();List<KeyAmount> selectedChoices=new ArrayList<>(variant.size());
         for(int i=0;i<variant.size();i++){var ingredient=recipeIngredients.get(i);KeyAmount raw=variant.get(i),proxy=fluidProxies.get(ingredient.slot());
-            Identifier override=overrides.ingredientFor(holder.id().identifier(),ingredient.slot());boolean forceFluid=FluidContainerChoice.isProxy(override);
+            String override=overrides.ingredientFor(holder.id().identifier(),ingredient.slot());boolean forceFluid=FluidContainerChoice.isProxy(override);
             boolean forceItem=override!=null&&!forceFluid;long availableFluid=proxy==null?0:
                     state.stock.available(proxy.key().getTypeId(),proxy.key()::isSame);boolean useFluid=FluidContainerPolicy.useFluid(
                     raw.key() instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey,
                     proxy!=null,forceFluid,forceItem,availableFluid);
             KeyAmount choice=useFluid&&proxy!=null?proxy:raw;selectedChoices.add(choice);Identifier item=sampleItems.get(ingredient.slot());
-            if(item==null&&override!=null)item=FluidContainerChoice.itemOrSelf(override);if(item!=null)
-                finalSelections.add(new RecipePlan.IngredientSelection(ingredient.slot(),useFluid?FluidContainerChoice.proxy(item):item));}
+            if(item==null&&override!=null)item=FluidContainerChoice.itemOrNull(override);if(item!=null)
+                finalSelections.add(new RecipePlan.IngredientSelection(ingredient.slot(),useFluid?FluidContainerChoice.proxy(item).toString():IngredientSelectionKey.exact(raw.key())));}
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
         for (int i = 0; i < variant.size(); i++)
@@ -455,15 +455,14 @@ public final class RecipePlanningService
                                                      ResolutionMode mode,
                                                      PlanningBudget budget)
     {
-        Identifier selected = overrides.ingredientFor(recipe, slot);
+        String selected = overrides.ingredientFor(recipe, slot);
         if (selected != null)
         {
             if(FluidContainerChoice.isProxy(selected)){List<KeyAmount> fluids=ingredient.candidates().stream().filter(choice->choice.key() instanceof
                     com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey).toList();if(!fluids.isEmpty())return fluids;
-                selected=FluidContainerChoice.itemOrSelf(selected);}
+                Identifier container=FluidContainerChoice.itemOrNull(selected);if(container!=null)selected=container.toString();}
             for (KeyAmount choice : ingredient.candidates())
-                if (choice.key() instanceof ItemStackKey item
-                        && BuiltInRegistries.ITEM.getKey(item.getSource()).equals(selected)) return List.of(choice);
+                if(IngredientSelectionKey.matches(selected,choice.key()))return List.of(choice);
             throw new IllegalArgumentException("selected ingredient is invalid for " + recipe
                     + " slot " + slot + ": " + selected);
         }
@@ -473,7 +472,7 @@ public final class RecipePlanningService
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
                         value.key().getTypeId(), value.key()::isSame)).reversed()
                 .thenComparing(value -> !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
-                .thenComparing(value -> RecipeResourceResolver.sortKey(value.key()));
+                .thenComparing(value -> RecipeResourceResolver.resolutionKey(value.key()));
         List<KeyAmount> choices = ingredient.candidates();
         if (mode == ResolutionMode.SEARCH)
             for (int i = 0; i < choices.size(); i++)

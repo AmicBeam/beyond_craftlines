@@ -33,7 +33,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
     static final StreamCodec<ByteBuf, IngredientChoice> INGREDIENT_CHOICE_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), IngredientChoice::recipe,
             ByteBufCodecs.VAR_INT, IngredientChoice::slot,
-            ByteBufCodecs.stringUtf8(256), IngredientChoice::item,
+            ByteBufCodecs.stringUtf8(512), IngredientChoice::item,
             IngredientChoice::new);
     private static final StreamCodec<ByteBuf, Options> OPTIONS_CODEC = StreamCodec.composite(
             ByteBufCodecs.BOOL, Options::blockingMode,
@@ -167,7 +167,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
         List<RecipeResolutionOverrides.IngredientChoice> ingredients = ingredientChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.IngredientChoice(
                         Identifier.parse(choice.recipe()), choice.slot(),
-                        Identifier.parse(choice.item())))
+                        choice.item()))
                 .toList();
         return new RecipeResolutionOverrides(recipes, ingredients);
     }

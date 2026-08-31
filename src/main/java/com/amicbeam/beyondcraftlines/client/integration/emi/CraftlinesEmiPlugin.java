@@ -46,13 +46,9 @@ public final class CraftlinesEmiPlugin implements EmiPlugin
     private static RecipeTarget target(EmiRecipe recipe)
     {
         ResourceLocation rawId = recipe.getId();
-        boolean jemi = rawId != null && "jei".equals(rawId.getNamespace())
-                && rawId.getPath().startsWith("/");
-        boolean vanillaCrafting = recipe.getCategory() != null
-                && ResourceLocation.fromNamespaceAndPath("minecraft", "crafting")
-                .equals(recipe.getCategory().getId());
-        if (!jemi && !vanillaCrafting) return null;
-        ResourceLocation recipeId = EmiRecipeId.normalize(rawId);
+        var backing = recipe.getBackingRecipe();
+        ResourceLocation recipeId = backing != null || EmiRecipeId.isWrappedJei(rawId)
+                ? EmiRecipeId.normalize(rawId) : null;
         if (recipeId == null) return null;
         List<EmiStack> outputs = recipe.getOutputs();
         for (EmiStack output : outputs)

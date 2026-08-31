@@ -8,12 +8,24 @@ final class EmiRecipeId
 {
     private EmiRecipeId() {}
 
+    static boolean isWrappedJei(@Nullable ResourceLocation id)
+    {
+        return id != null && "jei".equals(id.getNamespace()) && id.getPath().startsWith("/");
+    }
+
     static @Nullable ResourceLocation normalize(@Nullable ResourceLocation id)
     {
-        if (id == null || !"jei".equals(id.getNamespace()) || !id.getPath().startsWith("/")) return id;
-        String wrapped = id.getPath().substring(1);
+        if (!isWrappedJei(id)) return id;
+        String wrapped = unwrapPath(id.getPath());
+        return wrapped == null ? null : ResourceLocation.tryParse(wrapped);
+    }
+
+    static @Nullable String unwrapPath(String path)
+    {
+        if (path == null || !path.startsWith("/")) return null;
+        String wrapped = path.substring(1);
         int separator = wrapped.indexOf('/');
         return separator <= 0 || separator == wrapped.length() - 1 ? null
-                : ResourceLocation.tryParse(wrapped.substring(0, separator) + ":" + wrapped.substring(separator + 1));
+                : wrapped.substring(0, separator) + ":" + wrapped.substring(separator + 1);
     }
 }

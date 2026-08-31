@@ -242,7 +242,7 @@ public final class CraftlinesClientEvents
                     || Minecraft.getInstance().player == null
                     || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;
             if (com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
-                    .orderIngredientUnderMouse()
+                    .orderIngredientUnderMouse(event.getMouseX(), event.getMouseY())
                     || com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                     .orderIngredientUnderMouse())
             {

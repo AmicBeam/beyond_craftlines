@@ -185,14 +185,28 @@ public final class JeiCatalystIndex
 
     public static Set<Identifier> recipeTypesFor(ItemStack catalyst)
     {
-        return catalyst.isEmpty() ? Set.of()
-                : TYPES_BY_CATALYST.getOrDefault(BuiltInRegistries.ITEM.getKey(catalyst.getItem()), Set.of());
+        if (catalyst.isEmpty()) return Set.of();
+        LinkedHashSet<Identifier> result = new LinkedHashSet<>(TYPES_BY_CATALYST.getOrDefault(
+                BuiltInRegistries.ITEM.getKey(catalyst.getItem()), Set.of()));
+        result.addAll(com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                .recipeTypesFor(catalyst));
+        return Set.copyOf(result);
     }
 
     public static Optional<Component> recipeTypeTitle(Identifier type)
-    { return Optional.ofNullable(TITLES_BY_TYPE.get(type)); }
+    {
+        Optional<Component> emi = com.amicbeam.beyondcraftlines.client.integration.emi
+                .EmiOptionalIntegration.recipeTypeTitle(type);
+        return emi.isPresent() ? emi : Optional.ofNullable(TITLES_BY_TYPE.get(type));
+    }
 
-    public static Set<Identifier> recipeTypes() { return TITLES_BY_TYPE.keySet(); }
+    public static Set<Identifier> recipeTypes()
+    {
+        LinkedHashSet<Identifier> result = new LinkedHashSet<>(TITLES_BY_TYPE.keySet());
+        result.addAll(com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                .recipeTypes());
+        return Set.copyOf(result);
+    }
 
     public static Map<Identifier, Set<String>> inputGroupsFor(Set<Identifier> types)
     {

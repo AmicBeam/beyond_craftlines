@@ -9,7 +9,11 @@ base { archivesName = mod_id }
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 sourceSets.main.resources.srcDir '../../src/main/resources'
-sourceSets.test.java.srcDir '../../src/test/java'
+sourceSets.test.java {
+    srcDir '../../src/test/java'
+    // EMI is not available for 26.1.2, so its shared integration-only tests do not apply here.
+    exclude 'com/amicbeam/beyondcraftlines/client/integration/emi/**'
+}
 
 neoForge {
     version = project.neo_version

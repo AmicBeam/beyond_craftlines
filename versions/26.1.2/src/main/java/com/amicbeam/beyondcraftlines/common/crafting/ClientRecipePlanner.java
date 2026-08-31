@@ -90,7 +90,7 @@ public final class ClientRecipePlanner
                         + Objects.toString(candidate.selectionItem(), ""), candidate);
             }
             if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
-                    List.copyOf(candidates.values()), false));
+                    List.copyOf(candidates.values()), VirtualInputUse.CONSUMED));
         }
         List<RecipePlan.IngredientSelection> baseline = slots.stream()
                 .filter(slotEntry -> slotEntry.candidates().getFirst().selectionItem() != null)
@@ -98,7 +98,8 @@ public final class ClientRecipePlanner
                         slotEntry.index(), slotEntry.candidates().getFirst().selectionItem())).toList();
         boolean[] reusable = SimulatedCrafting.reusableIngredientSlots(holder, level, baseline);
         slots = slots.stream().map(slotEntry -> new Slot(slotEntry.index(), slotEntry.candidates(),
-                slotEntry.index() < reusable.length && reusable[slotEntry.index()])).toList();
+                VirtualInputUse.forRecipeSlot(holder.value(), slotEntry.index(),
+                        slotEntry.index() < reusable.length && reusable[slotEntry.index()]))).toList();
         return new Recipe(holder.id().identifier(), RecipePlanningService.family(holder),
                 output.key(), Math.max(1, output.amount()), slots);
     }
@@ -309,7 +310,7 @@ public final class ClientRecipePlanner
             Candidate candidate = variant.get(i);
             if (!StackKeyMatch.exact(output, candidate.key())) continue;
             seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
-            if (!slot.reusable())
+            if (!slot.use().sharedReusable())
                 consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
         }
         SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
@@ -327,9 +328,9 @@ public final class ClientRecipePlanner
                 if (previous != null && !previous.equals(candidateItem)) return false;
             }
             boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(output, candidate.key());
-            long inputAmount = selfInput || slot.reusable() ? candidate.count()
-                    : SaturatingLongMath.multiply(crafts, candidate.count());
-            (slot.reusable() ? reusableInputs : inputs)
+            long inputAmount = selfInput ? candidate.count()
+                    : slot.use().requiredAmount(crafts, candidate.key(), candidate.count(),state.stock);
+            (slot.use().sharedReusable() ? reusableInputs : inputs)
                     .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
@@ -473,13 +474,14 @@ public final class ClientRecipePlanner
             slots = List.copyOf(slots);
         }
     }
-    public record Slot(int index, List<Candidate> candidates, boolean reusable)
+    public record Slot(int index, List<Candidate> candidates, VirtualInputUse use)
     {
         public Slot
         {
-            if (index < 0 || candidates.isEmpty()) throw new IllegalArgumentException("invalid recipe slot");
+            if (index < 0 || candidates.isEmpty() || use == null) throw new IllegalArgumentException("invalid recipe slot");
             candidates = List.copyOf(candidates);
         }
+        public boolean reusable(){return use.sharedReusable();}
     }
     public record Candidate(IStackKey<?> key, long count, Identifier selectionItem)
     {

@@ -6,12 +6,12 @@ Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI r
 
 ## Features
 
-- **Order directly from JEI or the network**: Opening from a JEI recipe pins that recipe at the root. Middle-clicking an item in BD network storage instead applies the player's saved recipe preference first and falls back to the first available candidate only when no valid preference exists. Stage one builds and caches recipe lookups within the configured per-tick item limit, then publishes the complete tree atomically. Stage two keeps that tree stable while preparing the planning catalog. Both caches survive reopening and are invalidated only by a recipe reload.
+- **Order directly from JEI, EMI, or the network**: JEI and optional EMI recipe pages expose a Craftlines button; EMI recipes are mapped back to and revalidated by the JEI execution backend. EMI recipe slots, index entries, and favorites support middle-click ordering. Root selection prioritizes explicit Craftlines preferences, a readable EMI BoM preference, then automatic candidates.
 - **Readable crafting trees and material totals**: An EMI-style top-down tree merges repeated resources on the same level and provides recipe previews, ingredient alternatives, missing-resource highlighting, and views for theoretical totals, actual network extraction, and remainders.
 - **Client preview, server submission validation**: The client searches and computes extraction or shortages against a versioned inventory snapshot. After Submit is clicked, the server linearly recomputes the fixed choices against current stock; any missing material rejects the request without creating an order.
 - **Beyond Dimensions network execution**: Orders reserve and extract resources from the relevant BD network and support positive `long` quantities. Orders on the same network are attempted in FIFO order; orders whose non-crafting recipe families are disjoint may run concurrently, and anything rejected by a machine is safely returned to storage.
 - **Parallel scheduling within an order**: Recipe steps whose dependencies are complete can advance together. Different machines may work concurrently, while one machine position remains strictly exclusive.
-- **Authentic recipe and container behavior**: Crafting-grid steps invoke the original server recipe logic, preserving dynamic components, damageable tools, container remainders, and mod-defined `assemble` and remaining-item behavior.
+- **Authentic recipe and container behavior**: Crafting-grid steps invoke original server logic. JEI virtual recipes distinguish consumed, permanently reusable, and durability-limited inputs and recognize public tool/output-container accessors; Farmer's Delight bowls and bottles route through a dedicated `container` group.
 - **Recipe-machine automation**: Use the Network Linker to bind or unbind vanilla and third-party machines; BD network components are excluded. Craftlines deterministically maps JEI catalyst categories to server-side `RecipeType` IDs, then uses each machine's real capabilities for input insertion, output detection, and rollback without hard-coded branches for individual technology mods.
 - **Native network furnace support**: Beyond Dimensions network furnaces, blast furnaces, and smokers require no manual binding. Craftlines locates an idle matching furnace on the same network, inserts the inputs, and waits for the real result to return to network storage.
 - **Controlled batch scheduling**: AE2-style blocking mode sends only one recipe batch at a time and waits until its result has been collected before sending the next batch. It also waits when a target machine already contains inputs for that recipe.
@@ -30,7 +30,7 @@ Unless explicitly scoped to one version, feature descriptions and development ch
 
 - `mod_id`: `beyond_craftlines`
 - Required dependencies: Beyond Dimensions and JEI
-- Optional dependency: GuideME (adds the detailed English and Chinese guide; hover the Network Linker or Craftline Provisioner and hold G to open its page)
+- Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. EMI currently has no 26.1.2 artifact, so that build intentionally provides a no-op bridge rather than claiming runtime support.
 
 This mod is focused exclusively on the ordering system: a JEI recipe-page entry point, an EMI-style recursive recipe tree, AE2/RS-style order confirmation, BD network resource extraction and crafting, vanilla and third-party machine recipe-type bindings, persistent order status and cancellation, and configurable Craftline Provisioners.
 

@@ -47,4 +47,18 @@ class MatchingStockTest
         assertEquals(2, reserved.get());
         assertEquals(6, stock.available("plate", ignored -> true));
     }
+
+    @Test
+    void durabilityCapacityUsesDamagedToolsBeforeRequestingANewOne()
+    {
+        LinkedHashMap<String, Long> supplied = new LinkedHashMap<>();
+        supplied.put("knife:60", 1L);
+        supplied.put("knife:5", 1L);
+        MatchingStock<String, String> stock = new MatchingStock<>(key -> "knife", supplied);
+
+        assertEquals(2, stock.itemsForCapacity("knife", ignored -> true, 65,
+                key -> Long.parseLong(key.substring(key.indexOf(':') + 1)), 64));
+        assertEquals(3, stock.itemsForCapacity("knife", ignored -> true, 66,
+                key -> Long.parseLong(key.substring(key.indexOf(':') + 1)), 64));
+    }
 }

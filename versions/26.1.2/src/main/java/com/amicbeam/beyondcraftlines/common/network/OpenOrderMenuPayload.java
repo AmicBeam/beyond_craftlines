@@ -44,6 +44,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         for (VirtualInput input : payload.virtualInputs())
         {
             buffer.writeUtf(input.inputGroup(), 64);
+            buffer.writeVarInt(input.use().kind().ordinal());
+            buffer.writeVarInt(input.use().damagePerCraft());
             buffer.writeVarInt(input.candidates().size());
             for (KeyAmount candidate : input.candidates())
             {
@@ -65,13 +67,17 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         for (int slot = 0; slot < slots; slot++)
         {
             String inputGroup = buffer.readUtf(64);
+            int useKind = buffer.readVarInt(); int damagePerCraft = buffer.readVarInt();
+            var kinds = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.Kind.values();
+            if (useKind < 0 || useKind >= kinds.length) throw new IllegalArgumentException("invalid virtual input use");
+            var use = new com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse(kinds[useKind], damagePerCraft);
             int candidates = buffer.readVarInt();
             if (candidates < 1 || candidates > 64)
                 throw new IllegalArgumentException("invalid virtual candidate count");
             java.util.List<KeyAmount> values = new java.util.ArrayList<>();
             for (int candidate = 0; candidate < candidates; candidate++)
                 values.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
-            inputs.add(new VirtualInput(inputGroup, values));
+            inputs.add(new VirtualInput(inputGroup, values, use));
         }
         return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong());
     }
@@ -132,7 +138,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->
                                     new com.amicbeam.beyondcraftlines.common.crafting
                                             .VirtualProvisionerRecipeRegistry.InputSlot(
-                                            input.inputGroup(), input.candidates())).toList());
+                                            input.inputGroup(), input.candidates(), input.use())).toList());
                     if (requestedRecipe == null || !holder.id().identifier().equals(requestedRecipe))
                         throw new IllegalArgumentException("virtual recipe id mismatch");
                 }
@@ -208,12 +214,16 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
 
-    public record VirtualInput(String inputGroup, java.util.List<KeyAmount> candidates)
+    public record VirtualInput(String inputGroup, java.util.List<KeyAmount> candidates,
+                               com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
     {
+        public VirtualInput(String inputGroup, java.util.List<KeyAmount> candidates)
+        { this(inputGroup, candidates, com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED); }
         public VirtualInput
         {
             if (!com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup.isValid(inputGroup))
                 throw new IllegalArgumentException("invalid virtual input group");
+            if (use == null) throw new IllegalArgumentException("invalid virtual input use");
             candidates = java.util.List.copyOf(candidates);
         }
     }

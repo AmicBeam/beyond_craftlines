@@ -34,7 +34,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var descriptor = holder == null ? null : VirtualProvisionerRecipeRegistry.descriptor(holder.value());
             return descriptor == null ? null : new Entry(id.toString(), descriptor.family(), descriptor.output(),
                     descriptor.outputAmount(), descriptor.inputs().stream().map(input ->
-                    new Input(input.inputGroup(), input.candidates())).toList());
+                    new Input(input.inputGroup(), input.candidates(), input.use())).toList());
         }).filter(java.util.Objects::nonNull).toList();
         int count = Math.max(1, (entries.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         List<VirtualRecipeUploadPayload> pages = new ArrayList<>();
@@ -60,6 +60,8 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             for (Input input : recipe.inputs())
             {
                 buffer.writeUtf(input.inputGroup(), 64);
+                buffer.writeVarInt(input.use().kind().ordinal());
+                buffer.writeVarInt(input.use().damagePerCraft());
                 buffer.writeVarInt(input.candidates().size());
                 for (KeyAmount candidate : input.candidates())
                 {
@@ -90,13 +92,19 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             for (int slot = 0; slot < inputCount; slot++)
             {
                 String group = buffer.readUtf(64);
+                int useKind = buffer.readVarInt();
+                int damagePerCraft = buffer.readVarInt();
+                var kinds = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.Kind.values();
+                if (useKind < 0 || useKind >= kinds.length) throw new IllegalArgumentException("invalid virtual input use");
+                var use = new com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse(
+                        kinds[useKind], damagePerCraft);
                 int candidateCount = buffer.readVarInt();
                 if (candidateCount < 1 || candidateCount > 64)
                     throw new IllegalArgumentException("invalid virtual candidates");
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (int candidate = 0; candidate < candidateCount; candidate++)
                     candidates.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
-                inputs.add(new Input(group, candidates));
+                inputs.add(new Input(group, candidates, use));
             }
             recipes.add(new Entry(id, family, output, outputAmount, inputs));
         }
@@ -116,7 +124,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var holder = VirtualProvisionerRecipeRegistry.register(recipe.family(), recipe.output(),
                     recipe.outputAmount(), recipe.inputs().stream().map(input ->
                             new VirtualProvisionerRecipeRegistry.InputSlot(
-                                    input.inputGroup(), input.candidates())).toList());
+                                    input.inputGroup(), input.candidates(), input.use())).toList());
             if (!holder.id().toString().equals(recipe.id()))
                 return;
         }
@@ -124,5 +132,10 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs) {}
-    public record Input(String inputGroup, List<KeyAmount> candidates) {}
+    public record Input(String inputGroup, List<KeyAmount> candidates,
+                        com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
+    {
+        public Input(String inputGroup, List<KeyAmount> candidates)
+        { this(inputGroup, candidates, com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED); }
+    }
 }

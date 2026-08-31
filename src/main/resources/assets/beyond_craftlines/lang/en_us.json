@@ -56,6 +56,8 @@
   "gui.beyond_craftlines.provisioner.group.fluid": "Fluids",
   "gui.beyond_craftlines.provisioner.group.chemical": "Chemicals",
   "gui.beyond_craftlines.provisioner.group.ingredients": "Ingredients",
+  "gui.beyond_craftlines.provisioner.group.container": "Serving containers",
+  "gui.beyond_craftlines.provisioner.group.tool": "Reusable tools",
   "gui.beyond_craftlines.provisioner.group.catalyst": "Catalyst",
   "gui.beyond_craftlines.provisioner.group.activation_item": "Activation item",
   "gui.beyond_craftlines.provisioner.group.main_offering": "Main offering",

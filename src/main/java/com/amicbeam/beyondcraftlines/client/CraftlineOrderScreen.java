@@ -311,6 +311,22 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void selectInitialTarget()
     {
         if (minecraft.level == null) return;
+        if (menu.initialRecipe() == null && !hasSavedRootPreference(menu.initialTarget()))
+        {
+            ResourceLocation emiPreferred = com.amicbeam.beyondcraftlines.client.integration.emi
+                    .EmiOptionalIntegration.preferredRecipe(menu.initialTarget());
+            var emiPayload = emiPreferred == null ? null
+                    : com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                            .resolveOrderTarget(menu.initialTarget(), emiPreferred);
+            if (emiPayload != null)
+            {
+                loadingStatus = Component.translatable(
+                        "gui.beyond_craftlines.middle_click_recipe_search").getString();
+                com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                        .openResolvedOrder(emiPayload);
+                return;
+            }
+        }
         selected = menu.initialRecipe() == null ? menu.recipeForResourceOutput(menu.initialTarget())
                 : menu.initialRecipeHolder() != null && menu.recipeProduces(
                         menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
@@ -348,6 +364,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         requestNetworkAmount();
     }
 
+    private boolean hasSavedRootPreference(IStackKey<?> target)
+    {
+        if (defaultResourceRecipes.containsKey(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(target))
+                || defaultResourceRecipes.containsKey(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(target))) return true;
+        return target instanceof ItemStackKey item && defaultRecipes.containsKey(
+                BuiltInRegistries.ITEM.getKey(item.getSource()));
+    }
+
     private void resolveTargetRecipeInsideScreen()
     {
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -356,8 +382,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
                 menu.networkId());
         targetRecipeSearchPending = false;
-        var payload = com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                .resolveOrderTarget(menu.initialTarget());
+        ResourceLocation emiPreferred = com.amicbeam.beyondcraftlines.client.integration.emi
+                .EmiOptionalIntegration.preferredRecipe(menu.initialTarget());
+        var payload = emiPreferred == null
+                ? com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                        .resolveOrderTarget(menu.initialTarget())
+                : com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                        .resolveOrderTarget(menu.initialTarget(), emiPreferred);
+        if (payload == null && emiPreferred != null)
+            payload = com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                    .resolveOrderTarget(menu.initialTarget());
         if (payload == null)
         {
             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
@@ -1035,9 +1069,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         for (SelectedTreeInput selectedInput : selectedInputs)
             if (resourceKey.isSame(selectedInput.resource().key()))
             {
+                var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                        recipe.value(), selectedInput.slot(),
+                        selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]);
                 seedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                         seedPerCraft, selectedInput.resource().amount());
-                if (!(selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]))
+                if (!use.sharedReusable())
                     consumedSeedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                             consumedSeedPerCraft, selectedInput.resource().amount());
             }
@@ -1054,12 +1091,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var ingredient = selectedInput.ingredient();
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
-            boolean reusableSlot = currentSlot < reusable.length && reusable[currentSlot];
+            var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                    recipe.value(), currentSlot, currentSlot < reusable.length && reusable[currentSlot]);
+            boolean reusableSlot = use.sharedReusable();
             boolean selfInput = shape.selfIncrement() && resourceKey.isSame(inputKey);
-            long totalAmount = selfInput ? selectedResource.amount() : reusableSlot
-                    ? selectedResource.amount()
-                    : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
-                            selectedResource.amount(), recipeCrafts);
+            long totalAmount = selfInput ? selectedResource.amount()
+                    : use.requiredAmount(recipeCrafts, inputKey, selectedResource.amount(), planningResources);
             TreeInput merged = inputKey instanceof ItemStackKey ? inputs.stream()
                     .filter(input -> input.key.isSame(inputKey))
                     .findFirst().orElse(null)

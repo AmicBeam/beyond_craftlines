@@ -367,9 +367,11 @@ public final class RecipePlanningService
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
+            VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
+                    ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
             if (!StackKeyMatch.exact(outputKey, choice.key())) continue;
             seedPerCraft = SaturatingLongMath.add(seedPerCraft, choice.amount());
-            if (!(ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]))
+            if (!use.sharedReusable())
                 consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, choice.amount());
         }
         SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
@@ -379,10 +381,12 @@ public final class RecipePlanningService
         {
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = fluidProxies.getOrDefault(ingredient.slot(), variant.get(i));
-            boolean reusable = ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()];
+            VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
+                    ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
+            boolean reusable = use.sharedReusable();
             boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(outputKey, choice.key());
             long inputAmount = selfInput ? choice.amount()
-                    : PlanningDependencyBatcher.inputAmount(reusable, choice.amount(), crafts);
+                    : use.requiredAmount(crafts, choice.key(), choice.amount(),state.stock);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
             (reusable ? reusableDependencyInputs : dependencyInputs)

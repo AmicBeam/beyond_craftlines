@@ -110,13 +110,15 @@ public final class VirtualProvisionerRecipeRegistry
         return 0D;
     }
 
-    public record InputSlot(String inputGroup, List<KeyAmount> candidates)
+    public record InputSlot(String inputGroup, List<KeyAmount> candidates, VirtualInputUse use)
     {
+        public InputSlot(String inputGroup, List<KeyAmount> candidates)
+        { this(inputGroup, candidates, VirtualInputUse.CONSUMED); }
         public InputSlot
         {
             if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
                     || candidates.size() > 64 || candidates.stream().anyMatch(value -> value == null
-                    || value.isEmpty() || value.amount() < 1))
+                    || value.isEmpty() || value.amount() < 1) || use == null)
                 throw new IllegalArgumentException("invalid virtual provisioner ingredient");
             candidates = List.copyOf(candidates);
         }
@@ -140,7 +142,8 @@ public final class VirtualProvisionerRecipeRegistry
                     .append(RecipeResourceResolver.resolutionKey(output)).append('@').append(outputAmount);
             for (InputSlot slot : inputs)
             {
-                canonical.append('|').append(slot.inputGroup()).append(':');
+                canonical.append('|').append(slot.inputGroup()).append(':')
+                        .append(slot.use().kind()).append('@').append(slot.use().damagePerCraft()).append(':');
                 slot.candidates().stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }

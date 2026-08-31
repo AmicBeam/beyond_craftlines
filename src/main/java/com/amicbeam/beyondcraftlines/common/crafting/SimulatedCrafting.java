@@ -340,6 +340,13 @@ public final class SimulatedCrafting
     public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
                                                     List<RecipePlan.IngredientSelection> selections)
     {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value());
+        if (virtual != null)
+        {
+            boolean[] reusable = new boolean[virtual.inputs().size()];
+            for (int i = 0; i < reusable.length; i++) reusable[i] = virtual.inputs().get(i).use().sharedReusable();
+            return reusable;
+        }
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
         boolean[] reusable = new boolean[ingredients.size()];
         if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;

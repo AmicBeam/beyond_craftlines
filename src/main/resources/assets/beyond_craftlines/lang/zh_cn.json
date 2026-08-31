@@ -56,6 +56,8 @@
   "gui.beyond_craftlines.provisioner.group.fluid": "流体",
   "gui.beyond_craftlines.provisioner.group.chemical": "化学品",
   "gui.beyond_craftlines.provisioner.group.ingredients": "材料",
+  "gui.beyond_craftlines.provisioner.group.container": "盛装容器",
+  "gui.beyond_craftlines.provisioner.group.tool": "耐久工具",
   "gui.beyond_craftlines.provisioner.group.catalyst": "催化物",
   "gui.beyond_craftlines.provisioner.group.activation_item": "激活物品",
   "gui.beyond_craftlines.provisioner.group.main_offering": "主祭品",

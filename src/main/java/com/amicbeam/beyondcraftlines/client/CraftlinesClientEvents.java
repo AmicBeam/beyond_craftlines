@@ -219,7 +219,9 @@ public final class CraftlinesClientEvents
             if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE
                     || Minecraft.getInstance().player == null
                     || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;
-            if (com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+            if (com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .orderIngredientUnderMouse()
+                    || com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                     .orderIngredientUnderMouse())
             {
                 event.setCanceled(true);

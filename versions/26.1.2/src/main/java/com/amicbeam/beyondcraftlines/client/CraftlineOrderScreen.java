@@ -1031,9 +1031,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         for (SelectedTreeInput selectedInput : selectedInputs)
             if (resourceKey.isSame(selectedInput.resource().key()))
             {
+                var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                        recipe.value(), selectedInput.slot(),
+                        selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]);
                 seedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                         seedPerCraft, selectedInput.resource().amount());
-                if (!(selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]))
+                if (!use.sharedReusable())
                     consumedSeedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                             consumedSeedPerCraft, selectedInput.resource().amount());
             }
@@ -1050,12 +1053,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var ingredient = selectedInput.ingredient();
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
-            boolean reusableSlot = currentSlot < reusable.length && reusable[currentSlot];
+            var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                    recipe.value(), currentSlot, currentSlot < reusable.length && reusable[currentSlot]);
+            boolean reusableSlot = use.sharedReusable();
             boolean selfInput = shape.selfIncrement() && resourceKey.isSame(inputKey);
-            long totalAmount = selfInput ? selectedResource.amount() : reusableSlot
-                    ? selectedResource.amount()
-                    : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
-                            selectedResource.amount(), recipeCrafts);
+            long totalAmount = selfInput ? selectedResource.amount()
+                    : use.requiredAmount(recipeCrafts,inputKey,selectedResource.amount(),planningResources);
             TreeInput merged = inputKey instanceof ItemStackKey ? inputs.stream()
                     .filter(input -> input.key.isSame(inputKey))
                     .findFirst().orElse(null)

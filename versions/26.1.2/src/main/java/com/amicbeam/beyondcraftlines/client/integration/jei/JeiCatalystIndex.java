@@ -104,6 +104,7 @@ public final class JeiCatalystIndex
         Set<Identifier> parsed = types.stream().map(JeiCatalystIndex::recipeTypeId)
                 .filter(java.util.Objects::nonNull).filter(CATEGORIES_BY_TYPE::containsKey)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        TYPE_QUEUE.removeIf(task -> parsed.contains(task.recipeType()));
         enqueueRecipeTypes(TYPE_STATE.restart(parsed));
         return parsed.stream().map(Object::toString)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -181,6 +182,17 @@ public final class JeiCatalystIndex
             {
                 TYPE_QUEUE.removeFirst();
                 TYPE_STATE.complete(task.recipeType());
+                long virtualRecipes = com.amicbeam.beyondcraftlines.common.crafting
+                        .VirtualProvisionerRecipeRegistry.recipes().stream()
+                        .filter(holder -> {
+                            var descriptor = com.amicbeam.beyondcraftlines.common.crafting
+                                    .VirtualProvisionerRecipeRegistry.descriptor(holder.value());
+                            return descriptor != null && descriptor.family().equals(task.recipeType().toString());
+                        }).count();
+                LOGGER.info("{} client JEI materialized type={} seen={} captured={} virtualRecipes={} revision={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        task.recipeType(), task.seen(), task.capturedCount(), virtualRecipes,
+                        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.revision());
             }
             if (processed) remaining--;
         }
@@ -289,6 +301,8 @@ public final class JeiCatalystIndex
         private final Identifier recipeType;
         private Iterator<Object> recipes;
         private boolean complete;
+        private int seen;
+        private int captured;
 
         @SuppressWarnings("unchecked")
         private SearchTask(IRecipeCategory<?> category, Identifier recipeType)
@@ -307,11 +321,17 @@ public final class JeiCatalystIndex
                 }
                 if (!recipes.hasNext()) { complete = true; return false; }
                 Object recipe = recipes.next();
+                seen++;
                 runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
                                 runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup())
                         .ifPresent(layout -> {
                             var value = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
-                            if (value != null) captured(category.getRecipeType().getUid(), category, recipe, value);
+                            if (value != null)
+                            {
+                                JeiCatalystIndex.captured(
+                                        category.getRecipeType().getUid(), category, recipe, value);
+                                captured++;
+                            }
                         });
                 if (!recipes.hasNext()) complete = true;
                 return true;
@@ -326,5 +346,7 @@ public final class JeiCatalystIndex
 
         private boolean complete() { return complete; }
         private Identifier recipeType() { return recipeType; }
+        private int seen() { return seen; }
+        private int capturedCount() { return captured; }
     }
 }

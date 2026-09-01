@@ -352,7 +352,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         planningCatalog = null;
         planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
-        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
+        List<RecipeHolder<?>> holders = menu.recipes();
+        long virtualHolders = holders.stream().filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null).count();
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client planning catalog capture revision={} holders={} virtualHolders={} requiredTypes={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                planningCatalogBuildRevision, holders.size(), virtualHolders, requiredVirtualFamilies);
+        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, holders);
         if (planningCatalogBuilder.complete())
         {
             planningCatalog = planningCatalogBuilder.catalog();

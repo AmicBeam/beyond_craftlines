@@ -99,6 +99,16 @@ public final class JeiCatalystIndex
         enqueueRecipeTypes(TYPE_STATE.activate(parsed));
     }
 
+    public static Set<String> rematerializeRecipeTypes(java.util.Collection<String> types)
+    {
+        Set<Identifier> parsed = types.stream().map(JeiCatalystIndex::recipeTypeId)
+                .filter(java.util.Objects::nonNull).filter(CATEGORIES_BY_TYPE::containsKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        enqueueRecipeTypes(TYPE_STATE.restart(parsed));
+        return parsed.stream().map(Object::toString)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     public static boolean recipeTypesReady(java.util.Collection<String> types)
     { return runtime == null || TYPE_STATE.ready(knownRecipeTypes(types)); }
 

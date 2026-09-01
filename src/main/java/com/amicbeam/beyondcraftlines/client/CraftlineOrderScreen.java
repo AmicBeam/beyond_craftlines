@@ -128,6 +128,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Set<ResourceLocation> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
     private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
+    private Set<String> requiredVirtualFamilies = Set.of();
     private long planningCatalogRevision = -1;
     private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;
@@ -281,6 +282,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
             return;
         }
+        if (!requiredVirtualFamilies.isEmpty()
+                && !JeiCatalystIndex.recipeTypesReady(requiredVirtualFamilies))
+        {
+            loadingStatus = jeiTypeIndexingText();
+            return;
+        }
+        if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null)
+            beginPlanningCatalogCapture();
         long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
         if (planningCatalog != null && planningCatalogRevision != virtualRevision)
@@ -328,6 +337,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         loadClientPreferences();
         selectInitialTarget();
         if (targetRecipeSearchPending) return;
+        if (!requiredVirtualFamilies.isEmpty()
+                && !JeiCatalystIndex.recipeTypesReady(requiredVirtualFamilies))
+        {
+            loadingStatus = jeiTypeIndexingText();
+            return;
+        }
         beginPlanningCatalogCapture();
     }
 
@@ -371,6 +386,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
         if (selected != null)
         {
+            var virtual = com.amicbeam.beyondcraftlines.common.crafting
+                    .VirtualProvisionerRecipeRegistry.descriptor(selected.value());
+            if (virtual != null)
+            {
+                requiredVirtualFamilies = JeiCatalystIndex.rematerializeRecipeTypes(
+                        java.util.List.of(virtual.family()));
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} client rematerialize root virtual family={} requiredTypes={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        virtual.family(), requiredVirtualFamilies);
+            }
             if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
                 recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
             else if (!menu.initialRecipePinned())

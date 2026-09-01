@@ -39,7 +39,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.Set;
 
@@ -137,9 +136,6 @@ public final class CraftlinesClientEvents
         @SubscribeEvent public static void advanceJeiRecipeIndex(ScreenEvent.Render.Post event)
         {
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
-            com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
-                    .renderRecipeOrderButtons(event.getScreen(), event.getGuiGraphics(),
-                            event.getMouseX(), event.getMouseY(), event.getPartialTick());
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -225,14 +221,6 @@ public final class CraftlinesClientEvents
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromKey(ScreenEvent.MouseButtonPressed.Pre event)
         {
-            if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
-                    && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
-                    .orderRecipeButtonUnderMouse(event.getScreen(),
-                            event.getMouseX(), event.getMouseY()))
-            {
-                event.setCanceled(true);
-                return;
-            }
             if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(event.getButton())) return;
             if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
                 event.setCanceled(true);

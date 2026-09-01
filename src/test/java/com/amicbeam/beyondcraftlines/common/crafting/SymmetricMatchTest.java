@@ -41,5 +41,15 @@ final class SymmetricMatchTest
                         left.item().equals(right.item()) && left.components().equals(right.components())));
     }
 
+    @Test
+    void canonicalComponentEqualityBridgesDifferentEncodedRepresentations()
+    {
+        assertTrue(SymmetricMatch.exactOrCanonical("jei-input", "jei-output",
+                (left, right) -> false,
+                (left, right) -> left.startsWith("jei-") && right.startsWith("jei-")));
+        assertFalse(SymmetricMatch.exactOrCanonical("potion:water", "potion:awkward",
+                (left, right) -> false, String::equals));
+    }
+
     private record Key(String item, String components) {}
 }

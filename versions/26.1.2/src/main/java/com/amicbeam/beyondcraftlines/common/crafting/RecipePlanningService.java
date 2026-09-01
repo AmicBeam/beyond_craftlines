@@ -499,6 +499,13 @@ public final class RecipePlanningService
     {
         for (var entry : byOutput.entrySet())
             if (StackKeyMatch.exact(resource, entry.getKey())) return entry.getValue();
+        List<String> sameItemCandidates = byOutput.entrySet().stream()
+                .filter(entry -> resource.isSame(entry.getKey()) || entry.getKey().isSame(resource))
+                .limit(16).map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="
+                        + entry.getValue().stream().map(holder -> holder.id().toString()).toList()).toList();
+        if (!sameItemCandidates.isEmpty()) OrderDiagnostics.LOGGER.warn(
+                "{} server dependency exact miss requested={} sameItemCandidates={}",
+                OrderDiagnostics.PREFIX, OrderDiagnostics.resource(resource), sameItemCandidates);
         return List.of();
     }
 

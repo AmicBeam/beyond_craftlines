@@ -581,7 +581,18 @@ public final class ClientRecipePlanner
     }
 
     static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
-    { return SymmetricMapLookup.first(byOutput, resource, StackKeyMatch::exact); }
+    {
+        List<Recipe> exact = SymmetricMapLookup.first(byOutput, resource, StackKeyMatch::exact);
+        if (!exact.isEmpty()) return exact;
+        List<String> sameItemCandidates = byOutput.entrySet().stream()
+                .filter(entry -> resource.isSame(entry.getKey()) || entry.getKey().isSame(resource))
+                .limit(16).map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="
+                        + entry.getValue().stream().map(recipe -> recipe.id().toString()).toList()).toList();
+        if (!sameItemCandidates.isEmpty()) OrderDiagnostics.LOGGER.warn(
+                "{} client dependency exact miss requested={} sameItemCandidates={}",
+                OrderDiagnostics.PREFIX, OrderDiagnostics.resource(resource), sameItemCandidates);
+        return List.of();
+    }
 
     private static long available(MatchingStock<IStackKey<?>, ResourceLocation> stock,
                                   IStackKey<?> requested)

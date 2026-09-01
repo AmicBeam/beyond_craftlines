@@ -10,6 +10,10 @@ final class SymmetricMatch
     static <T> boolean exact(T left, T right, BiPredicate<T, T> compatible)
     { return either(left, right, Object::equals, compatible); }
 
+    static <T> boolean exactOrCanonical(T left, T right, BiPredicate<T, T> compatible,
+                                        BiPredicate<T, T> canonical)
+    { return exact(left, right, compatible) || either(left, right, canonical, (a, b) -> false); }
+
     static <T> boolean either(T left, T right, BiPredicate<T, T> primary,
                               BiPredicate<T, T> compatible)
     {

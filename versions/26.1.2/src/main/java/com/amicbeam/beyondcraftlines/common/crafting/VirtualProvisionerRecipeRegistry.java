@@ -33,6 +33,8 @@ public final class VirtualProvisionerRecipeRegistry
             });
     private static final Map<Recipe<?>, Descriptor> DESCRIPTORS = Collections.synchronizedMap(
             new java.util.WeakHashMap<>());
+    private static final java.util.concurrent.atomic.AtomicLong REVISION =
+            new java.util.concurrent.atomic.AtomicLong();
 
     private VirtualProvisionerRecipeRegistry() {}
 
@@ -47,6 +49,7 @@ public final class VirtualProvisionerRecipeRegistry
         RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
         RECIPES.put(id, holder);
         DESCRIPTORS.put(recipe, descriptor);
+        REVISION.incrementAndGet();
         return holder;
     }
 
@@ -59,10 +62,13 @@ public final class VirtualProvisionerRecipeRegistry
     public static Descriptor descriptor(Recipe<?> recipe)
     { return DESCRIPTORS.get(recipe); }
 
+    public static long revision() { return REVISION.get(); }
+
     public static void clear()
     {
         RECIPES.clear();
         DESCRIPTORS.clear();
+        REVISION.incrementAndGet();
     }
 
     @SuppressWarnings("unchecked")

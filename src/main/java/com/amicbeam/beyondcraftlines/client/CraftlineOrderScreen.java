@@ -128,6 +128,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Set<ResourceLocation> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
     private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
+    private long planningCatalogRevision = -1;
+    private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;
     private long proposalRecipeEpoch;
     private boolean proposalReady;
@@ -279,12 +281,23 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
             return;
         }
+        long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.revision();
+        if (planningCatalog != null && planningCatalogRevision != virtualRevision)
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                    "{} client planning catalog stale capturedRevision={} currentRevision={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    planningCatalogRevision, virtualRevision);
+            beginPlanningCatalogCapture();
+        }
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
             planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
             if (planningCatalogBuilder.complete())
             {
                 planningCatalog = planningCatalogBuilder.catalog();
+                planningCatalogRevision = planningCatalogBuildRevision;
                 waitForServerRecipeIndexOrPlan();
             }
             else loadingStatus = indexingRecipesText();
@@ -315,10 +328,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         loadClientPreferences();
         selectInitialTarget();
         if (targetRecipeSearchPending) return;
+        beginPlanningCatalogCapture();
+    }
+
+    private void beginPlanningCatalogCapture()
+    {
+        cancelPlanningTask();
+        planningCatalog = null;
+        planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.revision();
         planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
         if (planningCatalogBuilder.complete())
         {
             planningCatalog = planningCatalogBuilder.catalog();
+            planningCatalogRevision = planningCatalogBuildRevision;
             waitForServerRecipeIndexOrPlan();
         }
         else loadingStatus = indexingRecipesText();

@@ -119,7 +119,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean materialSummaryMissing;
     private boolean materialSummaryTheoretical;
     private int snapshotNextPage;
-    private final Map<Identifier, Long> planningStock = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> planningResources = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> missingMaterials = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> extractionMaterials = new LinkedHashMap<>();
@@ -1894,7 +1893,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
         planningSnapshotValid = false;
-        planningStock.clear();
         planningResources.clear();
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
         ClientPacketDistributor.sendToServer(new RequestPlanningSnapshotPayload(nonce, menu.targetToken()));
@@ -1907,7 +1905,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         var header = snapshot.header();
         if (!header.status().success())
         {
-            planningStock.clear();
             planningResources.clear();
             planningSnapshotValid = false;
             snapshotNextPage = 0;
@@ -1918,7 +1915,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (header.pageCount() < 1 || header.pageIndex() != snapshotNextPage
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
         {
-            planningStock.clear();
             planningResources.clear();
             planningSnapshotValid = false;
             snapshotNextPage = 0;
@@ -1928,15 +1924,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         if (header.pageIndex() == 0)
         {
-            planningStock.clear();
             planningResources.clear();
         }
         for (PlanningSnapshotPayload.Entry entry : snapshot.entries())
         {
             if (entry.key() == null || entry.key().isEmpty() || entry.amount() < 1) continue;
             planningResources.merge(entry.key(), entry.amount(), Long::sum);
-            if (entry.key() instanceof ItemStackKey itemKey)
-                planningStock.merge(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), entry.amount(), Long::sum);
         }
         snapshotNextPage++;
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot_pages",
@@ -2172,7 +2165,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         planningSnapshotValid = false;
         requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
-        planningStock.clear();
         planningResources.clear();
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
         ClientPacketDistributor.sendToServer(new RequestPlanningSnapshotPayload(nonce, menu.targetToken()));

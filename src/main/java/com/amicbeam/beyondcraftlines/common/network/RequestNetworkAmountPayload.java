@@ -33,7 +33,8 @@ public record RequestNetworkAmountPayload(String itemId) implements CustomPacket
             long total = 0;
             for (var stored : network.getUnifiedStorage().getStorage())
             {
-                if (!menu.initialTarget().isSame(stored.key())) continue;
+                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(menu.initialTarget(), stored.key())) continue;
                 long amount = Math.max(0, stored.amount());
                 total = Long.MAX_VALUE - total < amount ? Long.MAX_VALUE : total + amount;
             }

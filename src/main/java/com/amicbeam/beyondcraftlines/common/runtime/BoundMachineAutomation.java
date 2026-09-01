@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.runtime;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
+import com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
@@ -63,7 +64,7 @@ public final class BoundMachineAutomation
                 KeyAmount present = RecipeResourceResolver.fromStack(handler.wrapper().getStackInSlot(slot));
                 if (present == null || present.isEmpty()) continue;
                 for (RecipePlan.Material material : materials)
-                    if (material.key().isSame(present.key())) return true;
+                    if (StackKeyMatch.exact(material.key(), present.key())) return true;
             }
         }
         return false;
@@ -255,7 +256,7 @@ public final class BoundMachineAutomation
         for (int i = 0; i < stacks.size(); i++)
         {
             KeyAmount existing = stacks.get(i);
-            if (!existing.key().isSame(added.key())) continue;
+            if (!StackKeyMatch.exact(existing.key(), added.key())) continue;
             long amount = existing.amount() > Long.MAX_VALUE - added.amount()
                     ? Long.MAX_VALUE : existing.amount() + added.amount();
             stacks.set(i, new KeyAmount(existing.key(), amount));
@@ -430,7 +431,7 @@ public final class BoundMachineAutomation
             for (int slot = 0; slot < wrapper.getSlots(); slot++)
             {
                 KeyAmount present = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
-                if (present != null && key.isSame(present.key()))
+                if (present != null && StackKeyMatch.exact(key, present.key()))
                 {
                     long extracted = wrapper.extract(slot, present.amount(), true);
                     result = result > Long.MAX_VALUE - extracted ? Long.MAX_VALUE : result + extracted;
@@ -445,7 +446,7 @@ public final class BoundMachineAutomation
             for (int slot = 0; slot < wrapper.getSlots(); slot++)
             {
                 KeyAmount value = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
-                if (value != null && key.isSame(value.key()))
+                if (value != null && StackKeyMatch.exact(key, value.key()))
                     result = result > Long.MAX_VALUE - value.amount()
                             ? Long.MAX_VALUE : result + value.amount();
             }
@@ -473,7 +474,7 @@ public final class BoundMachineAutomation
             for (int slot = 0; slot < wrapper.getSlots() && remaining > 0; slot++)
             {
                 KeyAmount present = RecipeResourceResolver.fromStack(wrapper.getStackInSlot(slot));
-                if (present == null || !key.isSame(present.key())) continue;
+                if (present == null || !StackKeyMatch.exact(key, present.key())) continue;
                 long extracted = wrapper.extract(slot, Math.min(remaining, present.amount()), false);
                 if (extracted > 0)
                 {

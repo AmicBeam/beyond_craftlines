@@ -175,7 +175,8 @@ public final class SimulatedCrafting
         {
             KeyAmount proxy = discoveredProxies.get(input.ingredientSlot());
             if (proxy != null && input.key() instanceof FluidStackKey
-                    && input.key().isSame(proxy.key())) activeProxies.put(input.ingredientSlot(), proxy);
+                    && StackKeyMatch.exact(input.key(), proxy.key()))
+                activeProxies.put(input.ingredientSlot(), proxy);
         }
         Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts,
                 networkSnapshot, activeProxies);

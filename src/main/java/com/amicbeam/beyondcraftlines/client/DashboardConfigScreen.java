@@ -44,7 +44,8 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
     public void setGhostTarget(IStackKey<?> value)
     {
         if (value == null || value.isEmpty()) return;
-        boolean targetChanged = target == null || target.isEmpty() || !target.isSame(value);
+        boolean targetChanged = target == null || target.isEmpty()
+                || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(target, value);
         recipeConfigured = DashboardConfigStatus.recipeConfiguredAfterTargetChange(
                 recipeConfigured, targetChanged);
         menu.setGhostTarget(value);
@@ -130,7 +131,8 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
     {
         IStackKey<?> next = menu.target();
         boolean targetChanged = target == null || target.isEmpty() != next.isEmpty()
-                || !target.isEmpty() && !target.isSame(next);
+                || !target.isEmpty() && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                .exact(target, next);
         if (!targetChanged) return;
         recipeConfigured = DashboardConfigStatus.recipeConfiguredAfterTargetChange(
                 recipeConfigured, true);

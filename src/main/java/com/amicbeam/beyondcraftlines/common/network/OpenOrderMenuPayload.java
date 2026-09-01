@@ -206,7 +206,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             var recipe = familyAvailable.stream().filter(holder -> RecipeOutputResolver
                     .outputs(holder.value(), level.registryAccess()).stream()
-                    .anyMatch(output -> target.isSame(output.key()))).findFirst().orElse(null);
+                    .anyMatch(output -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(target, output.key()))).findFirst().orElse(null);
             // The JEI category id is presentation metadata, not an execution capability. A single
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be
             // inferred generically. The recipe id, actual server family, network binding and selected

@@ -86,7 +86,8 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                                 && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                                 .exact(validated.target(), menu.initialTarget()));
                 if (validated == null || validated.networkId() != menu.networkId()
-                        || !validated.target().isSame(menu.initialTarget()) || validated.count() != count
+                        || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(validated.target(), menu.initialTarget()) || validated.count() != count
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
                 var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService

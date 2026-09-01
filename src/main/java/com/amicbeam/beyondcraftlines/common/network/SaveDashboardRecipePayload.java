@@ -45,7 +45,8 @@ public record SaveDashboardRecipePayload(BlockPos position, long desired, String
             if (payload.desired() < 1 || validated == null || validated.networkId() != menu.networkId()
                     || validated.count() != payload.desired()
                     || validated.recipeEpoch() != payload.recipeEpoch()
-                    || !validated.target().isSame(dashboard.target())) return;
+                    || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(validated.target(), dashboard.target())) return;
             long currentEpoch = PlanningSnapshotService.recipeEpoch(player.level(), menu.availableFamilies());
             if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), currentEpoch)) return;
             var plan = RecipePlanningService.validateFixed(player.serverLevel(), dashboard.target(), payload.desired(),

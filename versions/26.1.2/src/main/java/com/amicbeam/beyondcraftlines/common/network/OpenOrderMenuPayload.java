@@ -178,7 +178,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
                             || availableFamilies.contains(RecipePlanningService.family(holder)))
                     .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level())
-                            .stream().anyMatch(output -> target.isSame(output.key())))
+                            .stream().anyMatch(output -> com.amicbeam.beyondcraftlines.common.crafting
+                                    .StackKeyMatch.exact(target, output.key())))
                     .findFirst().orElse(null);
             // The JEI category id is presentation metadata, not an execution capability. A single
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be

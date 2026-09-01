@@ -148,6 +148,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean initialized;
     private boolean preferencesLoaded;
     private boolean waitingForServerRecipeIndex;
+    private boolean terminalMenuError;
     private String loadingStatus = "";
 
     public CraftlineOrderScreen(CraftlineOrderMenu menu, Inventory inventory, Component title)
@@ -165,7 +166,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         imageWidth = Math.min(620, Math.max(300, width - 16));
         imageHeight = Math.min(360, Math.max(236, height - 16));
         super.init();
-        if (!menu.initialError().isBlank()) previewError = localizedPlanningError(menu.initialError());
+        terminalMenuError = !menu.initialError().isBlank();
+        if (terminalMenuError) previewError = localizedPlanningError(menu.initialError());
 
         int rightX = rightPanelLeft() + 10;
         int rightWidth = rightPanelWidth() - 20;
@@ -213,6 +215,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
+        if (terminalMenuError)
+        {
+            enterTerminalMenuError(menu.initialError());
+            return;
+        }
         JeiCatalystIndex.prewarmRecipeTypes(menu.availableFamilies());
         if (!initialized)
         {
@@ -227,7 +234,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
     private boolean canQueueOrder()
     {
-        return selected != null && planningCatalog != null && menu.serverRecipeIndexComplete()
+        return !terminalMenuError && selected != null && planningCatalog != null && menu.serverRecipeIndexComplete()
                 && (!menu.dashboardConfiguration() || proposalReady);
     }
     private int rightPanelLeft() { return leftPos + imageWidth - rightPanelWidth(); }
@@ -247,6 +254,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
+        if (terminalMenuError)
+        {
+            targetRecipeSearchPending = false;
+            waitingForServerRecipeIndex = false;
+            loadingStatus = "";
+            if (orderButton != null) orderButton.active = false;
+            return;
+        }
         boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
         if (!menu.recipeIndexComplete())
         {
@@ -364,6 +379,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 targetRecipeSearchPending);
         rebuildTree();
         requestNetworkAmount();
+    }
+
+    private void enterTerminalMenuError(String error)
+    {
+        terminalMenuError = true;
+        targetRecipeSearchPending = false;
+        waitingForServerRecipeIndex = false;
+        previewDirty = false;
+        submitWhenReady = false;
+        proposalReady = false;
+        selected = null;
+        cancelPlanningTask();
+        loadingStatus = "";
+        previewError = localizedPlanningError(error);
+        planningOutcome = com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.RUNTIME_UNAVAILABLE;
+        clearDisplayMetrics();
+        if (orderButton != null) orderButton.active = false;
+        rebuildTree(false);
     }
 
     private boolean hasSavedRootPreference(IStackKey<?> target)
@@ -2439,6 +2472,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private String localizedPlanningError(String error)
     {
+        var translated = com.amicbeam.beyondcraftlines.common.network.OrderMenuError.decode(error);
+        if (translated != null)
+            return Component.translatable(translated.translationKey(), translated.arguments().toArray()).getString();
         if (error == null || error.isBlank())
             return localizedPlanningMessage("error.beyond_craftlines.planning_failed");
         if (error.equals("client planning node budget exhausted"))

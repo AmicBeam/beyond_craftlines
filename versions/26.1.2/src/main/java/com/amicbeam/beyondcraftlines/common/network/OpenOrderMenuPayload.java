@@ -97,13 +97,13 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     player.getGameProfile().name(), requestedRecipe, requestedType,
                     payload.virtualInputs().size(),
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
-            if (target == null || target.isEmpty()
-                    || (!payload.jeiRecipeType().isBlank() && requestedType == null)
-                    || (!payload.recipeId().isBlank() && requestedRecipe == null))
+            if (target == null || target.isEmpty())
             {
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
+            boolean malformedRequest=!payload.jeiRecipeType().isBlank()&&requestedType==null
+                    ||!payload.recipeId().isBlank()&&requestedRecipe==null;
             DimensionsNet network;
             if (player.containerMenu instanceof CraftlineOrderMenu orderMenu)
                 network = orderMenu.canAccessNetwork(player)
@@ -119,6 +119,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             int networkId = network.getId();
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
+            if(malformedRequest){openOrderMenu(player,networkId,target,null,false,availableFamilies,
+                    OrderMenuError.translated("error.beyond_craftlines.invalid_order_target"));return;}
             if (!payload.virtualInputs().isEmpty())
             {
                 String executionFamily = requestedType == null ? ""
@@ -153,11 +155,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             requestedRecipe, requestedType,
                             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target),
                             exception.toString(), exception);
-                    Component message = "invalid virtual recipe category".equals(exception.getMessage())
-                            ? Component.translatable("error.beyond_craftlines.invalid_order_category",
-                            String.valueOf(requestedType), executionFamily)
-                            : Component.translatable("error.beyond_craftlines.invalid_order_target");
-                    player.sendSystemMessage(message);
+                    String error="invalid virtual recipe category".equals(exception.getMessage())
+                            ?OrderMenuError.translated("error.beyond_craftlines.invalid_order_category",String.valueOf(requestedType),executionFamily)
+                            :OrderMenuError.translated("error.beyond_craftlines.invalid_order_target");
+                    openOrderMenu(player,networkId,target,null,false,availableFamilies,error);
                     return;
                 }
             }

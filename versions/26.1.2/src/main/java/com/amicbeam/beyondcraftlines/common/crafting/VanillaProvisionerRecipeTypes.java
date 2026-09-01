@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -77,14 +78,39 @@ public final class VanillaProvisionerRecipeTypes
     public static <T> Set<String> provisionerFamilies(Set<T> requested, Set<String> mapped)
     {
         LinkedHashSet<String> families = new LinkedHashSet<>();
-        for (T type : requested)
-        {
-            String id = String.valueOf(type);
-            families.add(id);
-        }
+        if (requested.isEmpty()) mapped.stream().map(VanillaProvisionerRecipeTypes::runtimeFamily)
+                .forEach(families::add);
+        else requested.stream().map(VanillaProvisionerRecipeTypes::runtimeFamily).forEach(families::add);
         return Set.copyOf(families);
     }
 
     public static Set<String> familiesForType(Object type, Set<String> mapped)
-    { return type == null ? Set.of() : Set.of(type.toString()); }
+    { return type == null ? Set.of() : Set.of(runtimeFamily(type)); }
+
+    /** Normalizes JEI's furnace category aliases to the runtime families used by order steps. */
+    public static String runtimeFamily(Object type)
+    {
+        return type == null ? "" : com.amicbeam.beyondcraftlines.common.runtime
+                .NativeFurnaceRecipeFamilies.executionFamily(type.toString());
+    }
+
+    /** Migrates persisted input-group keys while retaining explicit subgroup selections. */
+    public static Map<String, Set<String>> normalizeInputGroups(Map<String, Set<String>> stored)
+    {
+        LinkedHashMap<String, Set<String>> normalized = new LinkedHashMap<>();
+        stored.forEach((family, groups) -> normalized.merge(runtimeFamily(family),
+                ProvisionerInputGroupSelection.normalizeStored(groups),
+                VanillaProvisionerRecipeTypes::mergeInputGroups));
+        return Map.copyOf(normalized);
+    }
+
+    private static Set<String> mergeInputGroups(Set<String> left, Set<String> right)
+    {
+        if (left.contains(ProvisionerInputGroupSelection.ALL)
+                || right.contains(ProvisionerInputGroupSelection.ALL))
+            return Set.of(ProvisionerInputGroupSelection.ALL);
+        LinkedHashSet<String> merged = new LinkedHashSet<>(left);
+        merged.addAll(right);
+        return Set.copyOf(merged);
+    }
 }

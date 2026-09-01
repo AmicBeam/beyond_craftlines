@@ -272,9 +272,8 @@ public final class DeviceBindingRegistry
         }
         Set<ResourceLocation> acceptedTypes = Set.copyOf(selectedTypes);
         if (acceptedTypes.size() != selectedTypes.size()) return false;
-        java.util.LinkedHashSet<String> provisionerFamilies = acceptedTypes.stream()
-                .map(ResourceLocation::toString).collect(java.util.stream.Collectors.toCollection(
-                        java.util.LinkedHashSet::new));
+        Set<String> provisionerFamilies = com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.provisionerFamilies(acceptedTypes, Set.of());
         Map<ResourceLocation, Set<String>> availableGroups = inputGroupsByJeiType(level, selectedTypes);
         if (!selectedGroups.keySet().stream().allMatch(selectedTypes::contains)) return false;
         LinkedHashMap<String, Set<String>> groupsByFamily = new LinkedHashMap<>();
@@ -283,7 +282,8 @@ public final class DeviceBindingRegistry
             Set<String> available = availableGroups.getOrDefault(type, Set.of());
             Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
             if (!available.containsAll(chosen)) return false;
-            Set<String> typeFamilies = Set.of(type.toString());
+            Set<String> typeFamilies = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.familiesForType(type, Set.of());
             for (String family : typeFamilies)
             {
                 Set<String> accepted = com.amicbeam.beyondcraftlines.common.crafting
@@ -515,7 +515,9 @@ public final class DeviceBindingRegistry
         Map<String, Set<String>> byFamily = new HashMap<>();
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.recipes().forEach(holder -> {
             String family = RecipePlanningService.family(holder);
-            if (jeiTypes.stream().noneMatch(type -> type.toString().equals(family))) return;
+            if (jeiTypes.stream().noneMatch(type -> type.toString().equals(family)
+                    || com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .familiesForType(type, Set.of()).contains(family))) return;
             Set<String> groups = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .inputGroups(holder.value());
             byFamily.merge(family, groups, DeviceBindingRegistry::mergeInputGroups);
@@ -526,6 +528,9 @@ public final class DeviceBindingRegistry
             Set<String> groups = new HashSet<>(com.amicbeam.beyondcraftlines.common.crafting
                     .JeiInputGroupRegistry.groups(type));
             groups.addAll(byFamily.getOrDefault(type.toString(), Set.of()));
+            for (String family : com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.familiesForType(type, Set.of()))
+                groups.addAll(byFamily.getOrDefault(family, Set.of()));
             result.put(type, Set.copyOf(groups));
         }
         return Map.copyOf(result);
@@ -538,8 +543,14 @@ public final class DeviceBindingRegistry
         for (ResourceLocation type : jeiTypes)
         {
             HashSet<String> groups = new HashSet<>();
-            Set<String> values = stored.getOrDefault(type.toString(), Set.of());
-            if (!values.contains(BindingRecord.ALL_INPUT_GROUPS)) groups.addAll(values);
+            Set<String> legacyValues = stored.getOrDefault(type.toString(), Set.of());
+            if (!legacyValues.contains(BindingRecord.ALL_INPUT_GROUPS)) groups.addAll(legacyValues);
+            for (String family : com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.familiesForType(type, Set.of()))
+            {
+                Set<String> values = stored.getOrDefault(family, Set.of());
+                if (!values.contains(BindingRecord.ALL_INPUT_GROUPS)) groups.addAll(values);
+            }
             result.put(type, Set.copyOf(groups));
         }
         return Map.copyOf(result);

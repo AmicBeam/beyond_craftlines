@@ -38,7 +38,10 @@ public record BindingRecord(
             recipeFamilies = com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                     .provisionerFamilies(jeiRecipeTypes, recipeFamilies);
         HashMap<String, Set<String>> groups = new HashMap<>();
-        provisionerInputGroups.forEach((family, values) -> groups.put(family,
+        if (deviceType == DeviceType.PROVISIONER_RECIPE_BINDING)
+            groups.putAll(com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .normalizeInputGroups(provisionerInputGroups));
+        else provisionerInputGroups.forEach((family, values) -> groups.put(family,
                 com.amicbeam.beyondcraftlines.common.crafting.ProvisionerInputGroupSelection
                         .normalizeStored(values)));
         if (deviceType == DeviceType.PROVISIONER_RECIPE_BINDING)

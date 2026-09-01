@@ -121,11 +121,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             var availableFamilies = DeviceBindingRegistry.availableFamilies(player.level().getServer(), networkId);
             if (!payload.virtualInputs().isEmpty())
             {
+                String executionFamily = requestedType == null ? ""
+                        : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
+                        .executionFamily(requestedType.toString());
                 try
                 {
-                    String executionFamily = requestedType == null ? ""
-                            : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
-                            .executionFamily(requestedType.toString());
                     boolean nativeFurnaceAvailable = requestedType != null
                             && com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                             .isAvailable(requestedType.toString(), availableFamilies);
@@ -150,8 +150,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             requestedRecipe, requestedType,
                             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target),
                             exception.toString(), exception);
-                    player.sendSystemMessage(Component.translatable(
-                            "error.beyond_craftlines.invalid_order_target"));
+                    Component message = "invalid virtual recipe category".equals(exception.getMessage())
+                            ? Component.translatable("error.beyond_craftlines.invalid_order_category",
+                            String.valueOf(requestedType), executionFamily)
+                            : Component.translatable("error.beyond_craftlines.invalid_order_target");
+                    player.sendSystemMessage(message);
                     return;
                 }
             }

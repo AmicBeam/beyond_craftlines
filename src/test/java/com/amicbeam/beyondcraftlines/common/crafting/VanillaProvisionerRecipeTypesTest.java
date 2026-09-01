@@ -1,12 +1,13 @@
 package com.amicbeam.beyondcraftlines.common.crafting;
 
 import org.junit.jupiter.api.Test;
+import java.util.Map;
 import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 final class VanillaProvisionerRecipeTypesTest
 {
-    @Test void everyCategoryUsesItsJeiUidAsTheOnlyRuntimeFamily()
+    @Test void nonFurnaceCategoriesUseTheirJeiUidAsTheRuntimeFamily()
     {
         assertTrue(VanillaProvisionerRecipeTypes.isJeiOnly("example:machine"));
         assertEquals(Set.of(), VanillaProvisionerRecipeTypes.executable(Set.of("example:machine")));
@@ -15,6 +16,29 @@ final class VanillaProvisionerRecipeTypesTest
                 "example:machine", Set.of("example:server_family")));
         assertEquals(Set.of("example:machine"), VanillaProvisionerRecipeTypes.provisionerFamilies(
                 Set.of("example:machine"), Set.of("example:server_family")));
+    }
+
+    @Test void furnaceCategoriesUseTheSameFamiliesAsRecipeOrderSteps()
+    {
+        assertEquals(Set.of("smelting"), VanillaProvisionerRecipeTypes.provisionerFamilies(
+                Set.of("minecraft:smelting"), Set.of()));
+        assertEquals(Set.of("smelting"), VanillaProvisionerRecipeTypes.provisionerFamilies(
+                Set.of("minecraft:furnace"), Set.of()));
+        assertEquals(Set.of("minecraft:blasting"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+                "minecraft:blasting", Set.of()));
+        assertEquals(Set.of("smoking"), VanillaProvisionerRecipeTypes.familiesForType(
+                "minecraft:smoking", Set.of()));
+    }
+
+    @Test void migratesLegacyFurnaceInputGroupKeysWithoutLosingSelections()
+    {
+        assertEquals(Map.of("smelting", Set.of("ingredients", "catalyst")),
+                VanillaProvisionerRecipeTypes.normalizeInputGroups(Map.of(
+                        "minecraft:smelting", Set.of("ingredients"),
+                        "smelting", Set.of("catalyst"))));
+        assertEquals(Map.of("smoking", Set.of(ProvisionerInputGroupSelection.ALL)),
+                VanillaProvisionerRecipeTypes.normalizeInputGroups(Map.of(
+                        "minecraft:smoking", Set.of(), "smoking", Set.of("ingredients"))));
     }
 
     @Test void brewingIsDirectlyBindableWhileOtherManualWorkstationsRemainProvisionerOnly()

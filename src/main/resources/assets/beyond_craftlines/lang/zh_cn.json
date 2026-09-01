@@ -97,6 +97,7 @@
   "message.beyond_craftlines.no_permission": "你没有权限绑定此设备。",
   "error.beyond_craftlines.network_required": "需要连接超越维度网络。",
   "error.beyond_craftlines.invalid_order_target": "所选 JEI 配方没有可下单的物品产物。",
+  "error.beyond_craftlines.invalid_order_category": "当前网络无法执行 JEI 配方类型 %s（运行族 %s）。",
   "error.beyond_craftlines.middle_click_recipe_not_found": "未找到可用于该物品 NBT/组件的 JEI 配方。",
   "gui.beyond_craftlines.middle_click_recipe_search": "正在搜索该物品的 JEI 配方……",
   "error.beyond_craftlines.order_failed": "下单失败：%s",

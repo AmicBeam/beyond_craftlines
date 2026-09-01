@@ -105,7 +105,8 @@ public final class DeviceBindingRegistry
                     .map(Object::toString).toList(), currentTypes);
             Identifier selectedType = acceptedTypes.stream()
                     .filter(type -> type.toString().equals(selectedName)).findFirst().orElseThrow();
-            Set<String> selectedFamilies = Set.of(selectedType.toString());
+            Set<String> selectedFamilies = com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.directFamiliesForType(selectedType, Set.of());
             BindingRecord record = new BindingRecord(existing == null ? UUID.randomUUID() : existing.id(),
                     existing == null ? player.getUUID() : existing.owner(), network.getId(),
                     level.dimension(), position, deviceType, Set.of(selectedType), selectedFamilies, Map.of(), blockId,
@@ -222,7 +223,8 @@ public final class DeviceBindingRegistry
             Set<String> available = availableGroups.getOrDefault(type, Set.of());
             Set<String> chosen = selectedGroups.getOrDefault(type, Set.of());
             if (!available.containsAll(chosen)) return false;
-            for (String family : Set.of(type.toString()))
+            for (String family : com.amicbeam.beyondcraftlines.common.crafting
+                    .VanillaProvisionerRecipeTypes.directFamiliesForType(type, Set.of()))
                 groupsByFamily.merge(family, com.amicbeam.beyondcraftlines.common.crafting
                         .ProvisionerInputGroupSelection.accepted(available, chosen),
                         DeviceBindingRegistry::mergeInputGroups);

@@ -20,12 +20,23 @@ final class VanillaProvisionerRecipeTypesTest
 
     @Test void furnaceCategoriesUseTheSameFamiliesAsRecipeOrderSteps()
     {
-        assertEquals(Set.of("smelting"), VanillaProvisionerRecipeTypes.provisionerFamilies(
-                Set.of("minecraft:smelting"), Set.of()));
-        assertEquals(Set.of("smelting"), VanillaProvisionerRecipeTypes.provisionerFamilies(
-                Set.of("minecraft:furnace"), Set.of()));
-        assertEquals(Set.of("minecraft:blasting"), VanillaProvisionerRecipeTypes.directFamiliesForType(
+        Map<String, String> expected = Map.of(
+                "minecraft:furnace", "smelting",
+                "minecraft:smelting", "smelting",
+                "minecraft:blasting", "blasting",
+                "minecraft:smoking", "smoking");
+        expected.forEach((jeiType, family) -> {
+            assertEquals(Set.of(family), VanillaProvisionerRecipeTypes.directFamilies(
+                    Set.of(jeiType), Set.of()));
+            assertEquals(Set.of(family), VanillaProvisionerRecipeTypes.provisionerFamilies(
+                    Set.of(jeiType), Set.of()));
+            assertEquals(VanillaProvisionerRecipeTypes.provisionerFamilies(Set.of(jeiType), Set.of()),
+                    VanillaProvisionerRecipeTypes.directFamilies(Set.of(jeiType), Set.of()));
+        });
+        assertEquals(Set.of("blasting"), VanillaProvisionerRecipeTypes.directFamiliesForType(
                 "minecraft:blasting", Set.of()));
+        assertEquals(Set.of("blasting"), VanillaProvisionerRecipeTypes.directFamilies(
+                Set.of(), Set.of("minecraft:blasting")));
         assertEquals(Set.of("smoking"), VanillaProvisionerRecipeTypes.familiesForType(
                 "minecraft:smoking", Set.of()));
     }

@@ -67,13 +67,20 @@ public final class VanillaProvisionerRecipeTypes
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
+    public static <T> Set<String> directFamilies(Set<T> requested, Set<String> mapped)
+    { return executionFamilies(requested, mapped); }
+
     public static Set<String> directFamiliesForType(Object type, Set<String> mapped)
-    { return type == null ? Set.of() : Set.of(type.toString()); }
+    { return familiesForType(type, mapped); }
 
     public static <T> boolean acceptsAll(Set<T> requested, Set<T> mapped)
     { return accepted(requested, mapped).size() == requested.size(); }
 
     public static <T> Set<String> provisionerFamilies(Set<T> requested, Set<String> mapped)
+    { return executionFamilies(requested, mapped); }
+
+    /** One normalization path shared by direct machines, provisioners, and persisted bindings. */
+    private static <T> Set<String> executionFamilies(Set<T> requested, Set<String> mapped)
     {
         LinkedHashSet<String> families = new LinkedHashSet<>();
         if (requested.isEmpty()) mapped.stream().map(VanillaProvisionerRecipeTypes::runtimeFamily)

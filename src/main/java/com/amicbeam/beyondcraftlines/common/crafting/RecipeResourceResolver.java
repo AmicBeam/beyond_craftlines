@@ -179,7 +179,7 @@ public final class RecipeResourceResolver
         List<ResourceIngredient> result = new ArrayList<>();
         int slot = 0;
         if (includeVanillaIngredients)
-            for (Ingredient ingredient : RecipeIngredientResolver.safeGet(recipe::getIngredients))
+            for (Ingredient ingredient : RecipeIngredientResolver.vanillaIngredients(recipe))
             {
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (ItemStack stack : ingredient.getItems())

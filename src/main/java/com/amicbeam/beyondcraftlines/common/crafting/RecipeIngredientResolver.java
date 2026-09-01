@@ -24,10 +24,19 @@ public final class RecipeIngredientResolver
     private RecipeIngredientResolver() {}
 
     public static List<Ingredient> ingredients(Recipe<?> recipe)
+    { return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::resolve); }
+
+    private static List<Ingredient> resolve(Recipe<?> recipe)
     {
-        List<Ingredient> vanilla = safeGet(recipe::getIngredients);
+        List<Ingredient> vanilla = vanillaIngredients(recipe);
         if (!vanilla.isEmpty()) return vanilla;
-        return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::customItemInputs);
+        return customItemInputs(recipe);
+    }
+
+    static List<Ingredient> vanillaIngredients(Recipe<?> recipe)
+    {
+        List<Ingredient> workstation = VanillaWorkstationRecipeIngredients.ingredients(recipe);
+        return workstation.isEmpty() ? safeGet(recipe::getIngredients) : workstation;
     }
 
     static <T> List<T> safeGet(Supplier<? extends Collection<T>> values)

@@ -219,7 +219,7 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
-        public static void openOrderFromKey(ScreenEvent.MouseButtonPressed.Pre event)
+        public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)
         {
             if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(event.getButton())) return;
             if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
@@ -227,7 +227,7 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
-        public static void openOrderFromKey(ScreenEvent.KeyPressed.Pre event)
+        public static void openOrderFromKeyboard(ScreenEvent.KeyPressed.Pre event)
         {
             if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matches(
                     event.getKeyCode(), event.getScanCode())) return;

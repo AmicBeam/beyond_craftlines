@@ -110,6 +110,16 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
     public List<RecipePlan.Step> steps()
     { return executions.stream().map(StepExecution::step).toList(); }
 
+    /** Exact component-aware order target, recovered from the root manufacturing step. */
+    public IStackKey<?> targetKey()
+    {
+        for (int index = executions.size() - 1; index >= 0; index--)
+            if (executions.get(index).step().output().equals(target))
+                return executions.get(index).step().outputKey();
+        return new ItemStackKey(new net.minecraft.world.item.ItemStack(
+                net.minecraft.core.registries.BuiltInRegistries.ITEM.getValue(target)));
+    }
+
     /** Constant-time accessors for the server tick hot path. */
     public int stepCount() { return executions.size(); }
     public RecipePlan.Step step(int index) { return executions.get(index).step(); }
@@ -187,7 +197,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
         List<RecipePlan.Material> remainingInputs = new java.util.ArrayList<>();
         for (RecipePlan.Material input : current.inputs())
         {
-            long amount = current.outputKey().isSame(input.key()) ? input.amount()
+            long amount = com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(current.outputKey(), input.key()) ? input.amount()
                     : input.amount() - BlockingModeLogic.amountToDispatch(
                             true, input.amount(), current.crafts());
             if (amount > 0) remainingInputs.add(new RecipePlan.Material(

@@ -96,6 +96,7 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
         value.putUUID("id", job.id());
         value.putLong("revision", revision);
         value.putString("target", job.target().toString());
+        value.put("target_key", encodeKey(player, job.targetKey()));
         value.putLong("requested", job.requested());
         value.putInt("next", (int) job.executions().stream().filter(RecipeOrderJob.StepExecution::complete).count());
         value.putInt("total", job.executions().size());
@@ -160,7 +161,8 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
         IStackKey<?> currentKey = null;
         for (RecipeOrderJob.StepExecution execution : job.executions())
         {
-            if (execution.complete() || !key.isSame(execution.step().outputKey())) continue;
+            if (execution.complete() || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(key, execution.step().outputKey())) continue;
             currentKey = execution.step().outputKey();
             long stepRequired = SaturatingLongMath.multiply(
                     execution.step().outputPerCraft(), execution.step().crafts());
@@ -178,8 +180,7 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
                                           long completed, long required, boolean removed)
     {
         CompoundTag encoded = new CompoundTag();
-        encoded.putString("key_type", encodedKey.getTypeId().toString());
-        encoded.put("key", encodedKey.serializeNBT(player.registryAccess()));
+        encoded.merge(encodeKey(player, encodedKey));
         encoded.putString("fallback", encodedKey.getSource().toString());
         encoded.putBoolean("removed", removed);
         if (!removed)
@@ -187,6 +188,14 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
             encoded.putLong("completed", completed);
             encoded.putLong("required", required);
         }
+        return encoded;
+    }
+
+    private static CompoundTag encodeKey(ServerPlayer player, IStackKey<?> key)
+    {
+        CompoundTag encoded = new CompoundTag();
+        encoded.putString("key_type", key.getTypeId().toString());
+        encoded.put("key", key.serializeNBT(player.registryAccess()));
         return encoded;
     }
 

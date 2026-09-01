@@ -260,13 +260,7 @@ public final class RecipeOrderService
         net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(job.owner());
         if (player == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_owner_online"));
-        IStackKey<?> outputKey = null;
-        for (int step = job.stepCount() - 1; step >= 0; step--)
-            if (job.step(step).output().equals(job.target()))
-            {
-                outputKey = job.step(step).outputKey();
-                break;
-            }
+        IStackKey<?> outputKey = job.targetKey();
         if (!(outputKey instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey itemKey))
             return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
         net.minecraft.world.item.ItemStack template = itemKey.getReadOnlyStack().copyWithCount(1);
@@ -277,8 +271,7 @@ public final class RecipeOrderService
         if (network == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
         UnifiedStorage storage = network.getUnifiedStorage();
-        List<KeyAmount> taken = CompletedOutputExtractor.extract(
-                job.networkId(), storage, outputKey, job.requested());
+        List<KeyAmount> taken = CompletedOutputExtractor.extract(storage, outputKey, job.requested());
         if (taken.isEmpty())
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_final_output"));
         if (taken.stream().anyMatch(value -> !(value.key() instanceof
@@ -349,7 +342,9 @@ public final class RecipeOrderService
                 if (execution.complete() || attemptedSteps.contains(step)
                         || !working.dependenciesComplete(step)) continue;
                 if ((pass == 0) != (execution.externalWait() != null)) continue;
-                if (pass == 1 && inFlightOutputs.stream().anyMatch(execution.step().outputKey()::isSame))
+                if (pass == 1 && inFlightOutputs.stream().anyMatch(output ->
+                        com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                .exact(execution.step().outputKey(), output)))
                     continue;
                 attempted = true;
                 attemptedSteps.add(step);
@@ -653,7 +648,9 @@ public final class RecipeOrderService
         for (RecipePlan.Material material : requested)
         {
             GroupedStock stock = available.stream().filter(value ->
-                    value.inputGroup().equals(material.inputGroup()) && value.key().isSame(material.key()))
+                    value.inputGroup().equals(material.inputGroup())
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(value.key(), material.key()))
                     .findFirst().orElse(null);
             if (stock == null)
             {
@@ -724,7 +721,8 @@ public final class RecipeOrderService
         long baseline = BoundMachineAutomation.countExtractable(
                 machine.level(), binding.position(), step.outputKey());
         for (KeyAmount output : recipeOutputs(machine.level(), step))
-            if (!step.outputKey().isSame(output.key()) && BoundMachineAutomation.countExtractable(
+            if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(step.outputKey(), output.key()) && BoundMachineAutomation.countExtractable(
                     machine.level(), binding.position(), output.key()) > 0)
                 return job.with(RecipeOrderJob.Status.PAUSED,
                         encode("bound_machine_byproducts_clear"));
@@ -971,7 +969,8 @@ public final class RecipeOrderService
     {
         for (KeyAmount expected : recipeOutputs(level, step))
         {
-            if (primaryOutput.isSame(expected.key())) continue;
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(primaryOutput, expected.key())) continue;
             long visible = BoundMachineAutomation.countExtractable(
                     level, machinePosition, expected.key());
             if (visible <= 0) continue;
@@ -1161,7 +1160,8 @@ public final class RecipeOrderService
         long amount = 0;
         for (PlanningSnapshotService.ComponentEntry value :
                 PlanningSnapshotService.capture(networkId).componentEntries())
-            if (key.isSame(value.key())) amount = SaturatingLongMath.add(amount, value.amount());
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(key, value.key())) amount = SaturatingLongMath.add(amount, value.amount());
         return amount;
     }
 
@@ -1204,7 +1204,8 @@ public final class RecipeOrderService
                 PlanningSnapshotService.capture(networkId).componentEntries())
         {
             if (remaining <= 0) break;
-            if (!outputKey.isSame(value.key())) continue;
+            if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(outputKey, value.key())) continue;
             long delta = Math.max(0, value.amount() - original.getOrDefault(value.key(), 0L));
             if (delta <= 0) continue;
             KeyAmount taken = storage.extract(value.key(), Math.min(remaining, delta), false, false);
@@ -1223,7 +1224,8 @@ public final class RecipeOrderService
     private static List<RecipePlan.ReservedMaterial> outputBaseline(int networkId, IStackKey<?> outputKey)
     {
         return PlanningSnapshotService.capture(networkId).componentEntries().stream()
-                .filter(value -> outputKey.isSame(value.key()))
+                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(outputKey, value.key()))
                 .map(value -> new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList();
     }
 
@@ -1384,7 +1386,8 @@ public final class RecipeOrderService
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
                 var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
                 PlannedInput previous = planned.get(channel);
-                if (previous != null && !previous.key().isSame(chunk.key()))
+                if (previous != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(previous.key(), chunk.key()))
                 {
                     deferredByResourceConflict.add(chunk);
                     continue;

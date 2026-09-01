@@ -1038,12 +1038,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         long outputPerCraft = com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                 .outputs(recipe.value(), minecraft.level).stream()
-                .filter(output -> resourceKey.isSame(output.key())).mapToLong(output -> output.amount())
+                .filter(output -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(resourceKey, output.key())).mapToLong(output -> output.amount())
                 .findFirst().orElse(1);
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
         for (SelectedTreeInput selectedInput : selectedInputs)
-            if (resourceKey.isSame(selectedInput.resource().key()))
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(resourceKey, selectedInput.resource().key()))
             {
                 var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
                         recipe.value(), selectedInput.slot(),
@@ -1070,11 +1072,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
                     recipe.value(), currentSlot, currentSlot < reusable.length && reusable[currentSlot]);
             boolean reusableSlot = use.sharedReusable();
-            boolean selfInput = shape.selfIncrement() && resourceKey.isSame(inputKey);
+            boolean selfInput = shape.selfIncrement() && com.amicbeam.beyondcraftlines.common.crafting
+                    .StackKeyMatch.exact(resourceKey, inputKey);
             long totalAmount = selfInput ? selectedResource.amount()
                     : use.requiredAmount(recipeCrafts,inputKey,selectedResource.amount(),planningResources);
             TreeInput merged = inputKey instanceof ItemStackKey ? inputs.stream()
-                    .filter(input -> input.key.isSame(inputKey))
+                    .filter(input -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(input.key, inputKey))
                     .findFirst().orElse(null)
                     : null;
             if (merged != null)
@@ -2128,7 +2132,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(key), recipe));
                     uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
                     clearDisplayMetrics();
-                    completed.extraction().entrySet().stream().filter(entry -> !target.isSame(entry.getKey()))
+                    completed.extraction().entrySet().stream().filter(entry -> !com.amicbeam.beyondcraftlines
+                                    .common.crafting.StackKeyMatch.exact(target, entry.getKey()))
                             .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
                                     com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
                             .forEach(entry -> extractionMaterials.put(entry.getKey(), entry.getValue()));

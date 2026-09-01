@@ -181,9 +181,9 @@ public final class RecipePlanningService
         // or a cyclic third-party recipe exposes an equivalent target as stock later in planning, it must
         // never become a reservation that the order extracts from the network.
         boolean targetIsSelfIncrementSeed = state.steps.stream().anyMatch(step ->
-                step.selfIncrementSeed() > 0 && target.isSame(step.outputKey()));
-        if (!targetIsSelfIncrementSeed)
-            state.usedStock.entrySet().removeIf(entry -> target.isSame(entry.getKey()));
+                step.selfIncrementSeed() > 0 && StackKeyMatch.exact(target, step.outputKey()));
+        ManufacturingTargetReservations.removeFinalOutput(
+                state.usedStock, target, targetIsSelfIncrementSeed);
         return new RecipePlan(target, amount, state.steps, state.missing.entrySet().stream()
                 .map(entry -> new RecipePlan.Material(entry.getKey(), entry.getValue())).toList(),
                 state.usedStock.entrySet().stream()
@@ -200,7 +200,7 @@ public final class RecipePlanningService
         if (mode == ResolutionMode.SEARCH) budget.checkTime();
         // A root order always manufactures its full amount, but its existing stock must remain
         // available to a self-increment child as the minimum seed.
-        long used = depth == 0 ? 0 : state.stock.consume(resource.getTypeId(), key -> resource.isSame(key)
+        long used = depth == 0 ? 0 : state.stock.consume(resource.getTypeId(), key -> StackKeyMatch.exact(resource, key)
                         && (requiredIngredient == null || key instanceof ItemStackKey itemKey
                         && requiredIngredient.test(itemKey.getReadOnlyStack())), needed,
                 (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
@@ -392,7 +392,7 @@ public final class RecipePlanningService
             boolean forceFluid = FluidContainerChoice.isProxy(override);
             boolean forceItem = override != null && !forceFluid;
             long availableFluid = proxy == null ? 0 : state.stock.available(
-                    proxy.key().getTypeId(), proxy.key()::isSame);
+                    proxy.key().getTypeId(), key -> StackKeyMatch.exact(proxy.key(), key));
             boolean useFluid = FluidContainerPolicy.useFluid(raw.key() instanceof
                     com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey,
                     proxy != null, forceFluid, forceItem, availableFluid);
@@ -469,7 +469,7 @@ public final class RecipePlanningService
 
     private static void consumeLeaf(IStackKey<?> requested, long amount, PlanningState state)
     {
-        long used = state.stock.consume(requested.getTypeId(), requested::isSame, amount,
+        long used = state.stock.consume(requested.getTypeId(), key -> StackKeyMatch.exact(requested, key), amount,
                 (key, consumed) -> state.usedStock.merge(key, consumed, SaturatingLongMath::add));
         if (used < amount) state.missing.merge(requested, amount - used, SaturatingLongMath::add);
     }
@@ -502,7 +502,7 @@ public final class RecipePlanningService
                 .anyMatch(choice -> choice.key() instanceof ItemStackKey))
             throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
-                        value.key().getTypeId(), value.key()::isSame)).reversed()
+                        value.key().getTypeId(), key -> StackKeyMatch.exact(value.key(), key))).reversed()
                 .thenComparing(value -> !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
                 .thenComparing(value -> RecipeResourceResolver.resolutionKey(value.key()));
         List<KeyAmount> choices = ingredient.candidates();
@@ -530,7 +530,8 @@ public final class RecipePlanningService
     private static List<RecipeHolder<?>> recipesFor(Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                                      IStackKey<?> resource)
     {
-        for (var entry : byOutput.entrySet()) if (resource.isSame(entry.getKey())) return entry.getValue();
+        for (var entry : byOutput.entrySet())
+            if (StackKeyMatch.exact(resource, entry.getKey())) return entry.getValue();
         return List.of();
     }
 

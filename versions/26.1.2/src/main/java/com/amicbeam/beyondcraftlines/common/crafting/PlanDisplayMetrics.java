@@ -21,9 +21,9 @@ public final class PlanDisplayMetrics
     {
         LinkedHashMap<IStackKey<?>, Long> extraction = new LinkedHashMap<>();
         boolean targetIsSelfIncrementSeed = actual.steps().stream().anyMatch(step ->
-                step.selfIncrementSeed() > 0 && actual.targetKey().isSame(step.outputKey()));
+                step.selfIncrementSeed() > 0 && StackKeyMatch.exact(actual.targetKey(), step.outputKey()));
         for (RecipePlan.ReservedMaterial material : actual.reserved())
-            if (targetIsSelfIncrementSeed || !actual.targetKey().isSame(material.key()))
+            if (targetIsSelfIncrementSeed || !StackKeyMatch.exact(actual.targetKey(), material.key()))
                 extraction.merge(material.key(), material.amount(), SaturatingLongMath::add);
 
         LinkedHashMap<IStackKey<?>, Long> totalCost = new LinkedHashMap<>();

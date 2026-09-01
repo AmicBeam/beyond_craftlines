@@ -585,11 +585,11 @@ public final class ClientRecipePlanner
 
     private static long available(MatchingStock<IStackKey<?>, ResourceLocation> stock,
                                   IStackKey<?> requested)
-    { return stock.available(requested.getTypeId(), requested::isSame); }
+    { return stock.available(requested.getTypeId(), key -> StackKeyMatch.exact(requested, key)); }
 
     private static long consume(State state, IStackKey<?> requested, long amount)
     {
-        return state.stock.consume(requested.getTypeId(), requested::isSame, amount,
+        return state.stock.consume(requested.getTypeId(), key -> StackKeyMatch.exact(requested, key), amount,
                 (key, used) -> state.usedStock.merge(key, used, SaturatingLongMath::add));
     }
 }

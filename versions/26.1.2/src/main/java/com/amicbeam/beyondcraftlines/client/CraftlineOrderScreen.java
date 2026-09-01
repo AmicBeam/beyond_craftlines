@@ -52,6 +52,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
+    private static final long RECIPE_INDEX_TIME_BUDGET_NANOS = 2_000_000L;
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -252,7 +253,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
         if (!menu.recipeIndexComplete())
         {
-            menu.advanceRecipeIndex(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
+            menu.advanceRecipeIndex(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(),
+                    RECIPE_INDEX_TIME_BUDGET_NANOS);
             loadingStatus = recipeLookupIndexingText();
             if (menu.recipeIndexComplete() && jeiTypesReady) finishRecipeIndex();
         }
@@ -281,7 +283,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
+            planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(),
+                    RECIPE_INDEX_TIME_BUDGET_NANOS);
             if (planningCatalogBuilder.complete())
             {
                 planningCatalog = planningCatalogBuilder.catalog();

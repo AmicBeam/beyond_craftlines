@@ -113,7 +113,14 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 player.getPersistentData().putLong(LAST_SUBMIT_TICK, now);
                 player.displayClientMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()), false);
-                OpenOrderStatusMenuPayload.open(player, menu.networkId(), job);
+                try { OpenOrderStatusMenuPayload.open(player, menu.networkId(), job); }
+                catch (RuntimeException exception)
+                {
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                            "{} server order queued but status menu failed player={} order={} error={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            player.getGameProfile().getName(), job.id(), exception.toString(), exception);
+                }
             }
             catch (RuntimeException exception)
             {

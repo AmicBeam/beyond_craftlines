@@ -139,6 +139,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('location.variant()', 'location.getVariant()')
             .replace('(RegistryFriendlyByteBuf) data', 'new RegistryFriendlyByteBuf(data)')
             .replace('(RegistryFriendlyByteBuf) buffer', 'new RegistryFriendlyByteBuf(buffer)')
+            .replace('(com.amicbeam.beyondcraftlines.compat.protocol.RegistryFriendlyByteBuf) buffer',
+                    'new com.amicbeam.beyondcraftlines.compat.protocol.RegistryFriendlyByteBuf(buffer)')
             .replace('                && !location.getVariant().equals("inventory") ? new ProvisionerMaterialModel(model) : model);',
                     '                ? new ProvisionerMaterialModel(model) : model);')
     }

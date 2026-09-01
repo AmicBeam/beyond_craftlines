@@ -442,7 +442,7 @@ public final class ClientRecipePlanner
         {
             if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
             int end = (int) Math.min(holders.size(), (long) next + recipeBudget);
-            int minimum = Math.min(16, recipeBudget);
+            int minimum = 1;
             int processed = 0;
             long started = System.nanoTime();
             while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))

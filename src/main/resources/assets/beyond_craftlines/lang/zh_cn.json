@@ -1,4 +1,6 @@
 {
+  "key.category.beyond_craftlines.controls": "超越维度：合成链",
+  "key.beyond_craftlines.order_hovered_resource": "下单悬浮资源",
   "config.beyond_craftlines.show_bound_machine_frames": "显示已绑定机器的超维边框",
   "config.beyond_craftlines.show_provisioner_bound_face_frames": "显示供给器无线绑定面的超维边框",
   "config.beyond_craftlines.bound_machine_frame_render_distance": "绑定机器边框渲染距离",

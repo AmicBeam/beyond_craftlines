@@ -155,7 +155,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     public static void orderTarget(IStackKey<?> target)
     {
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client middle-click open page target={}",
+                "{} client order-key open page target={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         queueOrder(new OpenOrderMenuPayload(target, "", ""));

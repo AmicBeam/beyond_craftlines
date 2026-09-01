@@ -1,4 +1,6 @@
 {
+  "key.category.beyond_craftlines.controls": "Beyond: Craftlines",
+  "key.beyond_craftlines.order_hovered_resource": "Order hovered resource",
   "config.beyond_craftlines.show_bound_machine_frames": "Show bound machine frames",
   "config.beyond_craftlines.show_provisioner_bound_face_frames": "Show provisioner wireless bound-face frames",
   "config.beyond_craftlines.bound_machine_frame_render_distance": "Bound machine frame render distance",

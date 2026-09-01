@@ -27,6 +27,7 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -63,6 +64,11 @@ public final class CraftlinesClientEvents
             event.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
             event.register(CraftlinesMenus.DASHBOARD.get(), DashboardConfigScreen::new);
             event.register(CraftlinesMenus.DASHBOARD_STATUS.get(), CraftlineDashboardStatusScreen::new);
+        }
+
+        @SubscribeEvent public static void registerKeyMappings(RegisterKeyMappingsEvent event)
+        {
+            CraftlinesKeyMappings.register(event);
         }
 
         @SubscribeEvent public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event)
@@ -217,7 +223,7 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
-        public static void openOrderFromMiddleClick(ScreenEvent.MouseButtonPressed.Pre event)
+        public static void openOrderFromKey(ScreenEvent.MouseButtonPressed.Pre event)
         {
             if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
@@ -227,33 +233,50 @@ public final class CraftlinesClientEvents
                 event.setCanceled(true);
                 return;
             }
-            if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE
-                    || Minecraft.getInstance().player == null
-                    || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;
+            if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(event.getButton())) return;
+            if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
+                event.setCanceled(true);
+        }
+
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public static void openOrderFromKey(ScreenEvent.KeyPressed.Pre event)
+        {
+            if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matches(
+                    event.getKeyCode(), event.getScanCode())) return;
+            Minecraft minecraft = Minecraft.getInstance();
+            int screenWidth = minecraft.getWindow().getScreenWidth();
+            int screenHeight = minecraft.getWindow().getScreenHeight();
+            if (screenWidth <= 0 || screenHeight <= 0) return;
+            double mouseX = minecraft.mouseHandler.xpos() * event.getScreen().width / screenWidth;
+            double mouseY = minecraft.mouseHandler.ypos() * event.getScreen().height / screenHeight;
+            if (openOrderUnderMouse(event.getScreen(), mouseX, mouseY)) event.setCanceled(true);
+        }
+
+        private static boolean openOrderUnderMouse(net.minecraft.client.gui.screens.Screen screen,
+                                                   double mouseX, double mouseY)
+        {
+            if (Minecraft.getInstance().player == null
+                    || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return false;
             if (com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
-                    .orderIngredientUnderMouse(event.getMouseX(), event.getMouseY())
+                    .orderIngredientUnderMouse(mouseX, mouseY)
                     || com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                     .orderIngredientUnderMouse())
-            {
-                event.setCanceled(true);
-                return;
-            }
-            if (!(event.getScreen() instanceof DimensionsNetGUI<?> screen)) return;
+                return true;
+            if (!(screen instanceof DimensionsNetGUI<?> networkScreen)) return false;
             var level = Minecraft.getInstance().level;
-            if (level == null) return;
-            for (var slot : screen.getMenu().slots)
+            if (level == null) return false;
+            for (var slot : networkScreen.getMenu().slots)
             {
                 if (!(slot instanceof AbstractStackTypedSlot typed) || !slot.isActive()) continue;
-                int x = screen.getGuiLeft() + slot.x;
-                int y = screen.getGuiTop() + slot.y;
-                if (event.getMouseX() < x || event.getMouseX() >= x + 16
-                        || event.getMouseY() < y || event.getMouseY() >= y + 16) continue;
-                if (!(typed.getStack().key() instanceof ItemStackKey itemKey)) return;
+                int x = networkScreen.getGuiLeft() + slot.x;
+                int y = networkScreen.getGuiTop() + slot.y;
+                if (mouseX < x || mouseX >= x + 16 || mouseY < y || mouseY >= y + 16) continue;
+                if (!(typed.getStack().key() instanceof ItemStackKey itemKey)) return false;
                 com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.orderTarget(
                         new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)));
-                event.setCanceled(true);
-                return;
+                return true;
             }
+            return false;
         }
 
     }

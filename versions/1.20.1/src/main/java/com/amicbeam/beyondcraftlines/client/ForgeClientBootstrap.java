@@ -23,6 +23,7 @@ public final class ForgeClientBootstrap {
         com.amicbeam.beyondcraftlines.common.network.BindMachineFeedbackPayload.clientReceiver =
                 CraftlinesClientEvents::showBindFeedback;
         modBus.addListener(ForgeClientBootstrap::setup);
+        modBus.addListener(CraftlinesKeyMappings::register);
         modBus.addListener(ForgeClientBootstrap::registerTooltipComponents);
         modBus.addListener(ForgeClientBootstrap::registerRenderers);
         modBus.addListener(ForgeClientBootstrap::modifyModels);

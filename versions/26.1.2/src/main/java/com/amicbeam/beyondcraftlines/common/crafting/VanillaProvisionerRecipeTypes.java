@@ -4,13 +4,15 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Vanilla workstation categories that are provisioner-only, plus datapack-enabled virtual recipes. */
+/** Vanilla workstation category policy for direct machines, provisioners, and network execution. */
 public final class VanillaProvisionerRecipeTypes
 {
     private static final Set<String> PROVISIONER_ONLY = Set.of(
             "minecraft:anvil",
-            "minecraft:brewing",
             "minecraft:compostable",
+            "minecraft:smithing",
+            "minecraft:stonecutting");
+    private static final Set<String> NETWORK_EXECUTABLE = Set.of(
             "minecraft:smithing",
             "minecraft:stonecutting");
     private static final Map<String, String> CATEGORY_BY_BLOCK = Map.ofEntries(
@@ -41,7 +43,22 @@ public final class VanillaProvisionerRecipeTypes
     }
 
     public static <T> Set<T> executable(Set<T> requested)
-    { return Set.of(); }
+    {
+        return requested.stream().filter(VanillaProvisionerRecipeTypes::isProxyFamily)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public static boolean isNetworkExecutable(Object family, boolean proxyEnabled)
+    { return proxyEnabled && isProxyFamily(family); }
+
+    public static boolean isPotentialNetworkExecutable(Object family)
+    { return family != null && ("crafting".equals(family.toString()) || isProxyFamily(family)); }
+
+    public static boolean isProxyFamily(Object family)
+    { return family != null && NETWORK_EXECUTABLE.contains(family.toString()); }
+
+    public static Set<String> networkExecutableFamilies(boolean proxyEnabled)
+    { return proxyEnabled ? NETWORK_EXECUTABLE : Set.of(); }
 
     public static <T> Set<T> directBindable(Set<T> requested)
     {

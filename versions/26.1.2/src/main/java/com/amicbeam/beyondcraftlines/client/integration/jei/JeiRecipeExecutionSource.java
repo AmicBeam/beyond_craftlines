@@ -6,7 +6,8 @@ final class JeiRecipeExecutionSource
     private JeiRecipeExecutionSource() {}
 
     static boolean usesServerRecipe(String family)
-    { return "crafting".equals(family); }
+    { return com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+            .isPotentialNetworkExecutable(family); }
 
     static boolean usesServerRecipe(Object displayedRecipe)
     {

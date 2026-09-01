@@ -8,6 +8,7 @@ import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService;
 import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
 import com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting;
+import com.amicbeam.beyondcraftlines.common.crafting.SimulatedWorkstationRecipe;
 import com.amicbeam.beyondcraftlines.common.data.BindingRecord;
 import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
@@ -384,6 +385,16 @@ public final class RecipeOrderService
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
         if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
         RecipePlan.Step step = job.step(job.nextStep());
+        if (com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                .isProxyFamily(step.family()) && com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.isNetworkExecutable(step.family(),
+                        CraftlinesConfig.ENABLE_SMITHING_AND_STONECUTTING_RECIPE_PROXY.get()))
+        {
+            long gameTime = server.overworld().getGameTime();
+            if (!VirtualCraftingThrottle.ready(gameTime, job.nextCraftingTick()))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("virtual_crafting_interval"));
+            return executeWorkstationRecipe(server.overworld(), network, job, step, gameTime);
+        }
         boolean nativeFurnaceFamily = NATIVE_FURNACE_FAMILIES.contains(step.family());
         if (nativeFurnaceFamily)
         {
@@ -679,6 +690,21 @@ public final class RecipeOrderService
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);
+        RecipeOrderJob updated = addReserved(consumeReserved(job, attempt.consumedReserved()),
+                attempt.producedReserved());
+        return updated.completeCrafts(attempt.crafts(), nextTick);
+    }
+
+    private static RecipeOrderJob executeWorkstationRecipe(ServerLevel level, DimensionsNet network,
+                                                            RecipeOrderJob job, RecipePlan.Step step,
+                                                            long gameTime)
+    {
+        SimulatedWorkstationRecipe.Attempt attempt = SimulatedWorkstationRecipe.craftOne(
+                level, network.getUnifiedStorage(), step, job.reserved(),
+                job.nextStep() + 1 < job.stepCount());
+        if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
+        long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime,
+                CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get());
         RecipeOrderJob updated = addReserved(consumeReserved(job, attempt.consumedReserved()),
                 attempt.producedReserved());
         return updated.completeCrafts(attempt.crafts(), nextTick);

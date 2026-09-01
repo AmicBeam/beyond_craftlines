@@ -35,6 +35,8 @@ public final class CraftlinesConfig {
             .defineInRange("orderStatusRefreshIntervalTicks", 20, 1, 72_000);
     public static final ForgeConfigSpec.IntValue VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS = SERVER_BUILDER
             .push("crafting").defineInRange("virtualCraftingNodeIntervalTicks", 1, 1, 72_000);
+    public static final ForgeConfigSpec.BooleanValue ENABLE_SMITHING_AND_STONECUTTING_RECIPE_PROXY = SERVER_BUILDER
+            .define("enableSmithingAndStonecuttingRecipeProxy", true);
     public static final ForgeConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
             .pop().push("provisioner")
             .comment("Maximum number of wireless target devices bound to one Craftline Provisioner.")

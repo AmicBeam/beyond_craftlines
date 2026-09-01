@@ -12,6 +12,7 @@
   "config.beyond_craftlines.show_jei_order_button_everywhere": "在所有界面的 JEI 中显示下单按钮",
   "config.beyond_craftlines.order_status_refresh_interval_ticks": "订单状态刷新间隔（tick）",
   "config.beyond_craftlines.virtual_crafting_node_interval_ticks": "模拟合成批次间隔（tick）",
+  "config.beyond_craftlines.enable_smithing_and_stonecutting_recipe_proxy": "代理执行锻造与切石配方",
   "config.beyond_craftlines.max_provisioner_connections": "单个供给器的最大无线设备连接数",
   "config.beyond_craftlines.reset_provisioner_round_robin_on_activation": "每次配方激活时从头轮询供给器",
   "config.beyond_craftlines.max_planning_depth": "配方规划最大深度",

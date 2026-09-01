@@ -158,7 +158,8 @@ public final class RecipePlanningService
             {
                 RecipeHolder<?> holder = RecipeCatalog.forLevel(level).stream()
                         .filter(candidate -> candidate.id().identifier().equals(id))
-                        .filter(candidate -> "crafting".equals(family(candidate)))
+                        .filter(candidate -> VanillaProvisionerRecipeTypes
+                                .isPotentialNetworkExecutable(family(candidate)))
                         .findFirst().orElseGet(() -> VirtualProvisionerRecipeRegistry.find(id).orElse(null));
                 if (holder != null) selected.add(holder);
             }
@@ -584,7 +585,7 @@ public final class RecipePlanningService
         if (type == RecipeType.BLASTING) return "blasting";
         if (type == RecipeType.SMOKING) return "smoking";
         if (type == RecipeType.CAMPFIRE_COOKING) return "campfire_cooking";
-        if (type == RecipeType.STONECUTTING) return "stonecutting";
+        if (type == RecipeType.STONECUTTING) return "minecraft:stonecutting";
         Identifier id = BuiltInRegistries.RECIPE_TYPE.getKey(type);
         return id == null ? null : id.toString();
     }

@@ -12,6 +12,7 @@
   "config.beyond_craftlines.show_jei_order_button_everywhere": "Show JEI order button on every screen",
   "config.beyond_craftlines.order_status_refresh_interval_ticks": "Order status refresh interval (ticks)",
   "config.beyond_craftlines.virtual_crafting_node_interval_ticks": "Simulated crafting batch interval (ticks)",
+  "config.beyond_craftlines.enable_smithing_and_stonecutting_recipe_proxy": "Proxy smithing and stonecutting recipes",
   "config.beyond_craftlines.max_provisioner_connections": "Maximum wireless device connections per provisioner",
   "config.beyond_craftlines.reset_provisioner_round_robin_on_activation": "Restart provisioner round-robin on each recipe activation",
   "config.beyond_craftlines.max_planning_depth": "Maximum recipe planning depth",

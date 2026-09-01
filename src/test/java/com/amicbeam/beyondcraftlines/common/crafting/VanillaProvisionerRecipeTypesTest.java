@@ -17,13 +17,25 @@ final class VanillaProvisionerRecipeTypesTest
                 Set.of("example:machine"), Set.of("example:server_family")));
     }
 
-    @Test void keepsFiveVanillaWorkstationsProvisionerOnly()
+    @Test void brewingIsDirectlyBindableWhileOtherManualWorkstationsRemainProvisionerOnly()
     {
-        Set<String> types = Set.of("minecraft:anvil", "minecraft:brewing", "minecraft:compostable",
+        Set<String> types = Set.of("minecraft:anvil", "minecraft:compostable",
                 "minecraft:smithing", "minecraft:stonecutting");
         types.forEach(type -> assertTrue(VanillaProvisionerRecipeTypes.isProvisionerOnly(type)));
-        assertEquals(Set.of("example:machine"), VanillaProvisionerRecipeTypes.directBindable(
-                Set.of("example:machine", "minecraft:anvil")));
+        assertFalse(VanillaProvisionerRecipeTypes.isProvisionerOnly("minecraft:brewing"));
+        assertEquals(Set.of("example:machine", "minecraft:brewing"),
+                VanillaProvisionerRecipeTypes.directBindable(
+                        Set.of("example:machine", "minecraft:anvil", "minecraft:brewing")));
+    }
+
+    @Test void smithingAndStonecuttingExecuteInsideTheNetwork()
+    {
+        assertEquals(Set.of("minecraft:smithing", "minecraft:stonecutting"),
+                VanillaProvisionerRecipeTypes.executable(Set.of(
+                        "minecraft:smithing", "minecraft:stonecutting", "minecraft:brewing")));
+        assertTrue(VanillaProvisionerRecipeTypes.isNetworkExecutable("minecraft:smithing", true));
+        assertFalse(VanillaProvisionerRecipeTypes.isNetworkExecutable("minecraft:smithing", false));
+        assertFalse(VanillaProvisionerRecipeTypes.isNetworkExecutable("minecraft:brewing", true));
     }
 
     @Test void mapsEveryVanillaWorkstationBlockToItsJeiCategory()

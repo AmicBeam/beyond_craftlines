@@ -356,6 +356,7 @@ Forge/NeoForge 自动生成 client 和 server 配置。服务端配置通常按�
 | 键 | 默认值 | 范围 | 作用 |
 | --- | ---: | ---: | --- |
 | `virtualCraftingNodeIntervalTicks` | `1` | 1–72000 | 模拟合成成功批次之间的最小 tick 间隔 |
+| `enableSmithingAndStonecuttingRecipeProxy` | `true` | true/false | 是否由网络直接代理执行原版锻造与切石配方；关闭后恢复为供给器路由 |
 | `maxPlanningDepth` | `48` | 1–256 | 单次递归配方树最大深度 |
 | `maxPlanningNodes` | `4096` | 64–1000000 | 客户端建议的唯一资源优化预算，同时限制服务端自动规划时探索的候选分支；已上传的固定方案线性复算不消耗此预算 |
 | `maxPlanningTimeMillis` | `50` | 1–10000 | 自动候选搜索的主线程时间预算（毫秒）；固定方案复算不消耗 |

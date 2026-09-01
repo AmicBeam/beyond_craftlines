@@ -8,9 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class JeiRecipeExecutionSourceTest
 {
     @Test
-    void keepsCraftingRecipesOnTheirServerIdentity()
+    void keepsNetworkExecutedRecipesOnTheirServerIdentity()
     {
         assertTrue(JeiRecipeExecutionSource.usesServerRecipe("crafting"));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("minecraft:smithing"));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("minecraft:stonecutting"));
         assertFalse(JeiRecipeExecutionSource.usesServerRecipe("smelting"));
         assertFalse(JeiRecipeExecutionSource.usesServerRecipe("minecraft:crafting"));
     }

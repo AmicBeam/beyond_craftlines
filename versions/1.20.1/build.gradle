@@ -23,6 +23,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/CraftlineProvisionerBlockEntity.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceRegistry.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceAutomation.java'
+    exclude 'com/amicbeam/beyondcraftlines/common/crafting/VanillaWorkstationRecipeAssembler.java'
     into layout.buildDirectory.dir('generated/versionSources/main/java')
     filteringCharset = 'UTF-8'
     filter { line -> line

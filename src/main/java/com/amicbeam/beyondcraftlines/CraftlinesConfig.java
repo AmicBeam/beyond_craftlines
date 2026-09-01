@@ -72,6 +72,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.virtual_crafting_node_interval_ticks")
             .defineInRange("virtualCraftingNodeIntervalTicks", 1, 1, 72_000);
 
+    public static final ModConfigSpec.BooleanValue ENABLE_SMITHING_AND_STONECUTTING_RECIPE_PROXY = SERVER_BUILDER
+            .comment("Let the BD network execute vanilla smithing and stonecutting recipes directly, without a bound workstation or provisioner.")
+            .translation("config.beyond_craftlines.enable_smithing_and_stonecutting_recipe_proxy")
+            .define("enableSmithingAndStonecuttingRecipeProxy", true);
+
     public static final ModConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
             .pop()
             .push("provisioner")

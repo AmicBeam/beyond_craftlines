@@ -455,6 +455,9 @@ public final class DeviceBindingRegistry
     public static Set<String> availableFamilies(MinecraftServer server, int networkId)
     {
         HashSet<String> result = new HashSet<>(NativeFurnaceRegistry.availableFamilies(server, networkId));
+        result.addAll(com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                .networkExecutableFamilies(com.amicbeam.beyondcraftlines.CraftlinesConfig
+                        .ENABLE_SMITHING_AND_STONECUTTING_RECIPE_PROXY.get()));
         for (BindingRecord record : BindingSavedData.get(server).forNetwork(networkId))
             if (record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
                     && validMachine(server, record).isPresent()) result.addAll(record.recipeFamilies());

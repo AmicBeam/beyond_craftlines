@@ -564,11 +564,8 @@ public final class ClientRecipePlanner
         return RecipeResourceResolver.resolutionKey(key);
     }
 
-    private static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
-    {
-        for (var entry : byOutput.entrySet()) if (resource.isSame(entry.getKey())) return entry.getValue();
-        return List.of();
-    }
+    static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
+    { return SymmetricMapLookup.first(byOutput, resource, StackKeyMatch::exact); }
 
     private static long available(MatchingStock<IStackKey<?>, Identifier> stock,
                                   IStackKey<?> requested)

@@ -1910,7 +1910,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void showMissingMaterials(Map<IStackKey<?>, Long> missing)
     {
         clearDisplayMetrics();
-        missing.entrySet().stream().sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+        com.amicbeam.beyondcraftlines.common.crafting.MissingMaterialDisplay
+                .excludingFinalOutput(missing, menu.initialTarget()).entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
                 .forEach(entry -> missingMaterials.put(entry.getKey(), entry.getValue()));
         materialSummaryMissing = true;
@@ -2401,7 +2403,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (entry.key() == null || entry.amount() < 1) continue;
             switch (entry.kind())
             {
-                case "M" -> pendingMissingMaterials.put(entry.key(), entry.amount());
+                case "M" -> {
+                    if (!com.amicbeam.beyondcraftlines.common.crafting.MissingMaterialDisplay
+                            .isFinalOutput(menu.initialTarget(), entry.key()))
+                        pendingMissingMaterials.put(entry.key(), entry.amount());
+                }
                 case "E" -> pendingExtractionMaterials.put(entry.key(), entry.amount());
                 case "N" -> pendingNodeMetrics.put(entry.key(), new NodeMetric(ResourceLocation.tryParse(entry.recipe()),
                         entry.amount(), entry.produced(), entry.crafts()));

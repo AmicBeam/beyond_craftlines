@@ -133,6 +133,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             && !DeviceBindingRegistry.supportsJeiType(
                             player.level().getServer(), networkId, requestedType, executionFamily)))
                         throw new IllegalArgumentException("invalid virtual recipe category");
+                    if (!com.amicbeam.beyondcraftlines.common.crafting.VanillaRecipeBatching
+                            .validUploadedOutputAmount(executionFamily, payload.virtualOutputAmount()))
+                        throw new IllegalArgumentException("invalid virtual recipe output amount");
                     var holder = com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.register(executionFamily, target,
                             payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->

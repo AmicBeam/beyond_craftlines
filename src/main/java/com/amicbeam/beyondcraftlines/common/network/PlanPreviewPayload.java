@@ -106,6 +106,8 @@ public record PlanPreviewPayload(long nonce, String itemId, Header header,
                         entry.getKey().recipe().toString(), entry.getKey().slot(),
                         entry.getValue())).toList();
         List<DisplayEntry> displayEntries = plan.missing().stream()
+                .filter(material -> !com.amicbeam.beyondcraftlines.common.crafting.MissingMaterialDisplay
+                        .isFinalOutput(plan.targetKey(), material.key()))
                 .map(material -> new DisplayEntry("M", material.key(), "", material.amount(), 0, 0)).toList();
         var pages = PreviewPagePartitioner.partition(recipeChoices, ingredientChoices, displayEntries, 256);
         List<PlanPreviewPayload> payloads = new ArrayList<>(pages.size());

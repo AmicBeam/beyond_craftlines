@@ -25,6 +25,8 @@ public final class JeiVirtualRecipeLayouts
                 .map(typed -> RecipeResourceResolver.fromStack(typed.getIngredient()))
                 .filter(java.util.Objects::nonNull).findFirst().orElse(null);
         if (output == null) return null;
+        output = new KeyAmount(output.key(), com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaRecipeBatching.outputAmount(type, output.amount()));
         List<SlotCapture> slots = layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT)
                 .stream().map(slot -> captureSlot(slot, layout.getRecipe(), false))
                 .filter(java.util.Objects::nonNull).limit(32).toList();

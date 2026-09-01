@@ -121,6 +121,8 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
         {
             if (!menu.availableFamilies().contains(recipe.family()))
                 return;
+            if (!com.amicbeam.beyondcraftlines.common.crafting.VanillaRecipeBatching
+                    .validUploadedOutputAmount(recipe.family(), recipe.outputAmount())) return;
             var holder = VirtualProvisionerRecipeRegistry.register(recipe.family(), recipe.output(),
                     recipe.outputAmount(), recipe.inputs().stream().map(input ->
                             new VirtualProvisionerRecipeRegistry.InputSlot(

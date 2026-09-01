@@ -34,7 +34,7 @@ If a recipe exposes several logical material groups, different endpoints may han
 
 When only one recipe type is detected, it can be selected automatically. Right-clicking air exits the current linker mode or clears the active selection.
 
-Vanilla brewing stands expose real inventory automation and can be bound directly. Smithing and stonecutting use their authoritative server recipes and, by default, are executed directly against network storage without a workstation; servers can disable this with `crafting.enableSmithingAndStonecuttingRecipeProxy`. Anvils and composters remain provisioner-only targets.
+Vanilla brewing stands expose real inventory automation and can be bound directly. One brewing operation consumes up to three potion-slot inputs plus one ingredient and produces three potion outputs; recursive planning treats that as one batch instead of expanding every bottle into another three-bottle operation. Smithing and stonecutting use their authoritative server recipes and, by default, are executed directly against network storage without a workstation; servers can disable this with `crafting.enableSmithingAndStonecuttingRecipeProxy`. Anvils and composters remain provisioner-only targets.
 
 ## Wireless provisioner connections
 

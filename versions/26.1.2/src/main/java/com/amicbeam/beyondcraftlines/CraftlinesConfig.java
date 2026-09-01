@@ -70,7 +70,7 @@ public final class CraftlinesConfig
             .push("crafting")
             .comment("Ticks between simulated crafting batches. Stack-stable inputs are processed as one BD long-count batch; state-changing tools remain sequential.")
             .translation("config.beyond_craftlines.virtual_crafting_node_interval_ticks")
-            .defineInRange("virtualCraftingNodeIntervalTicks", 20, 1, 72_000);
+            .defineInRange("virtualCraftingNodeIntervalTicks", 1, 1, 72_000);
 
     public static final ModConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
             .pop()

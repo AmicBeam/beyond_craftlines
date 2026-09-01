@@ -23,14 +23,6 @@ public final class RecipeTypeWarmupTracker<T>
         return types.stream().filter(requested::add).toList();
     }
 
-    public List<T> restart(Collection<T> types)
-    {
-        active.addAll(types);
-        requested.removeAll(types);
-        complete.removeAll(types);
-        return request(types);
-    }
-
     public void complete(T type) { complete.add(type); }
     public boolean ready(Collection<T> types) { return complete.containsAll(types); }
     public Set<T> activeTypes() { return Set.copyOf(active); }

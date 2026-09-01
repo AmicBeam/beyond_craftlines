@@ -129,7 +129,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Set<Identifier> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
     private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
-    private Set<String> requiredVirtualFamilies = Set.of();
     private long planningCatalogRevision = -1;
     private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;
@@ -268,12 +267,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
             return;
         }
-        if (!requiredVirtualFamilies.isEmpty()
-                && !JeiCatalystIndex.recipeTypesReady(requiredVirtualFamilies))
-        {
-            loadingStatus = jeiTypeIndexingText();
-            return;
-        }
         if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null)
             beginPlanningCatalogCapture();
         long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
@@ -323,12 +316,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         loadClientPreferences();
         selectInitialTarget();
         if (targetRecipeSearchPending) return;
-        if (!requiredVirtualFamilies.isEmpty()
-                && !JeiCatalystIndex.recipeTypesReady(requiredVirtualFamilies))
-        {
-            loadingStatus = jeiTypeIndexingText();
-            return;
-        }
         beginPlanningCatalogCapture();
     }
 
@@ -338,14 +325,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         planningCatalog = null;
         planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
-        List<RecipeHolder<?>> holders = menu.recipes();
-        long virtualHolders = holders.stream().filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
-                .VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null).count();
-        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client planning catalog capture revision={} holders={} virtualHolders={} requiredTypes={}",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                planningCatalogBuildRevision, holders.size(), virtualHolders, requiredVirtualFamilies);
-        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, holders);
+        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
         if (planningCatalogBuilder.complete())
         {
             planningCatalog = planningCatalogBuilder.catalog();
@@ -363,17 +343,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
         if (selected != null)
         {
-            var virtual = com.amicbeam.beyondcraftlines.common.crafting
-                    .VirtualProvisionerRecipeRegistry.descriptor(selected.value());
-            if (virtual != null)
-            {
-                requiredVirtualFamilies = JeiCatalystIndex.rematerializeRecipeTypes(
-                        java.util.List.of(virtual.family()));
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                        "{} client rematerialize root virtual family={} requiredTypes={}",
-                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                        virtual.family(), requiredVirtualFamilies);
-            }
             if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
                 recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
             else if (!menu.initialRecipePinned())
@@ -2042,6 +2011,15 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         Map<String, Identifier> fixedTreeRecipes = visibleTreeRecipes();
         Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = visibleTreeIngredients();
+        preferredRecipes.putAll(fixedTreeRecipes);
+        preferredRecipes.putAll(manualRecipes);
+        preferredIngredients.putAll(fixedTreeIngredients);
+        manualIngredients.forEach((key, value) -> preferredIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client plan visible-tree choices recipes={} ingredients={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                fixedTreeRecipes.size(), fixedTreeIngredients.size());
         boolean hasDefaults = !defaultResourceRecipes.isEmpty() || !defaultRecipes.isEmpty()
                 || !defaultIngredients.isEmpty();
         boolean hasAutomaticChoices = preferAutomaticChoices && (!automaticResourceRecipes.isEmpty()

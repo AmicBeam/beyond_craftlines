@@ -29,14 +29,4 @@ final class RecipeTypeWarmupTrackerTest
         assertEquals(List.of("example:crusher"), tracker.activate(List.of("example:crusher")));
     }
 
-    @Test void restartReopensAnAlreadyCompletedCategory()
-    {
-        RecipeTypeWarmupTracker<String> tracker = new RecipeTypeWarmupTracker<>();
-        assertEquals(List.of("minecraft:brewing"), tracker.activate(List.of("minecraft:brewing")));
-        tracker.complete("minecraft:brewing");
-        assertTrue(tracker.ready(List.of("minecraft:brewing")));
-
-        assertEquals(List.of("minecraft:brewing"), tracker.restart(List.of("minecraft:brewing")));
-        assertFalse(tracker.ready(List.of("minecraft:brewing")));
-    }
 }

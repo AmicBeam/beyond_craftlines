@@ -152,7 +152,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                 && initialRecipeHolder != null && RecipeOutputResolver.outputs(
                         initialRecipeHolder.value(), player.level().registryAccess()).stream()
                 .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
-                        .outputMatches(initialRecipeHolder.value(), output, value.key()));
+                        .outputMatches(initialRecipeHolder.value(), initialRecipeHolder.id().toString(),
+                                output, value.key()));
     }
     public RecipeHolder<?> recipe(ResourceLocation id)
     {

@@ -108,7 +108,8 @@ public final class ClientRecipePlanner
                         slotEntry.index() < reusable.length && reusable[slotEntry.index()]))).toList();
         return new Recipe(holder.id(), RecipePlanningService.family(holder),
                 output.key(), Math.max(1, output.amount()),
-                RecipeIoProfileRegistry.outputMatchSemantics(holder.value()), slots);
+                RecipeIoProfileRegistry.outputMatchSemantics(
+                        holder.value(), holder.id().toString()), slots);
     }
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,

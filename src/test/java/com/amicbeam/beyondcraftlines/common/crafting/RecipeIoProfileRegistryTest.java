@@ -17,12 +17,20 @@ final class RecipeIoProfileRegistryTest
     {
         RecipeIoProfileRegistry.Profile profile = read("slashblade.json");
 
-        assertEquals(Set.of("mods.flammpfeil.slashblade.recipe.SlashBladeShapedRecipe"),
-                profile.recipeClasses());
+        assertEquals(Set.of("slashblade:"), profile.recipeIdPrefixes());
+        assertTrue(profile.recipeClasses().isEmpty(),
+                "the profile must cover SlashBlade_2 vanilla recipe classes and Resharped alike");
         assertEquals(RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
                 profile.outputMatch());
-        assertTrue(profile.outputFields().isEmpty(),
-                "getOutputBlade is an identifier, not the assembled ItemStack");
+        assertEquals(new RecipeIoProfileRegistry.DynamicOutputPolicy(
+                "jei_focus", "exact", RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
+                "assemble_selected_inputs"), profile.dynamicOutput());
+        assertTrue(RecipeIoProfileRegistry.matchesRecipeId(
+                "slashblade:anvilcrafting/reforge", profile.recipeIdPrefixes()));
+        assertTrue(RecipeIoProfileRegistry.matchesRecipeId(
+                "slashblade:rodai_netherite_smithing", profile.recipeIdPrefixes()));
+        assertFalse(RecipeIoProfileRegistry.matchesRecipeId(
+                "minecraft:diamond_sword", profile.recipeIdPrefixes()));
     }
 
     @Test void keepsUnconfiguredRecipesComponentExact()
@@ -40,6 +48,22 @@ final class RecipeIoProfileRegistryTest
                 RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
                 requested, new Blade("slashblade:proudsoul", "base"),
                 Blade::sameComponents, Blade::sameItem));
+    }
+
+    @Test void rejectsIncompleteDynamicOutputDeclarations()
+    {
+        var profile = RecipeIoProfileRegistry.parse(JsonParser.parseString("""
+                {
+                  "recipe_id_prefixes": ["example:"],
+                  "dynamic_output": {
+                    "source": "jei_focus",
+                    "planning_fallback": "same_resource"
+                  }
+                }
+                """).getAsJsonObject());
+
+        assertEquals(RecipeIoProfileRegistry.OutputMatchSemantics.EXACT, profile.outputMatch());
+        assertTrue(profile.dynamicOutput().source().isBlank());
     }
 
     private static RecipeIoProfileRegistry.Profile read(String name)

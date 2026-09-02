@@ -1,6 +1,11 @@
 {
-  "recipe_classes": [
-    "mods.flammpfeil.slashblade.recipe.SlashBladeShapedRecipe"
+  "recipe_id_prefixes": [
+    "slashblade:"
   ],
-  "output_match": "same_resource"
+  "dynamic_output": {
+    "source": "jei_focus",
+    "identity": "exact",
+    "planning_fallback": "same_resource",
+    "execution": "assemble_selected_inputs"
+  }
 }

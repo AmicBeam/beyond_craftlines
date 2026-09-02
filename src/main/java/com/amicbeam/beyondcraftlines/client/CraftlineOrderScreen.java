@@ -223,6 +223,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         JeiCatalystIndex.prewarmRecipeTypes(menu.availableFamilies());
+        ClientPlanningCatalogWarmup.request(menu.availableFamilies());
         if (!initialized)
         {
             initialized = true;
@@ -297,8 +298,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(),
-                    RECIPE_INDEX_TIME_BUDGET_NANOS);
             if (planningCatalogBuilder.complete())
             {
                 planningCatalog = planningCatalogBuilder.catalog();
@@ -342,7 +341,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         planningCatalog = null;
         planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
-        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
+        planningCatalogBuilder = ClientPlanningCatalogWarmup.acquire(
+                minecraft.level, menu.availableFamilies(), menu.recipes());
         if (planningCatalogBuilder.complete())
         {
             planningCatalog = planningCatalogBuilder.catalog();

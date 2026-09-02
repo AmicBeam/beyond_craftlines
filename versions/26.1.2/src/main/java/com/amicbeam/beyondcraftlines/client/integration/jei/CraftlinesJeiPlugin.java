@@ -86,7 +86,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             networkAvailability = payload.available()
                     ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
             JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
+            if (payload.available())
+                com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
+            else com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         };
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         requestNetworkAvailability();
@@ -98,6 +102,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         runtime = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         JeiCatalystIndex.clear();
     }
 
@@ -105,6 +110,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         Minecraft.getInstance().execute(CraftlinesJeiPlugin::requestNetworkAvailability);
     }
 
@@ -112,6 +118,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
     }
 
     public static boolean showRecipesFor(ItemStack stack)
@@ -262,7 +269,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
-    { JeiCatalystIndex.tick(); }
+    {
+        JeiCatalystIndex.tick();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick();
+    }
 
     private static void queueOrder(OpenOrderMenuPayload payload)
     {

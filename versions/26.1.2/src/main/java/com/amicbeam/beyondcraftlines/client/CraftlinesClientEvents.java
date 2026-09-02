@@ -138,6 +138,7 @@ public final class CraftlinesClientEvents
         @SubscribeEvent public static void recipesReceived(RecipesReceivedEvent event)
         {
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
         }
 

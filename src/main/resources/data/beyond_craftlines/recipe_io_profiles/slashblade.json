@@ -2,6 +2,9 @@
   "recipe_id_prefixes": [
     "slashblade:"
   ],
+  "resource_namespaces": [
+    "slashblade"
+  ],
   "dynamic_output": {
     "source": "jei_focus",
     "identity": "exact",

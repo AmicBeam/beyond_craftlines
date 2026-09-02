@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,6 +19,7 @@ final class RecipeIoProfileRegistryTest
         RecipeIoProfileRegistry.Profile profile = read("slashblade.json");
 
         assertEquals(Set.of("slashblade:"), profile.recipeIdPrefixes());
+        assertEquals(Set.of("slashblade"), profile.resourceNamespaces());
         assertTrue(profile.recipeClasses().isEmpty(),
                 "the profile must cover SlashBlade_2 vanilla recipe classes and Resharped alike");
         assertEquals(RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
@@ -66,6 +68,21 @@ final class RecipeIoProfileRegistryTest
         assertTrue(profile.dynamicOutput().source().isBlank());
     }
 
+    @Test void resolvesRuntimePolicyByRecipeIdWithoutARecipeClass()
+    {
+        try
+        {
+            RecipeIoProfileRegistry.applyEntriesForTests(List.of(readText("slashblade.json")));
+            assertTrue(RecipeIoProfileRegistry.allowsSameResourceOutput(
+                    "slashblade:anvilcrafting/reforge"));
+            assertFalse(RecipeIoProfileRegistry.allowsSameResourceOutput(
+                    "minecraft:diamond_sword"));
+            assertTrue(RecipeIoProfileRegistry.allowsSameResourceMaterial("slashblade"));
+            assertFalse(RecipeIoProfileRegistry.allowsSameResourceMaterial("minecraft"));
+        }
+        finally { RecipeIoProfileRegistry.applyEntriesForTests(List.of()); }
+    }
+
     private static RecipeIoProfileRegistry.Profile read(String name)
     {
         try (var stream = RecipeIoProfileRegistryTest.class.getResourceAsStream(
@@ -73,6 +90,18 @@ final class RecipeIoProfileRegistryTest
         {
             return RecipeIoProfileRegistry.parse(JsonParser.parseReader(new InputStreamReader(
                     java.util.Objects.requireNonNull(stream), StandardCharsets.UTF_8)).getAsJsonObject());
+        }
+        catch (java.io.IOException exception)
+        { throw new java.io.UncheckedIOException(exception); }
+    }
+
+    private static String readText(String name)
+    {
+        try (var stream = RecipeIoProfileRegistryTest.class.getResourceAsStream(
+                "/data/beyond_craftlines/recipe_io_profiles/" + name))
+        {
+            return new String(java.util.Objects.requireNonNull(stream).readAllBytes(),
+                    StandardCharsets.UTF_8);
         }
         catch (java.io.IOException exception)
         { throw new java.io.UncheckedIOException(exception); }

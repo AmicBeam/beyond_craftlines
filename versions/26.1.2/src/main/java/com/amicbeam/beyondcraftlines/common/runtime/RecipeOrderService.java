@@ -271,7 +271,8 @@ public final class RecipeOrderService
         if (network == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
         UnifiedStorage storage = network.getUnifiedStorage();
-        List<KeyAmount> taken = CompletedOutputExtractor.extract(storage, outputKey, job.requested());
+        List<KeyAmount> taken = CompletedOutputExtractor.extract(
+                storage, outputKey, job.requested(), candidate -> finalOutputMatches(job, candidate));
         if (taken.isEmpty())
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_final_output"));
         if (taken.stream().anyMatch(value -> !(value.key() instanceof
@@ -681,7 +682,8 @@ public final class RecipeOrderService
     {
         UnifiedStorage storage = network.getUnifiedStorage();
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
-                level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections(),
+                level, storage, step.recipe(), step.output(), step.crafts(),
+                runtimeIngredientSelections(job, step),
                 job.reserved(), job.nextStep() + 1 < job.stepCount(),
                 PlanningSnapshotService.capture(job.networkId()), step.inputs());
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
@@ -1325,8 +1327,8 @@ public final class RecipeOrderService
         {
             Ingredient ingredient = ingredient(level, step, material.ingredientSlot());
             long needed = material.amount();
-            needed = selectFrom(reserved, material.key(), ingredient, material.inputGroup(), needed, true, chunks);
-            needed = selectFrom(network, material.key(), ingredient, material.inputGroup(), needed, false, chunks);
+            needed = selectFrom(reserved, job, material, ingredient, needed, true, chunks);
+            needed = selectFrom(network, job, material, ingredient, needed, false, chunks);
             if (needed > 0) return null;
         }
         List<RecipePlan.ReservedMaterial> consumed = chunks.stream().filter(InputChunk::fromReserved)
@@ -1559,25 +1561,70 @@ public final class RecipeOrderService
     }
 
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,
-                                   com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> requested,
-                                   Ingredient ingredient, String inputGroup, long needed,
+                                   RecipeOrderJob job, RecipePlan.Material material,
+                                   Ingredient ingredient, long needed,
                                    boolean reserved, List<InputChunk> selected)
     {
         if (needed <= 0) return 0;
         for (var entry : available.entrySet())
         {
-            if (entry.getValue() <= 0 || !com.amicbeam.beyondcraftlines.common.crafting
-                    .StackKeyMatch.exact(requested, entry.getKey())) continue;
+            if (entry.getValue() <= 0 || !materialMatches(job, material, entry.getKey())) continue;
             if (ingredient != null && (!(entry.getKey() instanceof ItemStackKey itemKey)
                     || !ingredient.test(itemKey.getReadOnlyStack()))) continue;
             long amount = Math.min(entry.getValue(), needed);
             entry.setValue(entry.getValue() - amount);
-            selected.add(new InputChunk(entry.getKey(), amount, reserved, inputGroup));
+            selected.add(new InputChunk(entry.getKey(), amount, reserved, material.inputGroup()));
             needed -= amount;
             if (needed == 0) break;
         }
         return needed;
     }
+
+    private static boolean materialMatches(RecipeOrderJob job, RecipePlan.Material material,
+                                           IStackKey<?> candidate)
+    {
+        if (DynamicOutputRuntimeMatch.matches(material.key(), candidate, job.steps())) return true;
+        return dynamicMaterial(job, material)
+                && (material.key().isSame(candidate) || candidate.isSame(material.key()));
+    }
+
+    private static RecipePlan.Step dynamicProducer(RecipeOrderJob job, RecipePlan.Material material)
+    {
+        for (RecipePlan.Step step : job.steps())
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(material.key(), step.outputKey())
+                    && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                    .allowsSameResourceOutput(step.recipe().toString())) return step;
+        return null;
+    }
+
+    private static boolean dynamicMaterial(RecipeOrderJob job, RecipePlan.Material material)
+    {
+        if (dynamicProducer(job, material) != null) return true;
+        return material.item() != null
+                && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                .allowsSameResourceMaterial(material.item().getNamespace());
+    }
+
+    private static List<RecipePlan.IngredientSelection> runtimeIngredientSelections(
+            RecipeOrderJob job, RecipePlan.Step step)
+    {
+        List<RecipePlan.IngredientSelection> result = new ArrayList<>();
+        for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
+        {
+            RecipePlan.Material material = step.inputs().stream()
+                    .filter(value -> value.ingredientSlot() == selection.slot()).findFirst().orElse(null);
+            if (material != null && material.item() != null && dynamicMaterial(job, material))
+                result.add(new RecipePlan.IngredientSelection(selection.slot(),
+                        com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey
+                                .legacy(material.item())));
+            else result.add(selection);
+        }
+        return List.copyOf(result);
+    }
+
+    private static boolean finalOutputMatches(RecipeOrderJob job, IStackKey<?> candidate)
+    { return DynamicOutputRuntimeMatch.matches(job.targetKey(), candidate, job.steps()); }
 
     private static Ingredient ingredient(ServerLevel level, RecipePlan.Step step, int slot)
     {

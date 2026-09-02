@@ -151,7 +151,7 @@ Forge 1.20.1 的旧式 StackKey NBT 序列化成本显著高于后续版本，�
 
 EMI 在 1.20.1 Forge 与 1.21.1 NeoForge 中是可选前端：配方屏幕事件桥在可见配方卡片上提供入口（不依赖生产环境默认关闭的 recipe decorator），hover API 为统一的“下单悬浮资源”按键提供目标，隔离反射桥只读 BoM 偏好；所有 EMI 入口必须重新映射到 JEI recipe ID 并由现有 JEI 布局后端验证，EMI-only 配方不进入执行协议。EMI/JEMI 元数据完成后必须刷新 JEI 输入分组索引，保留供给器和绑定设备的语义子标签。26.1.2 因上游没有对应构件只提供 no-op 桥。EMI 不替换 Craftlines 规划树，也不改变 JEI 为必需执行后端的现状。
 
-JEI runtime 只同步建立分类、催化剂和标题的轻量索引；当前主网络已启用的机器分类随后进入客户端预算队列，每个 category 在本次 runtime 生命周期内完整物化一次，每帧最多处理 32 个 drawable 且不超过 2ms。首次进入尚未预热的具体 JEI 类型时只补该类型，之后所有配方树直接复用；网络入口在缺少类型快照时才保守地预热全部分类。客户端递归规划只读取已经物化并按确定性 ID 缓存的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。服务端数据包可在 `recipe_io_profiles` 中按 `recipe_type`、`recipe_classes`、`recipe_class_prefixes` 或 `recipe_id_prefixes` 限定配方结构和动态产物策略。完整的 `dynamic_output` 声明要求 `source=jei_focus`、`identity=exact`、`planning_fallback=same_resource` 与 `execution=assemble_selected_inputs` 同时成立：同资源回退只把 JEI 具体产物关联到已验证的服务端配方，库存、节点和最终产物仍保留完整组件身份，并以所选输入调用原配方执行逻辑；缺少任一字段时恢复严格匹配。
+JEI runtime 只同步建立分类、催化剂和标题的轻量索引；当前主网络已启用的机器分类随后进入客户端预算队列，每个 category 在本次 runtime 生命周期内完整物化一次，每帧最多处理 32 个 drawable 且不超过 2ms。首次进入尚未预热的具体 JEI 类型时只补该类型，之后所有配方树直接复用；网络入口在缺少类型快照时才保守地预热全部分类。客户端递归规划只读取已经物化并按确定性 ID 缓存的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。服务端数据包可在 `recipe_io_profiles` 中按 `recipe_type`、`recipe_classes`、`recipe_class_prefixes`、`recipe_id_prefixes` 或 `resource_namespaces` 限定配方结构和动态产物策略。完整的 `dynamic_output` 声明要求 `source=jei_focus`、`identity=exact`、`planning_fallback=same_resource` 与 `execution=assemble_selected_inputs` 同时成立：同资源回退把 JEI 具体产物关联到已验证的服务端配方，并沿该生产步骤或显式资源命名空间传播到运行时产物检测、最终交付和下一步原料选择；实际检测到的栈以自身完整组件键提取、预留和投料，不会被改写成 JEI 模板，缺少任一声明字段时恢复严格匹配。
 
 ### 5.3 确定性规划
 

@@ -102,7 +102,8 @@ public final class ClientRecipePlanner
                 VirtualInputUse.forRecipeSlot(holder.value(), slotEntry.index(),
                         slotEntry.index() < reusable.length && reusable[slotEntry.index()]))).toList();
         return new Recipe(holder.id().identifier(), RecipePlanningService.family(holder),
-                output.key(), Math.max(1, output.amount()), slots);
+                output.key(), Math.max(1, output.amount()),
+                RecipeIoProfileRegistry.outputMatchSemantics(holder.value()), slots);
     }
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
@@ -480,11 +481,12 @@ public final class ClientRecipePlanner
         }
     }
     public record Recipe(Identifier id, String family, IStackKey<?> output, long outputCount,
-                         List<Slot> slots)
+                         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots)
     {
         public Recipe
         {
             Objects.requireNonNull(id); Objects.requireNonNull(family); Objects.requireNonNull(output);
+            Objects.requireNonNull(outputMatch);
             if (outputCount < 1) throw new IllegalArgumentException("invalid recipe output");
             slots = List.copyOf(slots);
         }
@@ -568,6 +570,14 @@ public final class ClientRecipePlanner
     {
         List<Recipe> exact = SymmetricMapLookup.first(byOutput, resource, StackKeyMatch::exact);
         if (!exact.isEmpty()) return exact;
+        for (var entry : byOutput.entrySet())
+        {
+            List<Recipe> configured = entry.getValue().stream().filter(recipe ->
+                    RecipeIoProfileRegistry.outputMatches(recipe.outputMatch(), resource, entry.getKey(),
+                            StackKeyMatch::exact,
+                            (left, right) -> left.isSame(right) || right.isSame(left))).toList();
+            if (!configured.isEmpty()) return configured;
+        }
         List<String> sameItemCandidates = byOutput.entrySet().stream()
                 .filter(entry -> resource.isSame(entry.getKey()) || entry.getKey().isSame(resource))
                 .limit(16).map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="

@@ -349,11 +349,8 @@ public final class RecipePlanningService
         int dependencyStart = state.steps.size();
         List<KeyAmount> recipeOutputs = RecipeOutputResolver.outputs(holder.value(), level);
         KeyAmount result = recipeOutputs.stream()
-                .filter(value -> StackKeyMatch.exact(outputKey, value.key())).findFirst()
-                // Explicit JEI roots can represent dynamic assemble() output more precisely than
-                // Recipe#getResultItem. Retain item-family fallback only for that execution shape.
-                .orElseGet(() -> recipeOutputs.stream()
-                        .filter(value -> outputKey.isSame(value.key())).findFirst().orElseThrow());
+                .filter(value -> RecipeIoProfileRegistry.outputMatches(
+                        holder.value(), outputKey, value.key())).findFirst().orElseThrow();
         long perCraft = Math.max(1, result.amount());
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
@@ -499,6 +496,12 @@ public final class RecipePlanningService
     {
         for (var entry : byOutput.entrySet())
             if (StackKeyMatch.exact(resource, entry.getKey())) return entry.getValue();
+        for (var entry : byOutput.entrySet())
+        {
+            List<RecipeHolder<?>> configured = entry.getValue().stream().filter(holder ->
+                    RecipeIoProfileRegistry.outputMatches(holder.value(), resource, entry.getKey())).toList();
+            if (!configured.isEmpty()) return configured;
+        }
         List<String> sameItemCandidates = byOutput.entrySet().stream()
                 .filter(entry -> resource.isSame(entry.getKey()) || entry.getKey().isSame(resource))
                 .limit(16).map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="

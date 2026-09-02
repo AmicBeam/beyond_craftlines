@@ -204,9 +204,10 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                         "target is unavailable");
                 return;
             }
-            var recipe = familyAvailable.stream().filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
-                    .ExplicitRootOutputMatch.matches(target,
-                            RecipeOutputResolver.outputs(holder.value(), level.registryAccess())))
+            var recipe = familyAvailable.stream().filter(holder -> RecipeOutputResolver
+                    .outputs(holder.value(), level.registryAccess()).stream()
+                    .anyMatch(output -> com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                            .outputMatches(holder.value(), target, output.key())))
                     .findFirst().orElse(null);
             // The JEI category id is presentation metadata, not an execution capability. A single
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be

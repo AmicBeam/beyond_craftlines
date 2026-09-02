@@ -83,9 +83,16 @@ public final class CraftlinesEvents
         }
         if (event.getPlayer() == null || recipeAliasServer != server)
         {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
+                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
             com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
+        var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
+        if (event.getPlayer() != null)
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(event.getPlayer(), profiles);
+        else server.getPlayerList().getPlayers().forEach(player ->
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, profiles));
     }
 }

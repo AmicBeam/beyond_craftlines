@@ -1,0 +1,6 @@
+{
+  "recipe_classes": [
+    "mods.flammpfeil.slashblade.recipe.SlashBladeShapedRecipe"
+  ],
+  "output_match": "same_resource"
+}

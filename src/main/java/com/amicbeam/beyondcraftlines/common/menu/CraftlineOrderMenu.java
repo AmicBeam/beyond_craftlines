@@ -149,7 +149,10 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public boolean canPlanTarget(IStackKey<?> output)
     {
         return recipeForResourceOutput(output) != null || initialRecipePinned && initialRecipe != null
-                && initialRecipeHolder != null && recipeProduces(initialRecipe, targetToken());
+                && initialRecipeHolder != null && RecipeOutputResolver.outputs(
+                        initialRecipeHolder.value(), player.level().registryAccess()).stream()
+                .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                        .outputMatches(initialRecipeHolder.value(), output, value.key()));
     }
     public RecipeHolder<?> recipe(ResourceLocation id)
     {

@@ -4,6 +4,7 @@ import com.amicbeam.beyondcraftlines.client.ClientPlannerPreferences;
 import com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch;
+import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import dev.emi.emi.api.EmiApi;
@@ -11,14 +12,19 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.bom.BoM;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -26,6 +32,10 @@ import java.util.Set;
 /** Direct EMI access isolated behind {@link EmiOptionalIntegration}. */
 public final class EmiClientIntegration
 {
+    private static final EmiStack ICON = EmiStack.of(new ItemStack(CraftlinesItems.NETWORK_LINKER.get()));
+    private static final int RECIPE_BUTTON_SIZE = 13;
+    private static Screen recipeButtonScreen;
+    private static final List<RecipeButton> recipeButtons = new ArrayList<>();
     private static volatile Object metadataManager;
     private static volatile Map<net.minecraft.world.item.Item, Set<ResourceLocation>> typesByWorkstation
             = Map.of();
@@ -197,6 +207,45 @@ public final class EmiClientIntegration
         return true;
     }
 
+    public static void beginRecipeButtonFrame(Screen screen)
+    {
+        recipeButtonScreen = screen;
+        recipeButtons.clear();
+    }
+
+    public static void renderRecipeButton(Screen screen, GuiGraphics graphics, int x, int y,
+                                          EmiRecipe recipe, int mouseX, int mouseY, float partialTick)
+    {
+        if (screen != recipeButtonScreen || graphics == null || recipe == null) return;
+        boolean hovered = mouseX >= x && mouseX < x + RECIPE_BUTTON_SIZE
+                && mouseY >= y && mouseY < y + RECIPE_BUTTON_SIZE;
+        int fill = hovered ? 0xFF9A9A9A : 0xFF747474;
+        graphics.fill(x, y, x + RECIPE_BUTTON_SIZE, y + RECIPE_BUTTON_SIZE, 0xFF101010);
+        graphics.fill(x + 1, y + 1, x + RECIPE_BUTTON_SIZE - 1,
+                y + RECIPE_BUTTON_SIZE - 1, fill);
+        graphics.fill(x + 2, y + 2, x + RECIPE_BUTTON_SIZE - 2, y + 3, 0xFFC8C8C8);
+        graphics.fill(x + 2, y + 2, x + 3, y + RECIPE_BUTTON_SIZE - 2, 0xFFC8C8C8);
+        graphics.pose().pushPose();
+        graphics.pose().translate(x + 1.5, y + 1.5, 200);
+        graphics.pose().scale(0.625f, 0.625f, 1.0f);
+        ICON.render(graphics, 0, 0, partialTick);
+        graphics.pose().popPose();
+        recipeButtons.add(new RecipeButton(x, y, recipe));
+        if (hovered) graphics.renderTooltip(Minecraft.getInstance().font,
+                Component.translatable("gui.beyond_craftlines.order_from_jei"), mouseX, mouseY);
+    }
+
+    public static boolean orderRecipeButtonUnderMouse(Screen screen, double mouseX, double mouseY)
+    {
+        if (screen == null || screen != recipeButtonScreen) return false;
+        for (int index = recipeButtons.size() - 1; index >= 0; index--)
+        {
+            RecipeButton button = recipeButtons.get(index);
+            if (button.contains(mouseX, mouseY)) return orderRecipe(button.recipe());
+        }
+        return false;
+    }
+
     private static @Nullable EmiStack itemStack(IStackKey<?> target)
     {
         if (!(target instanceof ItemStackKey item) || target.isEmpty()) return null;
@@ -251,4 +300,12 @@ public final class EmiClientIntegration
     }
 
     private record RecipeTarget(IStackKey<?> output, ResourceLocation recipe) {}
+    private record RecipeButton(int x, int y, EmiRecipe recipe)
+    {
+        private boolean contains(double mouseX, double mouseY)
+        {
+            return mouseX >= x && mouseX < x + RECIPE_BUTTON_SIZE
+                    && mouseY >= y && mouseY < y + RECIPE_BUTTON_SIZE;
+        }
+    }
 }

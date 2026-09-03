@@ -39,6 +39,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.Set;
 
@@ -217,6 +218,13 @@ public final class CraftlinesClientEvents
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)
         {
+            if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .orderRecipeButtonUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
+            {
+                event.setCanceled(true);
+                return;
+            }
             if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(event.getButton())) return;
             if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
                 event.setCanceled(true);

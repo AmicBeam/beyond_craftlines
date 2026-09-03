@@ -22,6 +22,7 @@ public final class EmiOptionalIntegration
     private static Method recipeTypes;
     private static Method setPreferredRecipe;
     private static Method clearPreferredRecipe;
+    private static Method orderRecipeButton;
 
     private EmiOptionalIntegration() {}
 
@@ -58,6 +59,15 @@ public final class EmiOptionalIntegration
         initialize();
         if (clearPreferredRecipe == null || target == null || target.isEmpty() || recipe == null) return false;
         try { return Boolean.TRUE.equals(clearPreferredRecipe.invoke(null, target, recipe)); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
+    }
+
+    public static boolean orderRecipeButtonUnderMouse(net.minecraft.client.gui.screens.Screen screen,
+                                                       double mouseX, double mouseY)
+    {
+        initialize();
+        if (orderRecipeButton == null || screen == null) return false;
+        try { return Boolean.TRUE.equals(orderRecipeButton.invoke(null, screen, mouseX, mouseY)); }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
     }
 
@@ -118,6 +128,8 @@ public final class EmiOptionalIntegration
             setPreferredRecipe = type.getMethod("setPreferredRecipe", IStackKey.class, ResourceLocation.class);
             clearPreferredRecipe = type.getMethod(
                     "clearPreferredRecipe", IStackKey.class, ResourceLocation.class);
+            orderRecipeButton = type.getMethod("orderRecipeButtonUnderMouse",
+                    net.minecraft.client.gui.screens.Screen.class, double.class, double.class);
         }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored)
         {
@@ -128,6 +140,7 @@ public final class EmiOptionalIntegration
             recipeTypes = null;
             setPreferredRecipe = null;
             clearPreferredRecipe = null;
+            orderRecipeButton = null;
         }
     }
 }

@@ -178,6 +178,7 @@
   "gui.beyond_craftlines.loading_snapshot": "正在请求网络库存快照…",
   "gui.beyond_craftlines.loading_snapshot_pages": "正在接收网络库存：%s/%s 页",
   "gui.beyond_craftlines.planning_tree": "正在后台搜索可制造方案…",
+  "gui.beyond_craftlines.validating_tree": "正在校验已选配方树…",
   "gui.beyond_craftlines.validating_plan": "正在等待服务端验证方案…",
   "gui.beyond_craftlines.validating_plan_pages": "正在接收验证结果：%s/%s 页",
   "gui.beyond_craftlines.missing": "缺少：%s",

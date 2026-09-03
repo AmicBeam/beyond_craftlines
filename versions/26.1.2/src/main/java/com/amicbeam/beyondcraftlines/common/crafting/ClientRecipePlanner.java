@@ -359,8 +359,8 @@ public final class ClientRecipePlanner
         private final List<Recipe> captured;
         private int outputIndex;
         private DirectionCursor direction;
-        private CaptureCursor(Level level,RecipeHolder<?> holder){this.holder=holder;this.outputs=RecipeOutputResolver.outputs(holder.value(),level);if(outputs.isEmpty())throw new IllegalArgumentException("recipe has no supported output: "+holder.id());this.captured=new ArrayList<>(outputs.size());}
-        private boolean advance(Level level){if(direction==null)direction=new DirectionCursor(level,holder,outputs.get(outputIndex));Recipe recipe=direction.advance(level);if(recipe==null)return false;captured.add(recipe);direction=null;outputIndex++;return outputIndex>=outputs.size();}
+        private CaptureCursor(Level level,RecipeHolder<?> holder){this.holder=holder;this.outputs=RecipeOutputResolver.outputs(holder.value(),level);this.captured=new ArrayList<>(outputs.size());}
+        private boolean advance(Level level){if(outputs.isEmpty())return true;if(direction==null)direction=new DirectionCursor(level,holder,outputs.get(outputIndex));Recipe recipe=direction.advance(level);if(recipe==null)return false;captured.add(recipe);direction=null;outputIndex++;return outputIndex>=outputs.size();}
         private List<Recipe> result(){return List.copyOf(captured);}
     }
 
@@ -488,15 +488,18 @@ public final class ClientRecipePlanner
         }
         public boolean reusable(){return use.sharedReusable();}
     }
-    public record Candidate(IStackKey<?> key, long count, Identifier selectionItem, String selection)
+    /** Avoid retaining derivable selection strings for millions of ordinary catalog candidates. */
+    public static final class Candidate
     {
-        public Candidate(IStackKey<?> key, long count)
-        { this(key, count, key instanceof ItemStackKey ? itemId(key) : null,
-                IngredientSelectionKey.exact(key)); }
-        public Candidate(IStackKey<?> key, long count, Identifier selectionItem)
-        { this(key, count, selectionItem, selectionItem.toString()); }
-        public Candidate { if (key == null || key.isEmpty() || count < 1 || selection == null || selection.isBlank())
-            throw new IllegalArgumentException("invalid candidate"); }
+        private final IStackKey<?> key;private final long count;private final Identifier selectionItemOverride;private final String selectionOverride;
+        public Candidate(IStackKey<?> key,long count){this(key,count,null,null,true);}
+        public Candidate(IStackKey<?> key,long count,Identifier selectionItem){this(key,count,selectionItem,selectionItem==null?null:selectionItem.toString(),false);}
+        public Candidate(IStackKey<?> key,long count,Identifier selectionItem,String selection){this(key,count,java.util.Objects.equals(selectionItem,key instanceof ItemStackKey?itemId(key):null)&&IngredientSelectionKey.exact(key).equals(selection)?null:selectionItem,IngredientSelectionKey.exact(key).equals(selection)?null:selection,true);}
+        private Candidate(IStackKey<?> key,long count,Identifier selectionItemOverride,String selectionOverride,boolean normalized){if(key==null||key.isEmpty()||count<1)throw new IllegalArgumentException("invalid candidate");if(!normalized&&(selectionOverride==null||selectionOverride.isBlank()))throw new IllegalArgumentException("invalid candidate");this.key=key;this.count=count;this.selectionItemOverride=selectionItemOverride;this.selectionOverride=selectionOverride;}
+        public IStackKey<?> key(){return key;}public long count(){return count;}
+        public Identifier selectionItem(){return selectionItemOverride!=null?selectionItemOverride:key instanceof ItemStackKey?itemId(key):null;}
+        public String selection(){return selectionOverride!=null?selectionOverride:IngredientSelectionKey.exact(key);}
+        public Identifier explicitSelectionItem(){return selectionItemOverride;}public String explicitSelection(){return selectionOverride;}
     }
     public record IngredientKey(Identifier recipe, int slot) {}
     public record Proposal(Map<String, Identifier> recipes,

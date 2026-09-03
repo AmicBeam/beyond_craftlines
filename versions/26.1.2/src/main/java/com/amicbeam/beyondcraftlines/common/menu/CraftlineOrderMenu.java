@@ -242,7 +242,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
 
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
-        return RecipePlanningService.visibleRecipes(level).stream()
+        return RecipePlanningService.allRecipes(level).stream()
+                .filter(RecipePlanningService::supported)
                 .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
                         .VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
                                 RecipePlanningService.family(holder))).toList();

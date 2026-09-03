@@ -37,14 +37,14 @@ import java.util.zip.GZIPOutputStream;
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
-    static final int VERSION = 1;
-    private static final long MAX_FILE_BYTES = 512L * 1024L * 1024L;
-    private static final long MAX_TOTAL_NBT_BYTES = 256L * 1024L * 1024L;
-    private static final long MAX_TOTAL_STRING_BYTES = 256L * 1024L * 1024L;
-    private static final long MAX_TOTAL_ENTRIES = 2_000_000L;
+    static final int VERSION = 2;
+    private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
+    private static final long MAX_TOTAL_NBT_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_TOTAL_ENTRIES = 8_000_000L;
     private static final int MAX_RECIPES = 200_000;
     private static final int MAX_SLOTS = 128;
-    private static final int MAX_CANDIDATES = 1_024;
+    private static final int MAX_CANDIDATES = 200_000;
     private static final int MAX_STRING_BYTES = 1_048_576;
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -68,12 +68,30 @@ final class ClientPlanningCatalogCache
 
     static void save(Level level, List<String> holderIds, ClientRecipePlanner.Catalog catalog)
     {
-        if (catalog.recipes().size() > MAX_RECIPES) return;
+        if (!cacheable(catalog)) return;
         String fingerprint = fingerprint(holderIds);
         try { IO.execute(() -> write(level, fingerprint, catalog)); }
         catch (RejectedExecutionException exception)
         { LOGGER.warn("{} client planning cache save skipped because the bounded I/O queue is full",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX); }
+    }
+
+    private static boolean cacheable(ClientRecipePlanner.Catalog catalog)
+    {
+        if (catalog.recipes().size() > MAX_RECIPES) return false;
+        long entries = catalog.recipes().size();
+        for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
+        {
+            if (recipe.slots().size() > MAX_SLOTS) return false;
+            entries += recipe.slots().size();
+            for (ClientRecipePlanner.Slot slot : recipe.slots())
+            {
+                if (slot.candidates().size() > MAX_CANDIDATES) return false;
+                entries += slot.candidates().size();
+                if (entries > MAX_TOTAL_ENTRIES) return false;
+            }
+        }
+        return true;
     }
 
     private static void write(Level level, String fingerprint, ClientRecipePlanner.Catalog catalog)
@@ -121,8 +139,9 @@ final class ClientPlanningCatalogCache
             {
                 writeKey(output, level, candidate.key());
                 output.writeLong(candidate.count());
-                writeString(output, candidate.selectionItem() == null ? "" : candidate.selectionItem().toString());
-                writeString(output, candidate.selection());
+                writeString(output, candidate.explicitSelectionItem() == null
+                        ? "" : candidate.explicitSelectionItem().toString());
+                writeString(output, candidate.explicitSelection() == null ? "" : candidate.explicitSelection());
             }
         }
     }
@@ -216,7 +235,7 @@ final class ClientPlanningCatalogCache
 
     private static Path path()
     { return Minecraft.getInstance().gameDirectory.toPath().resolve("config")
-            .resolve("beyond_craftlines-planning-catalog-v1.dat"); }
+            .resolve("beyond_craftlines-planning-catalog-v2.dat"); }
 
     private static void moveReplacing(Path source, Path target) throws IOException
     {
@@ -232,6 +251,7 @@ final class ClientPlanningCatalogCache
         private final List<String> holderIds;
         private final ArrayBlockingQueue<EncodedRecipe> queue = new ArrayBlockingQueue<>(2);
         private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
+        private final java.util.Map<IStackKey<?>, IStackKey<?>> decodedKeys = new java.util.HashMap<>();
         private volatile State state = State.QUEUED;
         private volatile int totalRecipes;
         private volatile Future<?> future;
@@ -287,7 +307,12 @@ final class ClientPlanningCatalogCache
                 state = State.CANCELLED;
             }
             catch (IOException | RuntimeException | LinkageError exception)
-            { state = State.FAILED; }
+            {
+                state = State.FAILED;
+                LOGGER.warn("{} client planning cache read failed path={} error={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        cachePath, exception.toString());
+            }
             finally { ioNanos = System.nanoTime() - started; }
         }
 
@@ -314,7 +339,10 @@ final class ClientPlanningCatalogCache
             }
             decodeNanos += System.nanoTime() - started;
             if (state == State.EOF && queue.isEmpty() && decoder == null && decoded.size() == totalRecipes)
+            {
                 catalog = new ClientRecipePlanner.Catalog(decoded);
+                decodedKeys.clear();
+            }
         }
 
         private IStackKey<?> decodeKey(EncodedKey encoded, Level level)
@@ -322,7 +350,8 @@ final class ClientPlanningCatalogCache
             IStackKey<?> key = StackKeyRegistry.getType(encoded.type())
                     .deserializeNBT(encoded.nbt(), level.registryAccess());
             if (key == null || key.isEmpty()) throw new IllegalArgumentException("invalid cached stack key");
-            return key;
+            IStackKey<?> existing = decodedKeys.putIfAbsent(key, key);
+            return existing == null ? key : existing;
         }
 
         synchronized void cancel()
@@ -331,6 +360,7 @@ final class ClientPlanningCatalogCache
             state = State.CANCELLED;
             queue.clear();
             decoded.clear();
+            decodedKeys.clear();
             decoder = null;
             Future<?> task = future;
             if (task != null) task.cancel(true);
@@ -380,8 +410,11 @@ final class ClientPlanningCatalogCache
                     if (candidateIndex < slot.candidates().size())
                     {
                         EncodedCandidate candidate = slot.candidates().get(candidateIndex++);
-                        candidates.add(new ClientRecipePlanner.Candidate(decodeKey(candidate.key(), level),
-                                candidate.count(), candidate.selectionItem(), candidate.selection()));
+                        IStackKey<?> key = decodeKey(candidate.key(), level);
+                        candidates.add(candidate.selection().isEmpty()
+                                ? new ClientRecipePlanner.Candidate(key, candidate.count())
+                                : new ClientRecipePlanner.Candidate(key, candidate.count(),
+                                        candidate.selectionItem(), candidate.selection()));
                         return null;
                     }
                     slots.add(new ClientRecipePlanner.Slot(slot.index(), candidates, slot.use()));

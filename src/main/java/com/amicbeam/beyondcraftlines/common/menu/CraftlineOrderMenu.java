@@ -243,7 +243,9 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     /** Stable native base; JEI-only recipes are already keyed and cached separately by the planning catalog. */
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
-        return RecipePlanningService.visibleRecipes(level).stream()
+        // Output resolution is performed lazily by the query/capture that actually needs it.
+        return RecipePlanningService.allRecipes(level).stream()
+                .filter(RecipePlanningService::supported)
                 .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
                         .VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
                                 RecipePlanningService.family(holder))).toList();

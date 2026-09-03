@@ -178,6 +178,7 @@
   "gui.beyond_craftlines.loading_snapshot": "Requesting the network inventory snapshot…",
   "gui.beyond_craftlines.loading_snapshot_pages": "Receiving network inventory: page %s/%s",
   "gui.beyond_craftlines.planning_tree": "Searching for a craftable plan in the background…",
+  "gui.beyond_craftlines.validating_tree": "Validating the selected recipe tree…",
   "gui.beyond_craftlines.validating_plan": "Waiting for server plan validation…",
   "gui.beyond_craftlines.validating_plan_pages": "Receiving validated plan: page %s/%s",
   "gui.beyond_craftlines.missing": "Missing: %s",

@@ -26,6 +26,10 @@ public final class RecipePlanningService
 
     private RecipePlanningService() {}
 
+    /** Cheap recipe enumeration without resolving every output up front. */
+    public static Collection<RecipeHolder<?>> allRecipes(Level level)
+    { return RecipeCatalog.forLevel(level); }
+
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
         Object catalog = level instanceof ServerLevel serverLevel ? serverLevel.recipeAccess() : RecipeCatalog.class;

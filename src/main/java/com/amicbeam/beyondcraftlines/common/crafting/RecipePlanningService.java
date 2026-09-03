@@ -27,6 +27,10 @@ public final class RecipePlanningService
 
     private RecipePlanningService() {}
 
+    /** Cheap recipe enumeration without resolving every output up front. */
+    public static Collection<RecipeHolder<?>> allRecipes(Level level)
+    { return level.getRecipeManager().getRecipes(); }
+
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
         List<RecipeHolder<?>> base = VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager ->

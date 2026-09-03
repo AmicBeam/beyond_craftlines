@@ -229,12 +229,20 @@ public final class ClientPlanningCatalogWarmup
 
     private static List<RecipeHolder<?>> planningRecipes(Level level, Set<String> availableFamilies)
     {
-        return RecipePlanningService.visibleRecipes(level).stream()
-                .filter(holder -> VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
-                        RecipePlanningService.family(holder)))
-                .filter(holder -> RecipeIndexVisibility.includes(
-                        RecipePlanningService.family(holder), availableFamilies))
-                .toList();
+        // Keep expensive output resolution inside the cooperative capture cursor. Doing it in
+        // this snapshot produced a single multi-second render-thread stall on large packs.
+        java.util.LinkedHashMap<String, RecipeHolder<?>> selected =
+                new java.util.LinkedHashMap<>();
+        java.util.stream.Stream.concat(RecipePlanningService.allRecipes(level).stream(),
+                VirtualProvisionerRecipeRegistry.recipes().stream()).forEach(holder -> {
+            String family = RecipePlanningService.family(holder);
+            if (RecipePlanningService.supported(holder)
+                    && VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family)
+                    && RecipeIndexVisibility.includes(family, availableFamilies))
+                selected.putIfAbsent(holder.id().toString(), holder);
+        });
+        return selected.values().stream().sorted(java.util.Comparator.comparing(
+                holder -> holder.id().toString())).toList();
     }
 
     public static final class Handle

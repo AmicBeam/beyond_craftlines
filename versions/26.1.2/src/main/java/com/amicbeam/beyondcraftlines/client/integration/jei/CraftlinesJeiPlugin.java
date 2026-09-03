@@ -39,6 +39,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static volatile IJeiRuntime runtime;
     private static volatile NetworkAvailability networkAvailability = NetworkAvailability.UNKNOWN;
     private static volatile long nextNetworkCheckNanos;
+    private static boolean optimalSearchWasEnabled;
 
     @Override
     public Identifier getPluginUid()
@@ -87,8 +88,9 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             networkAvailability = payload.available()
                     ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
             JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
-            if (payload.available())
+            if(payload.available()&&com.amicbeam.beyondcraftlines.CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())
                 com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
+            else if(payload.available())com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
             else com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         };
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
@@ -275,7 +277,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         long deadline=System.nanoTime()+CLIENT_FRAME_BUDGET_NANOS;
         JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
         long remaining=deadline-System.nanoTime();
-        if(remaining>0)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
+        boolean optimalSearchEnabled=com.amicbeam.beyondcraftlines.CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get();if(remaining>0&&optimalSearchEnabled)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);else if(!optimalSearchEnabled&&optimalSearchWasEnabled)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();optimalSearchWasEnabled=optimalSearchEnabled;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.recordFrameSlice(System.nanoTime()-started);
     }
 

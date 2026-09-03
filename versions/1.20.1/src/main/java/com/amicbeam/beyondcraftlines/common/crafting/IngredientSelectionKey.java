@@ -31,7 +31,14 @@ public final class IngredientSelectionKey
     public static boolean matches(String selection, IStackKey<?> candidate)
     {
         if (selection == null || candidate == null) return false;
-        if (selection.startsWith(EXACT_PREFIX)) return selection.equals(exact(candidate));
+        if (selection.startsWith(EXACT_PREFIX))
+        {
+            String candidateKey = candidate instanceof ItemStackKey itemKey
+                    && com.amicbeam.beyondcraftlines.compat.IngredientSelectionKeyCompat.hasDefaultIdentity(candidate)
+                    ? legacy(BuiltInRegistries.ITEM.getKey(itemKey.getSource()))
+                    : exactResolution(RecipeResourceResolver.uncachedResolutionKey(candidate));
+            return selection.equals(candidateKey);
+        }
         ResourceLocation item = ResourceLocation.tryParse(selection);
         return item != null && candidate instanceof ItemStackKey itemKey
                 && item.equals(BuiltInRegistries.ITEM.getKey(itemKey.getSource()));

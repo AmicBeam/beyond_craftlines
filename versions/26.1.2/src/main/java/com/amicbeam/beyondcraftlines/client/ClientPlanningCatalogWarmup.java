@@ -1,6 +1,5 @@
 package com.amicbeam.beyondcraftlines.client;
 
-import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -28,6 +27,7 @@ public final class ClientPlanningCatalogWarmup
     private static ClientRecipePlanner.CatalogBuilder builder;
     private static long startedNanos;
     private static boolean completionLogged;
+    private static boolean cachePersisted;
 
     private ClientPlanningCatalogWarmup() {}
 
@@ -35,9 +35,9 @@ public final class ClientPlanningCatalogWarmup
     {
         Set<String> next = Set.copyOf(availableFamilies);
         if (requested && families.equals(next)) return;
+        if(!families.equals(next))invalidateCapture();
         requested = true;
         families = next;
-        invalidateCapture();
     }
 
     public static synchronized void tick()
@@ -50,7 +50,7 @@ public final class ClientPlanningCatalogWarmup
                 || observedVirtualRevision != revision)
             acquire(level, families, planningRecipes(level, families));
         if (builder != null && !builder.complete())
-            builder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), TIME_BUDGET_NANOS);
+            builder.advance(TIME_BUDGET_NANOS);
         logCompletionIfReady();
     }
 
@@ -61,17 +61,19 @@ public final class ClientPlanningCatalogWarmup
         Object source = level;
         List<String> ids = holders.stream().map(holder -> holder.id().toString()).toList();
         long revision = VirtualProvisionerRecipeRegistry.revision();
-        if (builder == null || recipeSource != source || !holderIds.equals(ids))
+        if(builder==null||!holderIds.equals(ids)||!builder.complete()&&recipeSource!=source)
         {
-            recipeSource = source;
             holderIds = ids;
-            builder = ClientRecipePlanner.beginCapture(level, holders);
+            ClientRecipePlanner.Catalog cached=ClientPlanningCatalogCache.load(level,ids);
+            builder=cached==null?ClientRecipePlanner.beginCapture(level,holders):ClientRecipePlanner.restored(cached,holders.size());
+            cachePersisted=cached!=null;
             startedNanos = System.nanoTime();
             completionLogged = false;
             LOGGER.info("{} client planning catalog warmup started holders={} cached={}",
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                     holders.size(), builder.completedRecipes());
         }
+        recipeSource=source;
         observedVirtualRevision = revision;
         logCompletionIfReady();
         return builder;
@@ -85,6 +87,15 @@ public final class ClientPlanningCatalogWarmup
         requested = false;
         families = Set.of();
         invalidateCapture();
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.clearResolutionKeyCache();
+    }
+
+    public static synchronized void pause()
+    {
+        requested=false;
+        recipeSource=null;
+        if(builder!=null&&!builder.complete())invalidateCapture();
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.clearResolutionKeyCache();
     }
 
     private static void invalidateCapture()
@@ -95,12 +106,14 @@ public final class ClientPlanningCatalogWarmup
         builder = null;
         startedNanos = 0L;
         completionLogged = false;
+        cachePersisted=false;
     }
 
     private static void logCompletionIfReady()
     {
         if (builder == null || !builder.complete() || completionLogged) return;
         completionLogged = true;
+        if(!cachePersisted){Level level=Minecraft.getInstance().level;if(level!=null)ClientPlanningCatalogCache.save(level,holderIds,builder.catalog());cachePersisted=true;}
         LOGGER.info("{} client planning catalog warmup complete holders={} elapsedMs={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 holderIds.size(), (System.nanoTime() - startedNanos) / 1_000_000L);

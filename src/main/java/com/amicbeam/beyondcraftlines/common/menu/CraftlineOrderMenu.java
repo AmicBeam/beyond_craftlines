@@ -41,7 +41,6 @@ import com.google.gson.Gson;
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
     private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
-    private static final Map<Object, RecipeIndex> CLIENT_RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
             java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private static final Gson INDEX_GSON = new Gson();
@@ -100,9 +99,9 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        // The server-side menu only synchronizes state; recipe lookup and incremental indexing are
-        // client-owned. Enumerating every display recipe here delayed the menu-open packet.
-        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(List.of(), level);
+        // Queries below resolve directly from the recipe manager. The former client RecipeIndex only supplied
+        // progress while retaining duplicate output maps, so the order screen must not wait for that extra pass.
+        this.recipeIndex = new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null
                 : findDisplayRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
@@ -241,16 +240,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
     }
 
-    private static RecipeIndex clientIndex(net.minecraft.world.level.Level level)
-    {
-        Object source = level.getRecipeManager();
-        synchronized (CLIENT_RECIPE_INDEX_CACHE)
-        {
-            return CLIENT_RECIPE_INDEX_CACHE.computeIfAbsent(source,
-                    ignored -> new RecipeIndex(baseClientRecipes(level), level));
-        }
-    }
-
     /** Stable native base; JEI-only recipes are already keyed and cached separately by the planning catalog. */
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
@@ -293,7 +282,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public static void clearRecipeIndexCache()
     {
         synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
-        synchronized (CLIENT_RECIPE_INDEX_CACHE) { CLIENT_RECIPE_INDEX_CACHE.clear(); }
     }
 
     public static void rebuildServerRecipeIndex(MinecraftServer server)

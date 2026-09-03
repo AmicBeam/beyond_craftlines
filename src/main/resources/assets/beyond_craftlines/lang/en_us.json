@@ -5,7 +5,6 @@
   "config.beyond_craftlines.show_provisioner_bound_face_frames": "Show provisioner wireless bound-face frames",
   "config.beyond_craftlines.bound_machine_frame_render_distance": "Bound machine frame render distance",
   "config.beyond_craftlines.show_provisioner_target_material": "Show provisioner target item material",
-  "config.beyond_craftlines.recipe_index_max_per_tick": "Recipe index limit per tick",
   "config.beyond_craftlines.amount_preview_delay_ticks": "Amount preview delay (ticks)",
   "config.beyond_craftlines.recipe_preview_delay_ticks": "Recipe choice preview delay (ticks)",
   "config.beyond_craftlines.collapse_duplicate_tree_resources": "Show only the duplicate resource node closest to the root",

@@ -42,7 +42,6 @@ import com.google.gson.Gson;
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
     private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
-    private static final Map<Object, RecipeIndex> CLIENT_RECIPE_INDEX_CACHE = new WeakHashMap<>();
     private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
             java.util.Collections.newSetFromMap(new WeakHashMap<>());
     private static final Gson INDEX_GSON = new Gson();
@@ -101,7 +100,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        this.recipeIndex = level.isClientSide() ? clientIndex(level) : new RecipeIndex(List.of(), level);
+        // Queries resolve directly from the recipe manager; avoid a duplicate client indexing pass.
+        this.recipeIndex = new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null : findDisplayRecipe(level, initialRecipe);
         addDataSlots(serverIndexProgress);
         updateServerIndexProgress();
@@ -240,16 +240,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         }
     }
 
-    private static RecipeIndex clientIndex(net.minecraft.world.level.Level level)
-    {
-        Object source = level;
-        synchronized (CLIENT_RECIPE_INDEX_CACHE)
-        {
-            return CLIENT_RECIPE_INDEX_CACHE.computeIfAbsent(source,
-                    ignored -> new RecipeIndex(baseClientRecipes(level), level));
-        }
-    }
-
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
         return RecipePlanningService.visibleRecipes(level).stream()
@@ -293,7 +283,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public static void clearRecipeIndexCache()
     {
         synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
-        synchronized (CLIENT_RECIPE_INDEX_CACHE) { CLIENT_RECIPE_INDEX_CACHE.clear(); }
     }
 
     public static void rebuildServerRecipeIndex(MinecraftServer server)

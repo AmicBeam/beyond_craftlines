@@ -27,8 +27,8 @@ public final class RecipeResourceResolver
     public static final String VANILLA_INPUT_GROUP = "ingredients";
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
-    private static final Map<IStackKey<?>, String> RESOLUTION_KEYS =
-            Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final int MAX_RESOLUTION_KEYS = 4_096;
+    private static final BoundedIdentityCache<IStackKey<?>,String> RESOLUTION_KEYS=new BoundedIdentityCache<>(MAX_RESOLUTION_KEYS);
 
     private RecipeResourceResolver() {}
 
@@ -87,8 +87,10 @@ public final class RecipeResourceResolver
     public static void clearCache()
     {
         CACHE.clear();
-        RESOLUTION_KEYS.clear();
+        clearResolutionKeyCache();
     }
+
+    public static void clearResolutionKeyCache(){RESOLUTION_KEYS.clear();}
 
     public static KeyAmount fromStack(Object stack)
     {
@@ -108,8 +110,10 @@ public final class RecipeResourceResolver
     public static String sortKey(IStackKey<?> key)
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
-    public static String resolutionKey(IStackKey<?> key)
-    { return RESOLUTION_KEYS.computeIfAbsent(key, RecipeResourceResolver::encodeResolutionKey); }
+    public static String resolutionKey(IStackKey<?> key){return RESOLUTION_KEYS.computeIfAbsent(key,RecipeResourceResolver::encodeResolutionKey);}
+
+    static String uncachedResolutionKey(IStackKey<?> key)
+    { return encodeResolutionKey(key); }
 
     private static String encodeResolutionKey(IStackKey<?> key)
     {

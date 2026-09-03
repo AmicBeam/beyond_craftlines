@@ -52,7 +52,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
-    private static final long RECIPE_INDEX_TIME_BUDGET_NANOS = 2_000_000L;
+    private static final long FOREGROUND_CATALOG_TIME_BUDGET_NANOS=100_000_000L;
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -252,13 +252,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         super.containerTick();
         if(terminalMenuError){targetRecipeSearchPending=false;waitingForServerRecipeIndex=false;loadingStatus="";if(orderButton!=null)orderButton.active=false;return;}
         boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
-        if (!menu.recipeIndexComplete())
-        {
-            menu.advanceRecipeIndex(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(),
-                    RECIPE_INDEX_TIME_BUDGET_NANOS);
-            loadingStatus = recipeLookupIndexingText();
-            if (menu.recipeIndexComplete() && jeiTypesReady) finishRecipeIndex();
-        }
         if (!jeiTypesReady)
         {
             loadingStatus = jeiTypeIndexingText();
@@ -290,7 +283,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 planningCatalogRevision = planningCatalogBuildRevision;
                 waitForServerRecipeIndexOrPlan();
             }
-            else loadingStatus = indexingRecipesText();
+            else{planningCatalogBuilder.advance(FOREGROUND_CATALOG_TIME_BUDGET_NANOS);loadingStatus=indexingRecipesText();}
         }
         if (planningCatalog != null && waitingForServerRecipeIndex)
         {

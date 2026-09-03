@@ -1,6 +1,5 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
-import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeTypeWarmupTracker;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
@@ -161,7 +160,7 @@ public final class JeiCatalystIndex
     {
         IJeiRuntime current = runtime;
         if (current == null) return;
-        int remaining = Math.min(MAX_LAYOUTS_PER_FRAME, CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get());
+        int remaining = MAX_LAYOUTS_PER_FRAME;
         long deadline = System.nanoTime() + MAX_INDEX_NANOS_PER_FRAME;
         while (remaining > 0 && !TYPE_QUEUE.isEmpty() && System.nanoTime() < deadline)
         {

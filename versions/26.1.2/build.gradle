@@ -9,6 +9,17 @@ base { archivesName = mod_id }
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
 
 sourceSets.main.resources.srcDir '../../src/main/resources'
+def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', Sync) {
+    from '../../src/main/java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogCache.java'
+    into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
+    filteringCharset = 'UTF-8'
+    filter { line -> line
+            .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
+            .replace('ResourceLocation', 'Identifier')
+    }
+}
+sourceSets.main.java.srcDir preparePlanningCatalogCache
 sourceSets.test.java {
     srcDir '../../src/test/java'
     // EMI is not available for 26.1.2, so its shared integration-only tests do not apply here.

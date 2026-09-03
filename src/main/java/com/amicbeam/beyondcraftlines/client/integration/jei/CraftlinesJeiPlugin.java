@@ -96,7 +96,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
             else com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         };
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         requestNetworkAvailability();
@@ -108,7 +108,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         runtime = null;
         networkAvailability = NetworkAvailability.UNKNOWN;
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
         JeiCatalystIndex.clear();
     }
 
@@ -116,7 +116,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
         Minecraft.getInstance().execute(CraftlinesJeiPlugin::requestNetworkAvailability);
     }
 
@@ -124,7 +124,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
     }
 
     public static boolean showRecipesFor(ItemStack stack)

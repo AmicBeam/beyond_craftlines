@@ -17,9 +17,8 @@ public final class CraftlinesConfig {
             .defineInRange("boundMachineFrameRenderDistance", 96, 16, 512);
     public static final ForgeConfigSpec.BooleanValue SHOW_PROVISIONER_TARGET_MATERIAL = CLIENT_BUILDER
             .define("showProvisionerTargetMaterial", true);
-    public static final ForgeConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
-            .pop().push("planning").defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
     public static final ForgeConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
+            .pop().push("planning")
             .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
             .defineInRange("amountPreviewDelayTicks", 5, 1, 1_200);
     public static final ForgeConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER

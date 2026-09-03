@@ -49,7 +49,6 @@ public final class RecipePlanningService
         LOADED_FAMILY_CACHE.clear();
         RecipeIngredientResolver.clearCache();
         PlanningSnapshotService.clearRecipeEpochCache();
-        ClientRecipePlanner.clearCache();
         com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.clearRecipeIndexCache();
     }
 

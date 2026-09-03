@@ -90,6 +90,27 @@ public final class SimulatedCrafting
         catch (LinkageError | RuntimeException ignored) { return Map.of(); }
     }
 
+    /** Tests one known candidate without rescanning every ingredient representation to rediscover it. */
+    static KeyAmount bucketFluidInput(RecipeHolder<?> holder, Level level, List<ItemStack> baselineSamples,
+                                      int slot, ItemStack selected)
+    {
+        if (!(holder.value() instanceof CraftingRecipe recipe) || selected.isEmpty()
+                || slot < 0 || slot >= baselineSamples.size()) return null;
+        try
+        {
+            List<ItemStack> samples = new ArrayList<>(baselineSamples);
+            ItemStack sample = selected.copy();
+            sample.setCount(Math.max(1, selected.getCount()));
+            samples.set(slot, sample);
+            CraftingInput input = matchingInput(recipe, samples, level);
+            if (input == null) return null;
+            NonNullList<ItemStack> remainders = recipe.getRemainingItems(input);
+            return slot < Math.min(input.size(), remainders.size())
+                    ? fluidProxy(input.getItem(slot), remainders.get(slot)) : null;
+        }
+        catch (LinkageError | RuntimeException ignored) { return null; }
+    }
+
     static KeyAmount fluidProxy(ItemStack source, ItemStack remainder)
     {
         if (source.isEmpty() || !remainder.is(Items.BUCKET)) return null;
@@ -102,8 +123,8 @@ public final class SimulatedCrafting
         catch (LinkageError | RuntimeException ignored) { return null; }
     }
 
-    private static List<ItemStack> selectedSamples(RecipeHolder<?> holder,
-                                                   List<RecipePlan.IngredientSelection> selections)
+    static List<ItemStack> selectedSamples(RecipeHolder<?> holder,
+                                           List<RecipePlan.IngredientSelection> selections)
     {
         Map<Integer, String> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)

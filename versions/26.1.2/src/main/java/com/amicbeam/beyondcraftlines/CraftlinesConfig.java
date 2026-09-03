@@ -30,14 +30,9 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.show_provisioner_target_material")
             .define("showProvisionerTargetMaterial", true);
 
-    public static final ModConfigSpec.IntValue RECIPE_INDEX_MAX_PER_TICK = CLIENT_BUILDER
+    public static final ModConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .pop()
             .push("planning")
-            .comment("Maximum recipes processed per client tick in each of the two recipe indexing stages.")
-            .translation("config.beyond_craftlines.recipe_index_max_per_tick")
-            .defineInRange("recipeIndexMaxPerTick", 256, 16, 65_536);
-
-    public static final ModConfigSpec.IntValue AMOUNT_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe-tree amount change before recalculating the preview.")
             .translation("config.beyond_craftlines.amount_preview_delay_ticks")
             .defineInRange("amountPreviewDelayTicks", 5, 1, 1_200);

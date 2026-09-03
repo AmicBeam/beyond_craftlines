@@ -12,7 +12,8 @@ public final class IngredientSelectionKey
     static String exactResolution(String resolutionKey){return EXACT_PREFIX+resolutionKey;}
     public static String legacy(Identifier item){return item.toString();}
     public static boolean matches(String selection,IStackKey<?> candidate){if(selection==null||candidate==null)return false;
-        if(selection.startsWith(EXACT_PREFIX))return selection.equals(exact(candidate));Identifier item=Identifier.tryParse(selection);
+        if(selection.startsWith(EXACT_PREFIX))return selection.equals(exactResolution(
+                RecipeResourceResolver.uncachedResolutionKey(candidate)));Identifier item=Identifier.tryParse(selection);
         return item!=null&&candidate instanceof ItemStackKey itemKey&&item.equals(BuiltInRegistries.ITEM.getKey(itemKey.getSource()));}
     public static Identifier legacyItem(String selection){if(selection==null||selection.startsWith(EXACT_PREFIX))return null;return Identifier.tryParse(selection);}
 }

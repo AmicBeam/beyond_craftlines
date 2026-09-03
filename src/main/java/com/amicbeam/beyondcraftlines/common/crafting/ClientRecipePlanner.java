@@ -4,7 +4,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.RecipeManager;
 import net.minecraft.world.level.Level;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
@@ -19,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.WeakHashMap;
 
 /**
  * Pure client-side proposal search. Minecraft recipe objects are copied into {@link Catalog} before this runs,
@@ -29,28 +27,20 @@ public final class ClientRecipePlanner
 {
     /** Wall-clock window shared by the preferred and fallback candidate searches. */
     public static final long SEARCH_TIME_LIMIT_NANOS = 3_000_000_000L;
-    private static final Map<RecipeManager, Map<ResourceLocation, List<Recipe>>> CATALOG_CACHE =
-            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private ClientRecipePlanner() {}
 
     public static Catalog capture(Level level, List<RecipeHolder<?>> holders)
     {
         CatalogBuilder builder = beginCapture(level, holders);
-        while (!builder.complete()) builder.advance(Integer.MAX_VALUE);
+        while (!builder.complete()) builder.advance(Long.MAX_VALUE);
         return builder.catalog();
     }
 
     public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders)
-    {
-        synchronized (CATALOG_CACHE)
-        {
-            Map<ResourceLocation, List<Recipe>> recipes = CATALOG_CACHE.computeIfAbsent(
-                    level.getRecipeManager(), ignored -> new HashMap<>());
-            return new CatalogBuilder(level, holders, recipes);
-        }
-    }
+    { return new CatalogBuilder(level, holders); }
 
-    public static void clearCache() { CATALOG_CACHE.clear(); }
+    public static CatalogBuilder restored(Catalog catalog, int total)
+    { return new CatalogBuilder(catalog, total); }
 
     private static List<Recipe> captureRecipes(Level level, RecipeHolder<?> holder)
     {
@@ -70,6 +60,7 @@ public final class ClientRecipePlanner
                 .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
                 .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
                         IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
+        List<ItemStack> baselineSamples = SimulatedCrafting.selectedSamples(holder, baselineSelections);
         List<Slot> slots = new ArrayList<>();
         for (var ingredient : recipeIngredients)
         {
@@ -77,15 +68,11 @@ public final class ClientRecipePlanner
             for (KeyAmount value : ingredient.candidates())
             {
                 Candidate candidate = new Candidate(value.key(), value.amount());
-                if (value.key() instanceof ItemStackKey)
+                if (value.key() instanceof ItemStackKey itemKey)
                 {
-                    List<RecipePlan.IngredientSelection> selections = new ArrayList<>(baselineSelections);
-                    selections.removeIf(selection -> selection.slot() == ingredient.slot());
                     ResourceLocation selectedItem = itemId(value.key());
-                    selections.add(new RecipePlan.IngredientSelection(
-                            ingredient.slot(), IngredientSelectionKey.exact(value.key())));
-                    KeyAmount proxy = SimulatedCrafting.bucketFluidInputs(holder, level, selections)
-                            .get(ingredient.slot());
+                    KeyAmount proxy = SimulatedCrafting.bucketFluidInput(holder, level, baselineSamples,
+                            ingredient.slot(), itemKey.getReadOnlyStack());
                     if (proxy != null)
                     {
                         Candidate fluid = new Candidate(proxy.key(), proxy.amount(),
@@ -422,56 +409,44 @@ public final class ClientRecipePlanner
 
     public static final class CatalogBuilder
     {
-        private final Level level;
-        private final List<RecipeHolder<?>> allHolders;
-        private final List<RecipeHolder<?>> holders;
+        private Level level;
+        private List<RecipeHolder<?>> allHolders;
+        private List<RecipeHolder<?>> holders;
         private final Map<ResourceLocation, List<Recipe>> captures = new HashMap<>();
         private final int total;
         private int next;
         private int completed;
         private Catalog catalog;
 
-        private CatalogBuilder(Level level, List<RecipeHolder<?>> holders,
-                               Map<ResourceLocation, List<Recipe>> cached)
+        private CatalogBuilder(Level level, List<RecipeHolder<?>> holders)
         {
             this.level = level;
             this.allHolders = List.copyOf(holders);
             this.total = holders.size();
-            List<RecipeHolder<?>> missing = new ArrayList<>();
-            for (RecipeHolder<?> holder : holders)
-            {
-                List<Recipe> captured = cached.get(holder.id());
-                if (captured == null) missing.add(holder);
-                else
-                {
-                    captures.put(holder.id(), captured);
-                    completed++;
-                }
-            }
-            this.holders = List.copyOf(missing);
+            this.holders = this.allHolders;
             if (this.holders.isEmpty()) finishCatalog();
         }
 
-        public void advance(int recipeBudget)
-        { advance(recipeBudget, Long.MAX_VALUE); }
-
-        public void advance(int recipeBudget, long timeBudgetNanos)
+        private CatalogBuilder(Catalog catalog, int total)
         {
-            if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
-            int end = (int) Math.min(holders.size(), (long) next + recipeBudget);
-            int minimum = 1;
+            this.level = null;
+            this.allHolders = List.of();
+            this.holders = List.of();
+            this.total = total;
+            this.completed = total;
+            this.catalog = catalog;
+        }
+
+        public void advance(long timeBudgetNanos)
+        {
+            if (timeBudgetNanos < 1 || complete()) return;
             int processed = 0;
             long started = System.nanoTime();
-            while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
+            while (next < holders.size() && (processed < 1 || System.nanoTime() - started < timeBudgetNanos))
             {
                 RecipeHolder<?> holder = holders.get(next++);
                 List<Recipe> captured = List.copyOf(captureRecipes(level, holder));
                 captures.put(holder.id(), captured);
-                synchronized (CATALOG_CACHE)
-                {
-                    CATALOG_CACHE.computeIfAbsent(level.getRecipeManager(), ignored -> new HashMap<>())
-                            .putIfAbsent(holder.id(), captured);
-                }
                 completed++;
                 processed++;
             }
@@ -485,6 +460,10 @@ public final class ClientRecipePlanner
             for (RecipeHolder<?> holder : allHolders)
                 ordered.addAll(captures.getOrDefault(holder.id(), List.of()));
             catalog = new Catalog(ordered);
+            captures.clear();
+            allHolders = List.of();
+            holders = List.of();
+            level = null;
         }
 
         public boolean complete() { return catalog != null; }

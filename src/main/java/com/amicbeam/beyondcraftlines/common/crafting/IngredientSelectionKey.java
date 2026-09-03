@@ -23,7 +23,8 @@ public final class IngredientSelectionKey
     public static boolean matches(String selection, IStackKey<?> candidate)
     {
         if (selection == null || candidate == null) return false;
-        if (selection.startsWith(EXACT_PREFIX)) return selection.equals(exact(candidate));
+        if (selection.startsWith(EXACT_PREFIX)) return selection.equals(
+                exactResolution(RecipeResourceResolver.uncachedResolutionKey(candidate)));
         ResourceLocation item = ResourceLocation.tryParse(selection);
         return item != null && candidate instanceof ItemStackKey itemKey
                 && item.equals(BuiltInRegistries.ITEM.getKey(itemKey.getSource()));

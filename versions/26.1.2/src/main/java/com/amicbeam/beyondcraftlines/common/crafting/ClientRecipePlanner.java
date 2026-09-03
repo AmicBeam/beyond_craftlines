@@ -86,10 +86,7 @@ public final class ClientRecipePlanner
     {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
-        Map<IStackKey<?>, List<Recipe>> byOutput = new LinkedHashMap<>();
-        for (Recipe recipe : catalog.recipes())
-            byOutput.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
-        byOutput.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
+        Map<IStackKey<?>, List<Recipe>> byOutput = catalog.byOutput();
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
@@ -350,7 +347,12 @@ public final class ClientRecipePlanner
         return rejected;
     }
 
-    public record Catalog(List<Recipe> recipes) { public Catalog { recipes = List.copyOf(recipes); } }
+    public static final class Catalog
+    {
+        private final List<Recipe> recipes;private final Map<IStackKey<?>,List<Recipe>> byOutput;
+        public Catalog(List<Recipe> recipes){this.recipes=List.copyOf(recipes);LinkedHashMap<IStackKey<?>,List<Recipe>> index=new LinkedHashMap<>();for(Recipe recipe:this.recipes)index.computeIfAbsent(recipe.output(),ignored->new ArrayList<>()).add(recipe);index.values().forEach(values->values.sort(Comparator.comparing(recipe->recipe.id().toString())));LinkedHashMap<IStackKey<?>,List<Recipe>> frozen=new LinkedHashMap<>();index.forEach((key,value)->frozen.put(key,List.copyOf(value)));this.byOutput=Map.copyOf(frozen);}
+        public List<Recipe> recipes(){return recipes;}private Map<IStackKey<?>,List<Recipe>> byOutput(){return byOutput;}
+    }
 
     private static final class CaptureCursor
     {

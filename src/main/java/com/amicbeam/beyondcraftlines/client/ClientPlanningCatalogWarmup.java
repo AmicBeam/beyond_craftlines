@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.client;
 
 import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner;
+import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes;
 import com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry;
@@ -30,6 +31,7 @@ public final class ClientPlanningCatalogWarmup
     private static long generation;
     private static ClientPlanningCatalogCache.LoadJob loadJob;
     private static ClientRecipePlanner.CatalogBuilder builder;
+    private static ClientRecipeLookupIndex.Builder lookupBuilder;
     private static long startedNanos;
     private static long nextMetricsNanos;
     private static long maxMainSliceNanos;
@@ -94,6 +96,8 @@ public final class ClientPlanningCatalogWarmup
         holderIds = List.copyOf(ids);
         pendingHolders = List.copyOf(holders);
         builder = null;
+        lookupBuilder = null;
+        ClientRecipeLookupIndex.clear();
         loadJob = ClientPlanningCatalogCache.loadAsync(holderIds, generation);
         startedNanos = System.nanoTime();
         nextMetricsNanos = startedNanos + METRICS_INTERVAL_NANOS;
@@ -142,6 +146,10 @@ public final class ClientPlanningCatalogWarmup
         }
         if (loadJob == null && builder != null && !builder.complete() && System.nanoTime() < deadline)
             builder.advance(Math.max(1L, deadline - System.nanoTime()));
+        if (builder != null && builder.complete() && lookupBuilder == null)
+            lookupBuilder = ClientRecipeLookupIndex.begin(builder.catalog());
+        if (lookupBuilder != null && !lookupBuilder.complete() && System.nanoTime() < deadline)
+            lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime()));
         long elapsed = System.nanoTime() - sliceStarted;
         maxMainSliceNanos = Math.max(maxMainSliceNanos, elapsed);
         logMetricsIfDue();
@@ -176,6 +184,8 @@ public final class ClientPlanningCatalogWarmup
         pendingHolders = List.of();
         observedVirtualRevision = -1;
         builder = null;
+        lookupBuilder = null;
+        ClientRecipeLookupIndex.clear();
         startedNanos = 0L;
         completionLogged = false;
         cachePersisted = false;
@@ -193,7 +203,7 @@ public final class ClientPlanningCatalogWarmup
     { return loadJob != null || builder != null; }
 
     private static boolean complete()
-    { return builder != null && builder.complete(); }
+    { return builder != null && builder.complete() && lookupBuilder != null && lookupBuilder.complete(); }
 
     public static synchronized void recordFrameSlice(long elapsedNanos)
     { maxMainSliceNanos = Math.max(maxMainSliceNanos, elapsedNanos); }
@@ -270,4 +280,6 @@ public final class ClientPlanningCatalogWarmup
             return builder == null ? pendingHolders.size() : builder.totalRecipes();
         }
     }
+
+    public static synchronized Handle handle() { return HANDLE; }
 }

@@ -81,7 +81,9 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         if (header.count() < 1 || header.pageCount() < 1 || header.pageCount() > MAX_PAGES
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
             throw new IllegalArgumentException("invalid proposal page");
-        if (!menu.targetToken().equals(payload.itemId()) || !menu.canPlanTarget(target))
+        // The completed proposal is validated against the authoritative recipe manager on submit.
+        // Avoid a full server recipe scan here, especially for target-only order menus.
+        if (!menu.targetToken().equals(payload.itemId()))
             throw new IllegalArgumentException("target is unavailable");
         UUID playerId = player.getUUID();
         long now = player.serverLevel().getGameTime();

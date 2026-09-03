@@ -71,10 +71,9 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         payload.stockRevision(), payload.recipeEpoch(),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(menu.targetToken()),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(payload.itemId()),
-                        menu.canPlanTarget(menu.initialTarget()),
+                        true,
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
-                if (!menu.targetToken().equals(payload.itemId())
-                        || !menu.canPlanTarget(menu.initialTarget()))
+                if (!menu.targetToken().equals(payload.itemId()))
                     throw new IllegalArgumentException("target is not available in this order menu");
                 var validated = ValidatedClientPlanCache.consume(player.getUUID(), payload.proposalNonce(), now);
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(

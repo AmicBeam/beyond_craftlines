@@ -52,7 +52,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
-    private static final long FOREGROUND_CATALOG_TIME_BUDGET_NANOS=2_000_000L;
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -130,9 +129,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Set<Identifier> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
     private ClientPlanningCatalogWarmup.Handle planningCatalogBuilder;
-    private ClientRecipePlanner.CatalogBuilder localPlanningCatalogBuilder;
-    private Set<Identifier> localPlanningRecipeIds=Set.of();
-    private boolean planningCatalogOptimalMode;
     private long planningCatalogRevision = -1;
     private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;
@@ -259,9 +255,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         if (!preferencesLoaded && menu.recipeIndexComplete()) finishRecipeIndex();
-        boolean optimalMode=CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get();
-        if(preferencesLoaded&&planningCatalogOptimalMode!=optimalMode)beginPlanningCatalogCapture();
-        if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null&&localPlanningCatalogBuilder==null)
+        if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null)
             beginPlanningCatalogCapture();
         long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
@@ -271,18 +265,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     "{} client planning catalog stale capturedRevision={} currentRevision={}",
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                     planningCatalogRevision, virtualRevision);
+            ClientPlanningCatalogWarmup.invalidate();
             beginPlanningCatalogCapture();
         }
-        if (planningCatalog == null && (planningCatalogBuilder != null||localPlanningCatalogBuilder!=null))
+        if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            boolean complete=planningCatalogBuilder!=null?planningCatalogBuilder.complete():localPlanningCatalogBuilder.complete();
-            if (complete)
+            if (planningCatalogBuilder.complete())
             {
-                planningCatalog=planningCatalogBuilder!=null?planningCatalogBuilder.catalog():localPlanningCatalogBuilder.catalog();
+                planningCatalog=planningCatalogBuilder.catalog();
                 planningCatalogRevision = planningCatalogBuildRevision;
                 waitForServerRecipeIndexOrPlan();
             }
-            else{if(planningCatalogBuilder!=null)planningCatalogBuilder.advance(FOREGROUND_CATALOG_TIME_BUDGET_NANOS);else localPlanningCatalogBuilder.advance(FOREGROUND_CATALOG_TIME_BUDGET_NANOS);loadingStatus=indexingRecipesText();}
+            else loadingStatus=indexingRecipesText();
         }
         if (planningCatalog != null && waitingForServerRecipeIndex)
         {
@@ -316,23 +310,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         cancelPlanningTask();
         planningCatalog = null;
-        planningCatalogBuilder=null;localPlanningCatalogBuilder=null;
-        planningCatalogOptimalMode=CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get();
         planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.revision();
-        if(planningCatalogOptimalMode)planningCatalogBuilder=ClientPlanningCatalogWarmup.acquire(minecraft.level,menu.availableFamilies(),menu.recipes());
-        else{ClientPlanningCatalogWarmup.pause();LinkedHashMap<Identifier,RecipeHolder<?>> selectedRecipes=selectedCatalogRecipes();localPlanningRecipeIds=Set.copyOf(selectedRecipes.keySet());localPlanningCatalogBuilder=ClientRecipePlanner.beginCapture(minecraft.level,List.copyOf(selectedRecipes.values()));}
-        boolean complete=planningCatalogBuilder!=null?planningCatalogBuilder.complete():localPlanningCatalogBuilder.complete();
-        if (complete)
+        ClientPlanningCatalogWarmup.request(menu.availableFamilies());
+        planningCatalogBuilder=ClientPlanningCatalogWarmup.handle();
+        if (planningCatalogBuilder.complete())
         {
-            planningCatalog=planningCatalogBuilder!=null?planningCatalogBuilder.catalog():localPlanningCatalogBuilder.catalog();
+            planningCatalog=planningCatalogBuilder.catalog();
             planningCatalogRevision = planningCatalogBuildRevision;
             waitForServerRecipeIndexOrPlan();
         }
         else loadingStatus = indexingRecipesText();
     }
-
-    private LinkedHashMap<Identifier,RecipeHolder<?>> selectedCatalogRecipes(){LinkedHashMap<Identifier,RecipeHolder<?>> result=new LinkedHashMap<>();if(selected!=null)result.put(selected.id().identifier(),selected);for(GraphNode node:treeNodes)if(node.recipe!=null)result.putIfAbsent(node.recipe.id().identifier(),node.recipe);return result;}
 
     private void selectInitialTarget()
     {
@@ -366,13 +355,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private String indexingRecipesText()
     {
-        int completed=planningCatalogBuilder!=null?planningCatalogBuilder.completedRecipes():localPlanningCatalogBuilder==null?0:localPlanningCatalogBuilder.completedRecipes();
-        int total=planningCatalogBuilder!=null?planningCatalogBuilder.totalRecipes():localPlanningCatalogBuilder==null?0:localPlanningCatalogBuilder.totalRecipes();
+        int completed=planningCatalogBuilder==null?0:planningCatalogBuilder.completedRecipes();
+        int total=planningCatalogBuilder==null?0:planningCatalogBuilder.totalRecipes();
         return Component.translatable("gui.beyond_craftlines.capturing_recipes",
                 completed,total).getString();
     }
 
-    private String planningText(){return Component.translatable(planningCatalogOptimalMode?"gui.beyond_craftlines.planning_tree":"gui.beyond_craftlines.validating_tree").getString();}
+    private String planningText(){return Component.translatable(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get()?"gui.beyond_craftlines.planning_tree":"gui.beyond_craftlines.validating_tree").getString();}
 
     private String recipeLookupIndexingText()
     {
@@ -741,10 +730,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             current = menu.indexedRecipeCandidates();
             total = menu.totalRecipeCandidates();
         }
-        else if (planningCatalog == null && (planningCatalogBuilder != null||localPlanningCatalogBuilder!=null))
+        else if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            current=planningCatalogBuilder!=null?planningCatalogBuilder.completedRecipes():localPlanningCatalogBuilder.completedRecipes();
-            total=planningCatalogBuilder!=null?planningCatalogBuilder.totalRecipes():localPlanningCatalogBuilder.totalRecipes();
+            current=planningCatalogBuilder.completedRecipes();
+            total=planningCatalogBuilder.totalRecipes();
         }
         else if (waitingForServerRecipeIndex)
         {
@@ -1806,7 +1795,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         proposalReady = false;
         planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.SEARCHING;
         clearDisplayMetrics();
-        if(preferencesLoaded&&!CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get()&&!localPlanningRecipeIds.equals(selectedCatalogRecipes().keySet())){beginPlanningCatalogCapture();return;}
         if (orderButton != null) orderButton.active = canQueueOrder();
     }
 
@@ -1984,7 +1972,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             ClientRecipePlanner.Proposal proposal = null;
             RuntimeException failure = null;
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
-            boolean optimalSearch=CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get();
+            boolean optimalSearch=false;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
                     stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
                     ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,optimalSearch); }
@@ -2124,9 +2112,15 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     previewError = "";
                     if (orderButton != null) orderButton.active = true;
                     rebuildTree(false);
-                    if (submitWhenReady) submit();
+                    boolean submitWasQueued=submitWhenReady;
+                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation,nonce,target,count,stockRevision,recipeEpoch,maxDepth,maxNodes,stock,preferredRecipes,preferredIngredients);
                 });
         });
+    }
+
+    private void startOptimalPlanning(long generation,long nonce,IStackKey<?> target,long count,long stockRevision,long recipeEpoch,int maxDepth,int maxNodes,Map<IStackKey<?>,Long> stock,Map<String,Identifier> preferredRecipes,Map<ClientRecipePlanner.IngredientKey,String> preferredIngredients)
+    {
+        planningTask=PLANNING_EXECUTOR.submit(()->{ClientRecipePlanner.Proposal improved;try{improved=ClientRecipePlanner.plan(planningCatalog,stock,target,count,preferredRecipes,preferredIngredients,maxDepth,maxNodes,ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,true);}catch(RuntimeException ignored){minecraft.execute(()->{if(generation==planningGeneration)planningTask=null;});return;}minecraft.execute(()->{if(generation!=planningGeneration||nonce!=previewNonce)return;planningTask=null;if(!improved.craftable())return;automaticRecipes.clear();automaticResourceRecipes.clear();improved.recipes().forEach((output,recipe)->{automaticResourceRecipes.put(output,recipe);Identifier item=itemOutputForToken(output);if(item!=null)automaticRecipes.put(item,recipe);});automaticIngredients.clear();improved.ingredients().forEach((key,value)->automaticIngredients.put(new IngredientSlotKey(key.recipe(),key.slot()),value));uploadProposal(nonce,target,count,stockRevision,recipeEpoch,improved);rebuildTree(false);com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info("{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,nonce,improved.recipes().size(),improved.ingredients().size(),com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));});});
     }
 
     private Map<String, Identifier> visibleTreeRecipes()

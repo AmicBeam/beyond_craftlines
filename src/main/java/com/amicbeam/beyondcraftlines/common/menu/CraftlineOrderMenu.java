@@ -99,8 +99,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        // Queries below resolve directly from the recipe manager. The former client RecipeIndex only supplied
-        // progress while retaining duplicate output maps, so the order screen must not wait for that extra pass.
         this.recipeIndex = new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null
                 : findDisplayRecipe(level, initialRecipe);
@@ -123,36 +121,37 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     public String initialDashboardStockMode() { return initialDashboardStockMode; }
     public String initialError() { return initialError; }
     public List<RecipeHolder<?>> recipes()
-    { return available(displayRecipes(player.level())); }
+    { return player.level().isClientSide() ? clientRecipes(com.amicbeam.beyondcraftlines.common.crafting
+            .ClientRecipeLookupIndex.recipeIds()) : available(displayRecipes(player.level())); }
     public RecipeHolder<?> recipeForOutput(ResourceLocation output)
     { return recipesForOutput(output).stream().findFirst().orElse(null); }
     public List<RecipeHolder<?>> recipesForOutput(ResourceLocation output)
     {
-        List<RecipeHolder<?>> virtual = recipes().stream()
-                .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
-                        .stream().anyMatch(value -> value.key() instanceof ItemStackKey item
-                                && net.minecraft.core.registries.BuiltInRegistries.ITEM
-                                .getKey(item.getSource()).equals(output))).toList();
-        return virtual;
+        if (player.level().isClientSide()) return clientRecipes(com.amicbeam.beyondcraftlines.common.crafting
+                .ClientRecipeLookupIndex.recipeIdsForItem(output.toString()));
+        return recipes().stream().filter(holder -> RecipeOutputResolver.outputs(
+                holder.value(), player.level().registryAccess()).stream().anyMatch(value ->
+                value.key() instanceof ItemStackKey item && net.minecraft.core.registries.BuiltInRegistries.ITEM
+                        .getKey(item.getSource()).equals(output))).toList();
     }
     public List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
     {
-        List<RecipeHolder<?>> virtual = recipes().stream()
-                .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
-                        .stream().anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting
-                                .StackKeyMatch.exact(output, value.key()))).toList();
-        return virtual;
+        if (player.level().isClientSide()) return clientRecipes(com.amicbeam.beyondcraftlines.common.crafting
+                .ClientRecipeLookupIndex.recipeIdsForOutput(output));
+        return recipes().stream().filter(holder -> RecipeOutputResolver.outputs(
+                holder.value(), player.level().registryAccess()).stream().anyMatch(value ->
+                com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(output, value.key()))).toList();
     }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public boolean canPlanTarget(IStackKey<?> output)
     {
-        return recipeForResourceOutput(output) != null || initialRecipePinned && initialRecipe != null
+        return initialRecipePinned && initialRecipe != null
                 && initialRecipeHolder != null && RecipeOutputResolver.outputs(
                         initialRecipeHolder.value(), player.level().registryAccess()).stream()
                 .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
                         .outputMatches(initialRecipeHolder.value(), initialRecipeHolder.id().toString(),
-                                output, value.key()));
+                                output, value.key())) || recipeForResourceOutput(output) != null;
     }
     public RecipeHolder<?> recipe(ResourceLocation id)
     {
@@ -161,6 +160,12 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
     public ResourceLocation itemOutputForToken(String token)
     {
+        if (player.level().isClientSide())
+        {
+            String item = com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex
+                    .itemForOutputToken(token);
+            return item == null ? null : ResourceLocation.tryParse(item);
+        }
         return recipes().stream()
                 .flatMap(holder -> RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess()).stream())
                 .filter(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
@@ -172,6 +177,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     }
     public boolean recipeProduces(ResourceLocation recipe, String token)
     {
+        if (player.level().isClientSide()) return com.amicbeam.beyondcraftlines.common.crafting
+                .ClientRecipeLookupIndex.recipeProduces(recipe.toString(), token);
         RecipeHolder<?> holder = findDisplayRecipe(player.level(), recipe);
         return holder != null && RecipeOutputResolver.outputs(holder.value(), player.level().registryAccess())
                 .stream().anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
@@ -180,6 +187,18 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
 
     private List<RecipeHolder<?>> available(List<RecipeHolder<?>> holders)
     { return holders.stream().filter(this::available).toList(); }
+
+    private List<RecipeHolder<?>> clientRecipes(List<String> ids)
+    {
+        List<RecipeHolder<?>> result = new ArrayList<>();
+        for (String value : ids)
+        {
+            ResourceLocation id = ResourceLocation.tryParse(value);
+            RecipeHolder<?> holder = id == null ? null : findDisplayRecipe(player.level(), id);
+            if (holder != null && available(holder)) result.add(holder);
+        }
+        return List.copyOf(result);
+    }
 
     private static List<RecipeHolder<?>> mergeRecipes(List<RecipeHolder<?>> first, List<RecipeHolder<?>> second)
     {
@@ -193,11 +212,15 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private boolean available(RecipeHolder<?> holder)
     { return RecipeIndexVisibility.includes(RecipePlanningService.family(holder), availableFamilies); }
 
-    public void advanceRecipeIndex(int recipeBudget, long timeBudgetNanos)
-    { recipeIndex.advance(recipeBudget, timeBudgetNanos); }
-    public boolean recipeIndexComplete() { return recipeIndex.complete(); }
-    public int indexedRecipeCandidates() { return recipeIndex.completedCandidates(); }
-    public int totalRecipeCandidates() { return recipeIndex.totalCandidates(); }
+    public void advanceRecipeIndex(int recipeBudget, long timeBudgetNanos) {}
+    public boolean recipeIndexComplete()
+    { return !player.level().isClientSide() || com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.ready(); }
+    public int indexedRecipeCandidates()
+    { return player.level().isClientSide() ? com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
+            .handle().completedRecipes() : recipeIndex.completedCandidates(); }
+    public int totalRecipeCandidates()
+    { return player.level().isClientSide() ? com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
+            .handle().totalRecipes() : recipeIndex.totalCandidates(); }
     public boolean serverRecipeIndexComplete()
     { return true; }
     public int indexedServerRecipeCandidates() { return serverIndexProgress.get(0); }
@@ -358,8 +381,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
             var outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
             if (outputs.isEmpty()) return;
             String family = RecipePlanningService.family(holder);
-            long identity = identityHash(holder, outputs);
-            epochAccumulator.add(family, identity);
+            if (level instanceof ServerLevel)
+                epochAccumulator.add(family, identityHash(holder, outputs));
             recipes.add(holder);
             recipesById.putIfAbsent(holder.id(), holder);
             for (var output : outputs)

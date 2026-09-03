@@ -81,7 +81,7 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         if (header.count() < 1 || header.pageCount() < 1 || header.pageCount() > MAX_PAGES
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
             throw new IllegalArgumentException("invalid proposal page");
-        if (!menu.targetToken().equals(payload.itemId()) || !menu.canPlanTarget(target))
+        if (!menu.targetToken().equals(payload.itemId()))
             throw new IllegalArgumentException("target is unavailable");
         UUID playerId = player.getUUID();
         long now = player.level().getGameTime();

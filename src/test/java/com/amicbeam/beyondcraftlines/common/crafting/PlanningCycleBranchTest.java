@@ -34,10 +34,11 @@ final class PlanningCycleBranchTest
     }
 
     @Test
-    void expiredOptimizationBudgetStillSearchesUntilOneNonCyclicCandidateExists()
+    void expiredOptimizationBudgetStopsCandidateSearch()
     {
-        AtomicLong now = new AtomicLong(5);
+        AtomicLong now = new AtomicLong();
         ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, now::get);
+        now.set(5);
         List<String> evaluated = new ArrayList<>();
         boolean foundNonCyclic = false;
         for (String candidate : List.of("cyclic_recipe", "cyclic_tag_member", "nether_quartz"))
@@ -50,6 +51,6 @@ final class PlanningCycleBranchTest
             evaluated.add(candidate);
             foundNonCyclic |= !result.cyclic();
         }
-        assertEquals(List.of("cyclic_recipe", "cyclic_tag_member", "nether_quartz"), evaluated);
+        assertEquals(List.of(), evaluated);
     }
 }

@@ -24,6 +24,10 @@ public final class CraftlinesConfig {
     public static final ForgeConfigSpec.IntValue RECIPE_PREVIEW_DELAY_TICKS = CLIENT_BUILDER
             .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
+    public static final ForgeConfigSpec.BooleanValue ENABLE_OPTIMAL_RECIPE_SEARCH = CLIENT_BUILDER
+            .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
+            .translation("config.beyond_craftlines.enable_optimal_recipe_search")
+            .define("enableOptimalRecipeSearch", true);
     public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .define("collapseDuplicateTreeResources", true);
     public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER

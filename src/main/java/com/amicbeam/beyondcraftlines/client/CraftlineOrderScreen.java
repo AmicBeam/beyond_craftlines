@@ -2132,9 +2132,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             ClientRecipePlanner.Proposal proposal = null;
             RuntimeException failure = null;
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
+            boolean optimalSearch = CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get();
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
                     stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
+                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch); }
             catch (RuntimeException exception) { failure = exception; }
             boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
@@ -2145,7 +2146,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 {
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos, optimalSearch);
                     searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
@@ -2163,7 +2164,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 {
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos, optimalSearch);
                     searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
@@ -2174,7 +2175,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 catch (RuntimeException ignored) {}
             }
             if (!refreshSnapshotIfMissing && proposal != null && !proposal.craftable()
-                    && searchExhausted)
+                    && searchExhausted && (fallbackSearchNanos = searchDeadline - System.nanoTime()) > 0)
             {
                 try
                 {
@@ -2183,7 +2184,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     // of replacing it with the incomplete branch that happened to hit the budget.
                     proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
                             fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes,
-                            ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS);
+                            fallbackSearchNanos, false);
                     failure = null;
                 }
                 catch (RuntimeException exception) { failure = exception; }

@@ -25,11 +25,19 @@ class PlanningBranchesTest
     }
 
     @Test
-    void expiredSearchKeepsRecoveringUntilACraftableCandidateExists()
+    void expiredSearchStopsBeforeAnotherCandidate()
     {
         AtomicLong now = new AtomicLong();
         ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, now::get);
         now.set(5);
+        assertFalse(PlanningBranches.shouldTryCandidate(false, budget));
+        assertFalse(PlanningBranches.shouldTryCandidate(true, budget));
+    }
+
+    @Test
+    void lightweightSearchOnlyTriesTheFirstCandidate()
+    {
+        ClientPlanningBudget budget = new ClientPlanningBudget(10, 5, () -> 0, false);
         assertTrue(PlanningBranches.shouldTryCandidate(false, budget));
         assertFalse(PlanningBranches.shouldTryCandidate(true, budget));
     }

@@ -66,7 +66,7 @@ public final class ClientRecipePlanner
                                 int maxDepth, int maxNodes)
     {
         return plan(catalog, suppliedStock, target, requested, manualRecipes, manualIngredients,
-                maxDepth, maxNodes, SEARCH_TIME_LIMIT_NANOS);
+                maxDepth, maxNodes, SEARCH_TIME_LIMIT_NANOS, true);
     }
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
@@ -74,6 +74,17 @@ public final class ClientRecipePlanner
                                 Map<String, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, String> manualIngredients,
                                 int maxDepth, int maxNodes, long maxSearchNanos)
+    {
+        return plan(catalog, suppliedStock, target, requested, manualRecipes, manualIngredients,
+                maxDepth, maxNodes, maxSearchNanos, true);
+    }
+
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
+                                IStackKey<?> target, long requested,
+                                Map<String, ResourceLocation> manualRecipes,
+                                Map<IngredientKey, String> manualIngredients,
+                                int maxDepth, int maxNodes, long maxSearchNanos,
+                                boolean optimalSearch)
     {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
@@ -84,7 +95,8 @@ public final class ClientRecipePlanner
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
-        ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime);
+        ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime,
+                optimalSearch);
         resolve(target, requested,
                 byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
                 0, maxDepth, budget);
@@ -101,7 +113,11 @@ public final class ClientRecipePlanner
                                 int depth, int maxDepth, ClientPlanningBudget budget)
     {
         budget.checkCancellation();
-        budget.visit(budgetIdentity(resource));
+        if (!budget.visit(budgetIdentity(resource)))
+        {
+            state.missing.merge(resource, needed, SaturatingLongMath::add);
+            return;
+        }
         long used = depth == 0 ? 0 : consume(state, resource, needed);
         long remainder = needed - used;
         if (remainder == 0) return;
@@ -152,10 +168,11 @@ public final class ClientRecipePlanner
             State best = null;
             Recipe bestRecipe = null;
             State cyclicFallback = null;
-            boolean foundCraftable = false;
+            boolean triedCandidate = false;
             for (Recipe recipe : candidates)
             {
-                if (!PlanningBranches.shouldTryCandidate(foundCraftable, budget)) break;
+                if (!PlanningBranches.shouldTryCandidate(triedCandidate, budget)) break;
+                triedCandidate = true;
                 State branch = state.copy();
                 ResourceLocation previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
@@ -171,7 +188,6 @@ public final class ClientRecipePlanner
                     if (cyclicFallback == null) cyclicFallback = branch;
                     continue;
                 }
-                foundCraftable |= missingAmount(branch.missing) == 0;
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -227,9 +243,11 @@ public final class ClientRecipePlanner
 
         State best = null;
         String bestKey = null;
+        boolean triedCandidate = false;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if (!PlanningBranches.shouldTryCandidate(best != null && missingAmount(best.missing) == 0, budget)) break;
+            if (!PlanningBranches.shouldTryCandidate(triedCandidate, budget)) break;
+            triedCandidate = true;
             State branch = state.copy();
             try
             {

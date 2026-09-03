@@ -10,36 +10,48 @@ final class ClientPlanningBudget
     private final int max;
     private final long deadline;
     private final LongSupplier nanoTime;
+    private final boolean optimalSearch;
     private final Set<String> visited = new HashSet<>();
     private int used;
     private boolean exhausted;
 
     ClientPlanningBudget(int max)
-    { this(max, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, System::nanoTime); }
+    { this(max, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, System::nanoTime, true); }
 
     ClientPlanningBudget(int max, long maxNanos, LongSupplier nanoTime)
+    { this(max, maxNanos, nanoTime, true); }
+
+    ClientPlanningBudget(int max, long maxNanos, LongSupplier nanoTime, boolean optimalSearch)
     {
         if (max < 1 || maxNanos < 1 || nanoTime == null)
             throw new IllegalArgumentException("client planning budget must be positive");
         this.max = max;
         this.nanoTime = nanoTime;
+        this.optimalSearch = optimalSearch;
         this.deadline = saturatingAdd(nanoTime.getAsLong(), maxNanos);
     }
 
-    void visit(String identity)
+    boolean visit(String identity)
     {
         checkCancellation();
-        if (visited.contains(identity)) return;
-        if (nanoTime.getAsLong() - deadline >= 0 || used >= max)
+        if (nanoTime.getAsLong() - deadline >= 0)
         {
             exhausted = true;
-            return;
+            return false;
         }
+        if (visited.contains(identity)) return true;
+        if (used >= max) { exhausted = true; return false; }
         visited.add(identity);
         used++;
+        return true;
     }
 
     boolean canOptimize()
+    {
+        return optimalSearch && canSearch();
+    }
+
+    boolean canSearch()
     {
         checkCancellation();
         if (nanoTime.getAsLong() - deadline >= 0) exhausted = true;
@@ -50,7 +62,7 @@ final class ClientPlanningBudget
 
     boolean exhausted()
     {
-        canOptimize();
+        canSearch();
         return exhausted;
     }
 

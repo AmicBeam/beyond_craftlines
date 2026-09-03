@@ -7,6 +7,7 @@
   "config.beyond_craftlines.show_provisioner_target_material": "显示供给器目标物品材质",
   "config.beyond_craftlines.amount_preview_delay_ticks": "数量变更预览延迟（tick）",
   "config.beyond_craftlines.recipe_preview_delay_ticks": "配方选择预览延迟（tick）",
+  "config.beyond_craftlines.enable_optimal_recipe_search": "开启最优配方搜索",
   "config.beyond_craftlines.collapse_duplicate_tree_resources": "重复资源只显示最靠近树根的节点",
   "config.beyond_craftlines.show_jei_order_button_everywhere": "在所有界面的 JEI 中显示下单按钮",
   "config.beyond_craftlines.order_status_refresh_interval_ticks": "订单状态刷新间隔（tick）",

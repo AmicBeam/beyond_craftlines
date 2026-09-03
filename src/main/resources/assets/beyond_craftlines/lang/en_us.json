@@ -7,6 +7,7 @@
   "config.beyond_craftlines.show_provisioner_target_material": "Show provisioner target item material",
   "config.beyond_craftlines.amount_preview_delay_ticks": "Amount preview delay (ticks)",
   "config.beyond_craftlines.recipe_preview_delay_ticks": "Recipe choice preview delay (ticks)",
+  "config.beyond_craftlines.enable_optimal_recipe_search": "Enable optimal recipe search",
   "config.beyond_craftlines.collapse_duplicate_tree_resources": "Show only the duplicate resource node closest to the root",
   "config.beyond_craftlines.show_jei_order_button_everywhere": "Show JEI order button on every screen",
   "config.beyond_craftlines.order_status_refresh_interval_ticks": "Order status refresh interval (ticks)",

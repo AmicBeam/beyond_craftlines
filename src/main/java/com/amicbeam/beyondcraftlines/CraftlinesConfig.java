@@ -42,6 +42,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.recipe_preview_delay_ticks")
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
 
+    public static final ModConfigSpec.BooleanValue ENABLE_OPTIMAL_RECIPE_SEARCH = CLIENT_BUILDER
+            .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
+            .translation("config.beyond_craftlines.enable_optimal_recipe_search")
+            .define("enableOptimalRecipeSearch", true);
+
     public static final ModConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .comment("Show only the occurrence closest to the root for an identical component-aware resource in the recipe tree; later occurrences become clickable jump references.")
             .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")

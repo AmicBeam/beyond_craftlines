@@ -95,6 +95,9 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('storage.getNet()', 'com.amicbeam.beyondcraftlines.compat.BeyondDimensionsCompat.networkFor(player, storage)')
             .replace('DimensionsNet.getPrimaryNetFromPlayer(player)', 'DimensionsNet.getNetFromPlayer(player)')
             .replace('net.minecraftforge.fml.common.EventBusSubscriber', 'net.minecraftforge.fml.common.Mod.EventBusSubscriber')
+            .replace('@Inject(method = "render",', '@Inject(method = "m_88315_",')
+            .replace('@Inject(method = "mouseClicked", at = @At("HEAD")',
+                    '@Inject(method = "m_6375_", at = @At("HEAD")')
             .replace('net.minecraftforge.client.event.RegisterMenuScreensEvent', 'net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent')
             .replace('RegisterMenuScreensEvent event', 'FMLClientSetupEvent event')
             .replace('event.register(CraftlinesMenus.', 'net.minecraft.client.gui.screens.MenuScreens.register(CraftlinesMenus.')

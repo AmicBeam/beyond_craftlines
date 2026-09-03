@@ -1899,6 +1899,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void loadClientPreferences()
     {
+        // Reconcile an EMI user-added default before reading the Craftlines snapshot. This also
+        // covers defaults loaded before the BoM mixin observed a UI mutation in this session.
+        com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                .preferredRecipe(menu.initialTarget());
         ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
         outputDestination = snapshot.outputDestination();
         if (!(menu.initialTarget() instanceof ItemStackKey))

@@ -4,7 +4,6 @@ import com.amicbeam.beyondcraftlines.client.ClientPlannerPreferences;
 import com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch;
-import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import dev.emi.emi.api.EmiApi;
@@ -12,8 +11,6 @@ import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.bom.BoM;
-import dev.emi.emi.screen.WidgetGroup;
-import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -22,7 +19,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -30,7 +26,6 @@ import java.util.Set;
 /** Direct EMI access isolated behind {@link EmiOptionalIntegration}. */
 public final class EmiClientIntegration
 {
-    private static final EmiStack ICON = EmiStack.of(new ItemStack(CraftlinesItems.NETWORK_LINKER.get()));
     private static volatile Object metadataManager;
     private static volatile Map<net.minecraft.world.item.Item, Set<ResourceLocation>> typesByWorkstation
             = Map.of();
@@ -114,6 +109,8 @@ public final class EmiClientIntegration
     {
         EmiStack output = itemStack(target);
         if (output == null) return null;
+        EmiRecipe added = BoM.addedRecipes.get(output);
+        if (added != null && added.getId() != null) syncPreferenceFromEmi(output, null);
         EmiRecipe recipe = BoM.getRecipe(output);
         return recipe == null ? null : EmiRecipeId.normalize(recipe.getId());
     }
@@ -190,24 +187,14 @@ public final class EmiClientIntegration
         catch (RuntimeException | LinkageError ignored) { return false; }
     }
 
-    /** Adds a normal EMI widget; RecipeDisplayMixin only supplies the production-visible hook. */
-    public static void addRecipeOrderButton(EmiRecipe recipe, WidgetGroup widgets, int x)
+    public static boolean orderRecipe(EmiRecipe recipe)
     {
         RecipeTarget target;
         try { target = recipeTarget(recipe); }
-        catch (RuntimeException | LinkageError ignored) { return; }
-        if (target == null || widgets == null) return;
-        int y = Math.max(0, widgets.getHeight() - 18);
-        widgets.addButton(x, y, 18, 18, 0, 0,
-                CraftlinesJeiPlugin::canOrderFromRecipeViewer,
-                (mouseX, mouseY, button) -> {
-                    if (button == 0 && CraftlinesJeiPlugin.canOrderFromRecipeViewer())
-                        CraftlinesJeiPlugin.orderPreferredTarget(target.output(), target.recipe());
-                });
-        widgets.addDrawable(x + 1, y + 1, 16, 16,
-                (graphics, mouseX, mouseY, delta) -> ICON.render(graphics, 0, 0, delta));
-        widgets.addTooltip(List.of(ClientTooltipComponent.create(Component.translatable(
-                "gui.beyond_craftlines.order_from_jei").getVisualOrderText())), x, y, 18, 18);
+        catch (RuntimeException | LinkageError ignored) { return false; }
+        if (target == null) return false;
+        CraftlinesJeiPlugin.orderPreferredTarget(target.output(), target.recipe());
+        return true;
     }
 
     private static @Nullable EmiStack itemStack(IStackKey<?> target)

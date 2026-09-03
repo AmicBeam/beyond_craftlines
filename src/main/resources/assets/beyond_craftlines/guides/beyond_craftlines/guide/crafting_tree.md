@@ -13,8 +13,7 @@ The crafting tree is the planning and confirmation screen for a Craftlines order
 ## Opening the tree
 
 - From a **JEI or EMI recipe page**, click the Craftlines entry button. Automatic planning keeps the displayed recipe as the root. Selecting or forgetting a recipe preference in Craftlines updates EMI BoM, and EMI default-recipe changes are mirrored back into Craftlines.
-- Middle-click an ingredient in a **JEI/EMI recipe, ingredient list, or bookmark list**. Craftlines opens an order for that resource and applies the same saved-recipe preference fallback as the network item-slot entry.
-- From a **Beyond Dimensions network item slot**, middle-click an item. Craftlines first tries the saved preferred recipe for that result, then falls back to an available recipe when the preference is missing or invalid.
+- Middle-click an ingredient in a **JEI/EMI recipe, ingredient list, or bookmark list**, or an item in a **Beyond Dimensions network item slot**. Craftlines opens the tree with that resource as an unexpanded target and no root recipe selected. Right-click the target node to choose its recipe; this avoids binding the entry action to an arbitrary first recipe or to a recipe type unavailable on the current network.
 
 The first loading stage incrementally indexes recipe outputs and publishes the complete tree only when that index is ready. The second stage keeps the tree visible while preparing the immutable planning catalog. Both caches are reused until recipes are reloaded.
 
@@ -34,7 +33,7 @@ Middle-click a node to collapse or expand its visible descendants. Display foldi
 
 ## Choosing recipes and ingredients
 
-When a recipe has alternatives, right-click its product node to open the recipe candidate page.
+Right-click an unresolved target node to choose its recipe. When an expanded product has alternatives, right-click it to open the recipe candidate page.
 
 For a tag or OR-ingredient, click the candidate marker at the top-left of its item to open the complete candidate grid. Choose the exact item Craftlines should reserve and use. The grid supports scrolling and paging when there are many choices.
 

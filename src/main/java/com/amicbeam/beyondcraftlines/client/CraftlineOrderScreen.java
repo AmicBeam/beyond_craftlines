@@ -136,8 +136,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean proposalReady;
     private com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome planningOutcome =
             com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.SEARCHING;
-    private boolean targetRecipeSearchPending;
-    private int targetRecipeSearchDelay;
     private boolean submitWhenReady;
     private boolean planningSnapshotValid;
     private long planningSnapshotCapturedAt;
@@ -259,7 +257,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         super.containerTick();
         if (terminalMenuError)
         {
-            targetRecipeSearchPending = false;
             waitingForServerRecipeIndex = false;
             loadingStatus = "";
             if (orderButton != null) orderButton.active = false;
@@ -272,11 +269,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         if (!preferencesLoaded && menu.recipeIndexComplete()) finishRecipeIndex();
-        if (targetRecipeSearchPending)
-        {
-            if (--targetRecipeSearchDelay <= 0) resolveTargetRecipeInsideScreen();
-            return;
-        }
         if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null)
             beginPlanningCatalogCapture();
         long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
@@ -329,7 +321,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         preferencesLoaded = true;
         loadClientPreferences();
         selectInitialTarget();
-        if (targetRecipeSearchPending) return;
         beginPlanningCatalogCapture();
     }
 
@@ -353,24 +344,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void selectInitialTarget()
     {
         if (minecraft.level == null) return;
-        if (menu.initialRecipe() == null && !hasSavedRootPreference(menu.initialTarget()))
-        {
-            ResourceLocation emiPreferred = com.amicbeam.beyondcraftlines.client.integration.emi
-                    .EmiOptionalIntegration.preferredRecipe(menu.initialTarget());
-            var emiPayload = emiPreferred == null ? null
-                    : com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                            .resolveOrderTarget(menu.initialTarget(), emiPreferred);
-            if (emiPayload != null)
-            {
-                loadingStatus = Component.translatable(
-                        "gui.beyond_craftlines.middle_click_recipe_search").getString();
-                com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                        .openResolvedOrder(emiPayload);
-                return;
-            }
-        }
-        selected = menu.initialRecipe() == null ? menu.recipeForResourceOutput(menu.initialTarget())
-                : menu.initialRecipeHolder() != null && menu.recipeProduces(
+        selected = menu.initialRecipe() != null && menu.initialRecipeHolder() != null && menu.recipeProduces(
                         menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
         if (selected != null)
         {
@@ -379,29 +353,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             else if (!menu.initialRecipePinned())
                 selected = selectedResourceRecipe(menu.initialTarget(), selected);
         }
-        else if (menu.initialRecipe() == null)
-        {
-            if (menu.initialError().isBlank())
-            {
-                targetRecipeSearchPending = true;
-                targetRecipeSearchDelay = 1;
-                loadingStatus = Component.translatable(
-                        "gui.beyond_craftlines.middle_click_recipe_search").getString();
-                previewError = "";
-            }
-            else
-            {
-                targetRecipeSearchPending = false;
-                loadingStatus = "";
-                previewError = localizedPlanningError(menu.initialError());
-            }
-        }
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client screen initial target={} initialRecipe={} pinned={} selected={} searchPending={}",
+                "{} client screen initial target={} initialRecipe={} pinned={} selected={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
-                menu.initialRecipe(), menu.initialRecipePinned(), selected == null ? "null" : selected.id(),
-                targetRecipeSearchPending);
+                menu.initialRecipe(), menu.initialRecipePinned(), selected == null ? "null" : selected.id());
         rebuildTree();
         requestNetworkAmount();
     }
@@ -409,7 +365,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void enterTerminalMenuError(String error)
     {
         terminalMenuError = true;
-        targetRecipeSearchPending = false;
         waitingForServerRecipeIndex = false;
         previewDirty = false;
         submitWhenReady = false;
@@ -422,56 +377,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         clearDisplayMetrics();
         if (orderButton != null) orderButton.active = false;
         rebuildTree(false);
-    }
-
-    private boolean hasSavedRootPreference(IStackKey<?> target)
-    {
-        if (defaultResourceRecipes.containsKey(
-                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(target))
-                || defaultResourceRecipes.containsKey(
-                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(target))) return true;
-        return target instanceof ItemStackKey item && defaultRecipes.containsKey(
-                BuiltInRegistries.ITEM.getKey(item.getSource()));
-    }
-
-    private void resolveTargetRecipeInsideScreen()
-    {
-        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client page search start target={} network={}",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
-                menu.networkId());
-        targetRecipeSearchPending = false;
-        ResourceLocation emiPreferred = com.amicbeam.beyondcraftlines.client.integration.emi
-                .EmiOptionalIntegration.preferredRecipe(menu.initialTarget());
-        var payload = emiPreferred == null
-                ? com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                        .resolveOrderTarget(menu.initialTarget())
-                : com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                        .resolveOrderTarget(menu.initialTarget(), emiPreferred);
-        if (payload == null && emiPreferred != null)
-            payload = com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                    .resolveOrderTarget(menu.initialTarget());
-        if (payload == null)
-        {
-            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
-                    "{} client page search failed target={}",
-                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
-            loadingStatus = "";
-            previewError = localizedPlanningMessage(
-                    "error.beyond_craftlines.middle_click_recipe_not_found");
-            rebuildTree(false);
-            return;
-        }
-        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client page search resolved recipe={} type={} virtualInputs={}",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                payload.recipeId(), payload.jeiRecipeType(), payload.virtualInputs().size());
-        loadingStatus = Component.translatable(
-                "gui.beyond_craftlines.middle_click_recipe_search").getString();
-        com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                .openResolvedOrder(payload);
     }
 
     private String indexingRecipesText()
@@ -508,7 +413,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void requestNetworkAmount()
     {
-        if (selected == null || minecraft.level == null) return;
+        if (minecraft.level == null) return;
         String target = menu.targetToken();
         if (!target.equals(networkAmountTarget)) networkAmount = -1;
         networkAmountTarget = target;
@@ -636,12 +541,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int x = rightPanelLeft() + 10;
         int width = rightPanelWidth() - 20;
-        if (selected == null)
-        {
-            graphics.drawCenteredString(font, Component.translatable("gui.beyond_craftlines.no_selection"),
-                    x + width / 2, topPos + 48, 0x777777);
-            return;
-        }
         IStackKey<?> target = menu.initialTarget();
         target.getRender().render(graphics, target, x, topPos + 18);
         String name = font.plainSubstrByWidth(target.getRender().getDisplayName(target).getString(), width - 22);
@@ -957,14 +856,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void rebuildTree(boolean requestPreview)
     {
-        if (selected == null || minecraft.level == null)
+        if (minecraft.level == null)
         {
             treeRoot = null;
             treeNodes = List.of();
             return;
         }
         IStackKey<?> rootKey = menu.initialTarget();
-        RecipeHolder<?> rootRecipe = selectedResourceRecipe(rootKey, selected);
+        RecipeHolder<?> rootRecipe = selected == null ? null : selectedResourceRecipe(rootKey, selected);
         ItemStack rootStack = rootKey instanceof ItemStackKey itemKey
                 ? itemKey.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY;
         ResourceLocation rootItem = rootKey instanceof ItemStackKey itemKey
@@ -984,7 +883,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             treeOffsetY = 14;
         }
         closeIngredientPicker();
-        if (requestPreview) markPreviewDirty();
+        if (requestPreview && selected != null) markPreviewDirty();
     }
 
     private int nodeX(GraphNode node) { return treeLeft() + (int) treeOffsetX + (int) (node.row * 46 * treeZoom); }
@@ -1494,7 +1393,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         if (node.stockSatisfied) return false;
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(node.key);
-        if (candidates.size() < 2) return false;
+        if (candidates.isEmpty() || node.recipe != null && candidates.size() < 2) return false;
         ingredientPickerNode = null;
         ingredientPickerItems = List.of();
         recipePickerNode = node;
@@ -1542,6 +1441,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void applyRecipeChoice(GraphNode node, RecipeHolder<?> recipe)
     {
+        if (node.depth == 0) selected = recipe;
         String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key);
         resourceRecipeOverrides.put(token, recipe.id());
         if (node.itemId != null) recipeOverrides.put(node.itemId, recipe.id());

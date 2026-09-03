@@ -20,6 +20,8 @@ public final class EmiOptionalIntegration
     private static Method recipeTypesFor;
     private static Method recipeTypeTitle;
     private static Method recipeTypes;
+    private static Method setPreferredRecipe;
+    private static Method clearPreferredRecipe;
 
     private EmiOptionalIntegration() {}
 
@@ -41,6 +43,22 @@ public final class EmiOptionalIntegration
             return value instanceof ResourceLocation id ? id : null;
         }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return null; }
+    }
+
+    public static boolean setPreferredRecipe(IStackKey<?> target, ResourceLocation recipe)
+    {
+        initialize();
+        if (setPreferredRecipe == null || target == null || target.isEmpty() || recipe == null) return false;
+        try { return Boolean.TRUE.equals(setPreferredRecipe.invoke(null, target, recipe)); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
+    }
+
+    public static boolean clearPreferredRecipe(IStackKey<?> target, ResourceLocation recipe)
+    {
+        initialize();
+        if (clearPreferredRecipe == null || target == null || target.isEmpty() || recipe == null) return false;
+        try { return Boolean.TRUE.equals(clearPreferredRecipe.invoke(null, target, recipe)); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return false; }
     }
 
     @SuppressWarnings("unchecked")
@@ -97,6 +115,9 @@ public final class EmiOptionalIntegration
             recipeTypesFor = type.getMethod("recipeTypesFor", net.minecraft.world.item.ItemStack.class);
             recipeTypeTitle = type.getMethod("recipeTypeTitle", ResourceLocation.class);
             recipeTypes = type.getMethod("recipeTypes");
+            setPreferredRecipe = type.getMethod("setPreferredRecipe", IStackKey.class, ResourceLocation.class);
+            clearPreferredRecipe = type.getMethod(
+                    "clearPreferredRecipe", IStackKey.class, ResourceLocation.class);
         }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored)
         {
@@ -105,6 +126,8 @@ public final class EmiOptionalIntegration
             recipeTypesFor = null;
             recipeTypeTitle = null;
             recipeTypes = null;
+            setPreferredRecipe = null;
+            clearPreferredRecipe = null;
         }
     }
 }

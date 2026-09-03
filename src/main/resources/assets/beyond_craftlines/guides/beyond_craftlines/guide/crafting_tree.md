@@ -12,8 +12,8 @@ The crafting tree is the planning and confirmation screen for a Craftlines order
 
 ## Opening the tree
 
-- From a **JEI recipe page**, click the Craftlines entry button. Automatic planning keeps the exact recipe shown in JEI as the root recipe, while a manual root-node choice explicitly replaces it for the current plan.
-- Middle-click an ingredient in a **JEI recipe, ingredient list, or bookmark list**. Craftlines opens an order for that resource and applies the same saved-recipe preference fallback as the network item-slot entry.
+- From a **JEI or EMI recipe page**, click the Craftlines entry button. Automatic planning keeps the displayed recipe as the root. Selecting or forgetting a recipe preference in Craftlines updates EMI BoM, and EMI default-recipe changes are mirrored back into Craftlines.
+- Middle-click an ingredient in a **JEI/EMI recipe, ingredient list, or bookmark list**. Craftlines opens an order for that resource and applies the same saved-recipe preference fallback as the network item-slot entry.
 - From a **Beyond Dimensions network item slot**, middle-click an item. Craftlines first tries the saved preferred recipe for that result, then falls back to an available recipe when the preference is missing or invalid.
 
 The first loading stage incrementally indexes recipe outputs and publishes the complete tree only when that index is ready. The second stage keeps the tree visible while preparing the immutable planning catalog. Both caches are reused until recipes are reloaded.

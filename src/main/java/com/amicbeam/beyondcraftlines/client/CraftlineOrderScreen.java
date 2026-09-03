@@ -1552,6 +1552,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             defaultResourceRecipes.put(token, recipe.id());
             if (node.itemId != null) defaultRecipes.put(node.itemId, recipe.id());
+            com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .setPreferredRecipe(node.key, recipe.id());
         }
         showPreferenceSaveResult(saved);
         closeIngredientPicker();
@@ -1598,6 +1600,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .resolutionKey(recipePickerNode.key);
+            ResourceLocation forgottenRecipe = defaultResourceRecipes.get(token);
+            if (forgottenRecipe == null && recipePickerNode.itemId != null)
+                forgottenRecipe = defaultRecipes.get(recipePickerNode.itemId);
             saved = ClientPlannerPreferences.clearRecipe(token, recipePickerNode.itemId);
             if (saved)
             {
@@ -1608,6 +1613,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     defaultRecipes.remove(recipePickerNode.itemId);
                     recipeOverrides.remove(recipePickerNode.itemId);
                 }
+                com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                        .clearPreferredRecipe(recipePickerNode.key, forgottenRecipe);
             }
         }
         else if (ingredientPickerNode != null && ingredientPickerNode.parentRecipe != null)

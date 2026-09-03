@@ -20,6 +20,9 @@ final class EmiRecipeId
         return wrapped == null ? null : ResourceLocation.tryParse(wrapped);
     }
 
+    static boolean matches(@Nullable ResourceLocation emiId, @Nullable ResourceLocation recipeId)
+    { return java.util.Objects.equals(normalize(emiId), recipeId); }
+
     static @Nullable String unwrapPath(String path)
     {
         if (path == null || !path.startsWith("/")) return null;

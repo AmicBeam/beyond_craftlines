@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.amicbeam.beyondcraftlines.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "emi.BoMPreferenceMixin",
+    "emi.RecipeDisplayMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -10,6 +10,9 @@ logoFile="logo.png"
 authors="${mod_authors}"
 description='''${mod_description}'''
 
+[[mixins]]
+config="beyond_craftlines.mixins.json"
+
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"

@@ -188,7 +188,7 @@ legacyForge {
         minecraftVersion = project.parchment_minecraft_version
     }
     runs {
-        client { client() }
+        client { client(); programArgument '--mixin.config=beyond_craftlines.mixins.json' }
         server { server() }
     }
     mods { beyond_craftlines { sourceSet sourceSets.main } }
@@ -238,5 +238,8 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.compilerArgs.addAll(['-Xmaxerrs', '1000'])
 }
-tasks.withType(Jar).configureEach { includeEmptyDirs = false }
+tasks.withType(Jar).configureEach {
+    includeEmptyDirs = false
+    manifest { attributes 'MixinConfigs': 'beyond_craftlines.mixins.json' }
+}
 tasks.named('test', Test) { useJUnitPlatform() }

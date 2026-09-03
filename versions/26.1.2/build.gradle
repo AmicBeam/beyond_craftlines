@@ -12,11 +12,13 @@ sourceSets.main.resources.srcDir '../../src/main/resources'
 def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', Sync) {
     from '../../src/main/java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogCache.java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogWarmup.java'
     into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
     filteringCharset = 'UTF-8'
     filter { line -> line
             .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
             .replace('ResourceLocation', 'Identifier')
+            .replace('level.getRecipeManager()', 'level')
     }
 }
 sourceSets.main.java.srcDir preparePlanningCatalogCache

@@ -142,11 +142,6 @@ public final class CraftlinesClientEvents
             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
         }
 
-        @SubscribeEvent public static void advanceJeiRecipeIndex(ScreenEvent.Render.Post event)
-        {
-            com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
-        }
-
         @SubscribeEvent public static void render(RenderLevelStageEvent.AfterTranslucentParticles event)
         {
             ClientBindingVisuals.render(event);

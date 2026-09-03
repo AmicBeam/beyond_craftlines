@@ -25,16 +25,19 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 /** Versioned, bounded client cache for immutable planning catalogs. */
 final class ClientPlanningCatalogCache
 {
-    private static final int MAGIC = 0x42434C43;
-    private static final int VERSION = 1;
+    static final int MAGIC = 0x42434C43;
+    static final int VERSION = 1;
     private static final long MAX_FILE_BYTES = 512L * 1024L * 1024L;
     private static final long MAX_TOTAL_NBT_BYTES = 256L * 1024L * 1024L;
     private static final long MAX_TOTAL_STRING_BYTES = 256L * 1024L * 1024L;
@@ -43,45 +46,34 @@ final class ClientPlanningCatalogCache
     private static final int MAX_SLOTS = 128;
     private static final int MAX_CANDIDATES = 1_024;
     private static final int MAX_STRING_BYTES = 1_048_576;
-    private static final ExecutorService IO = Executors.newSingleThreadExecutor(runnable -> {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
+    private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
+            new ArrayBlockingQueue<>(2), runnable -> {
         Thread thread = new Thread(runnable, "beyond-craftlines-planning-cache");
         thread.setDaemon(true);
         return thread;
-    });
+    }, new ThreadPoolExecutor.AbortPolicy());
 
     private ClientPlanningCatalogCache() {}
 
-    static ClientRecipePlanner.Catalog load(Level level, List<String> holderIds)
+    static LoadJob loadAsync(List<String> holderIds, long generation)
+    { return loadAsync(path(), holderIds, generation); }
+
+    static LoadJob loadAsync(Path cachePath, List<String> holderIds, long generation)
     {
-        Path path = path();
-        try
-        {
-            if (!Files.isRegularFile(path) || Files.size(path) > MAX_FILE_BYTES) return null;
-            try (DataInputStream input = new DataInputStream(new BufferedInputStream(
-                    new GZIPInputStream(Files.newInputStream(path)))))
-            {
-                ReadBudget budget = new ReadBudget();
-                NbtAccounter nbtBudget = NbtAccounter.create(MAX_TOTAL_NBT_BYTES);
-                if (input.readInt() != MAGIC || input.readInt() != VERSION
-                        || !fingerprint(holderIds).equals(readString(input, budget))) return null;
-                int recipeCount = bounded(input.readInt(), MAX_RECIPES);
-                budget.addEntries(recipeCount);
-                List<ClientRecipePlanner.Recipe> recipes = new ArrayList<>(recipeCount);
-                for (int i = 0; i < recipeCount; i++) recipes.add(readRecipe(input, level, budget, nbtBudget));
-                return new ClientRecipePlanner.Catalog(recipes);
-            }
-        }
-        catch (IOException | RuntimeException | LinkageError exception)
-        {
-            return null;
-        }
+        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds));
+        job.start();
+        return job;
     }
 
     static void save(Level level, List<String> holderIds, ClientRecipePlanner.Catalog catalog)
     {
         if (catalog.recipes().size() > MAX_RECIPES) return;
         String fingerprint = fingerprint(holderIds);
-        IO.execute(() -> write(level, fingerprint, catalog));
+        try { IO.execute(() -> write(level, fingerprint, catalog)); }
+        catch (RejectedExecutionException exception)
+        { LOGGER.warn("{} client planning cache save skipped because the bounded I/O queue is full",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX); }
     }
 
     private static void write(Level level, String fingerprint, ClientRecipePlanner.Catalog catalog)
@@ -135,18 +127,18 @@ final class ClientPlanningCatalogCache
         }
     }
 
-    private static ClientRecipePlanner.Recipe readRecipe(DataInputStream input, Level level,
-                                                         ReadBudget budget, NbtAccounter nbtBudget) throws IOException
+    private static EncodedRecipe readEncodedRecipe(DataInputStream input, ReadBudget budget,
+                                                   NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation id = ResourceLocation.tryParse(readString(input, budget));
         String family = readString(input, budget);
-        IStackKey<?> output = readKey(input, level, budget, nbtBudget);
+        EncodedKey output = readEncodedKey(input, budget, nbtBudget);
         long outputCount = input.readLong();
         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch =
                 RecipeIoProfileRegistry.OutputMatchSemantics.valueOf(readString(input, budget));
         int slotCount = bounded(input.readInt(), MAX_SLOTS);
         budget.addEntries(slotCount);
-        List<ClientRecipePlanner.Slot> slots = new ArrayList<>(slotCount);
+        List<EncodedSlot> slots = new ArrayList<>(slotCount);
         for (int i = 0; i < slotCount; i++)
         {
             int slotIndex = input.readInt();
@@ -154,19 +146,19 @@ final class ClientPlanningCatalogCache
             VirtualInputUse use = new VirtualInputUse(kind, input.readInt());
             int candidateCount = bounded(input.readInt(), MAX_CANDIDATES);
             budget.addEntries(candidateCount);
-            List<ClientRecipePlanner.Candidate> candidates = new ArrayList<>(candidateCount);
+            List<EncodedCandidate> candidates = new ArrayList<>(candidateCount);
             for (int candidate = 0; candidate < candidateCount; candidate++)
             {
-                IStackKey<?> key = readKey(input, level, budget, nbtBudget);
+                EncodedKey key = readEncodedKey(input, budget, nbtBudget);
                 long count = input.readLong();
                 String selectedItem = readString(input, budget);
                 ResourceLocation item = selectedItem.isEmpty() ? null : ResourceLocation.tryParse(selectedItem);
-                candidates.add(new ClientRecipePlanner.Candidate(key, count, item, readString(input, budget)));
+                candidates.add(new EncodedCandidate(key, count, item, readString(input, budget)));
             }
-            slots.add(new ClientRecipePlanner.Slot(slotIndex, candidates, use));
+            slots.add(new EncodedSlot(slotIndex, List.copyOf(candidates), use));
         }
-        if (id == null || output == null || output.isEmpty()) throw new IOException("invalid cached recipe");
-        return new ClientRecipePlanner.Recipe(id, family, output, outputCount, outputMatch, slots);
+        if (id == null) throw new IOException("invalid cached recipe");
+        return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots));
     }
 
     private static void writeKey(DataOutputStream output, Level level, IStackKey<?> key) throws IOException
@@ -175,13 +167,13 @@ final class ClientPlanningCatalogCache
         NbtIo.write(key.serializeNBT(level.registryAccess()), output);
     }
 
-    private static IStackKey<?> readKey(DataInputStream input, Level level,
-                                        ReadBudget budget, NbtAccounter nbtBudget) throws IOException
+    private static EncodedKey readEncodedKey(DataInputStream input, ReadBudget budget,
+                                             NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation type = ResourceLocation.tryParse(readString(input, budget));
         CompoundTag encoded = NbtIo.read(input, nbtBudget);
         if (type == null || encoded == null) throw new IOException("invalid cached stack key");
-        return StackKeyRegistry.getType(type).deserializeNBT(encoded, level.registryAccess());
+        return new EncodedKey(type, encoded);
     }
 
     private static int bounded(int value, int maximum) throws IOException
@@ -232,6 +224,185 @@ final class ClientPlanningCatalogCache
         catch (java.nio.file.AtomicMoveNotSupportedException ignored)
         { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
     }
+
+    static final class LoadJob
+    {
+        private final long generation;
+        private final Path cachePath;
+        private final List<String> holderIds;
+        private final ArrayBlockingQueue<EncodedRecipe> queue = new ArrayBlockingQueue<>(2);
+        private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
+        private volatile State state = State.QUEUED;
+        private volatile int totalRecipes;
+        private volatile Future<?> future;
+        private volatile boolean cancelled;
+        private volatile long ioNanos;
+        private volatile long headerNanos;
+        private volatile long parseNanos;
+        private long decodeNanos;
+        private DecodeCursor decoder;
+        private ClientRecipePlanner.Catalog catalog;
+
+        private LoadJob(Path cachePath, long generation, List<String> holderIds)
+        { this.cachePath = cachePath; this.generation = generation; this.holderIds = holderIds; }
+
+        private void start()
+        {
+            try { future = IO.submit(this::read); }
+            catch (RejectedExecutionException exception) { state = State.MISS; }
+        }
+
+        private void read()
+        {
+            long started = System.nanoTime();
+            try
+            {
+                if (!Files.isRegularFile(cachePath) || Files.size(cachePath) > MAX_FILE_BYTES)
+                { state = State.MISS; return; }
+                try (DataInputStream input = new DataInputStream(new BufferedInputStream(
+                        new GZIPInputStream(Files.newInputStream(cachePath)))))
+                {
+                    ReadBudget budget = new ReadBudget();
+                    NbtAccounter nbtBudget = NbtAccounter.create(MAX_TOTAL_NBT_BYTES);
+                    if (input.readInt() != MAGIC || input.readInt() != VERSION
+                            || !fingerprint(holderIds).equals(readString(input, budget)))
+                    { state = State.MISS; return; }
+                    totalRecipes = bounded(input.readInt(), MAX_RECIPES);
+                    budget.addEntries(totalRecipes);
+                    headerNanos = System.nanoTime() - started;
+                    state = State.READING;
+                    for (int i = 0; i < totalRecipes && !cancelled; i++)
+                    {
+                        long parseStarted = System.nanoTime();
+                        EncodedRecipe encoded = readEncodedRecipe(input, budget, nbtBudget);
+                        parseNanos += System.nanoTime() - parseStarted;
+                        queue.put(encoded);
+                    }
+                    state = cancelled ? State.CANCELLED : State.EOF;
+                }
+            }
+            catch (InterruptedException exception)
+            {
+                Thread.currentThread().interrupt();
+                state = State.CANCELLED;
+            }
+            catch (IOException | RuntimeException | LinkageError exception)
+            { state = State.FAILED; }
+            finally { ioNanos = System.nanoTime() - started; }
+        }
+
+        synchronized void advance(Level level, long timeBudgetNanos)
+        {
+            if (catalog != null || terminalWithoutCatalog() || timeBudgetNanos < 1) return;
+            long started = System.nanoTime();
+            int processed = 0;
+            while (processed < 1 || System.nanoTime() - started < timeBudgetNanos)
+            {
+                if (decoder == null)
+                {
+                    EncodedRecipe encoded = queue.poll();
+                    if (encoded == null) break;
+                    decoder = new DecodeCursor(encoded);
+                }
+                ClientRecipePlanner.Recipe recipe = decoder.advance(level);
+                if (recipe != null)
+                {
+                    decoded.add(recipe);
+                    decoder = null;
+                }
+                processed++;
+            }
+            decodeNanos += System.nanoTime() - started;
+            if (state == State.EOF && queue.isEmpty() && decoder == null && decoded.size() == totalRecipes)
+                catalog = new ClientRecipePlanner.Catalog(decoded);
+        }
+
+        private IStackKey<?> decodeKey(EncodedKey encoded, Level level)
+        {
+            IStackKey<?> key = StackKeyRegistry.getType(encoded.type())
+                    .deserializeNBT(encoded.nbt(), level.registryAccess());
+            if (key == null || key.isEmpty()) throw new IllegalArgumentException("invalid cached stack key");
+            return key;
+        }
+
+        synchronized void cancel()
+        {
+            cancelled = true;
+            state = State.CANCELLED;
+            queue.clear();
+            decoded.clear();
+            decoder = null;
+            Future<?> task = future;
+            if (task != null) task.cancel(true);
+        }
+
+        long generation() { return generation; }
+        synchronized boolean complete() { return catalog != null; }
+        synchronized ClientRecipePlanner.Catalog catalog()
+        {
+            if (catalog == null) throw new IllegalStateException("cache is not decoded");
+            return catalog;
+        }
+        boolean terminalWithoutCatalog()
+        { return state == State.MISS || state == State.FAILED || state == State.CANCELLED; }
+        int completedRecipes() { return decoded.size(); }
+        int totalRecipes() { return totalRecipes > 0 ? totalRecipes : holderIds.size(); }
+        int queueDepth() { return queue.size(); }
+        long ioMillis() { return ioNanos / 1_000_000L; }
+        long headerMillis() { return headerNanos / 1_000_000L; }
+        long parseMillis() { return parseNanos / 1_000_000L; }
+        long decodeMillis() { return decodeNanos / 1_000_000L; }
+        String stateName() { return state.name().toLowerCase(java.util.Locale.ROOT); }
+
+        private final class DecodeCursor
+        {
+            private final EncodedRecipe encoded;
+            private final List<ClientRecipePlanner.Slot> slots;
+            private IStackKey<?> output;
+            private int slotIndex;
+            private int candidateIndex;
+            private List<ClientRecipePlanner.Candidate> candidates;
+
+            private DecodeCursor(EncodedRecipe encoded)
+            { this.encoded = encoded; this.slots = new ArrayList<>(encoded.slots().size()); }
+
+            private ClientRecipePlanner.Recipe advance(Level level)
+            {
+                if (output == null)
+                {
+                    output = decodeKey(encoded.output(), level);
+                    return null;
+                }
+                if (slotIndex < encoded.slots().size())
+                {
+                    EncodedSlot slot = encoded.slots().get(slotIndex);
+                    if (candidates == null) candidates = new ArrayList<>(slot.candidates().size());
+                    if (candidateIndex < slot.candidates().size())
+                    {
+                        EncodedCandidate candidate = slot.candidates().get(candidateIndex++);
+                        candidates.add(new ClientRecipePlanner.Candidate(decodeKey(candidate.key(), level),
+                                candidate.count(), candidate.selectionItem(), candidate.selection()));
+                        return null;
+                    }
+                    slots.add(new ClientRecipePlanner.Slot(slot.index(), candidates, slot.use()));
+                    slotIndex++;
+                    candidateIndex = 0;
+                    candidates = null;
+                    return null;
+                }
+                return new ClientRecipePlanner.Recipe(encoded.id(), encoded.family(), output,
+                        encoded.outputCount(), encoded.outputMatch(), slots);
+            }
+        }
+    }
+
+    private enum State { QUEUED, READING, EOF, MISS, FAILED, CANCELLED }
+    private record EncodedKey(ResourceLocation type, CompoundTag nbt) {}
+    private record EncodedCandidate(EncodedKey key, long count, ResourceLocation selectionItem, String selection) {}
+    private record EncodedSlot(int index, List<EncodedCandidate> candidates, VirtualInputUse use) {}
+    private record EncodedRecipe(ResourceLocation id, String family, EncodedKey output, long outputCount,
+                                 RecipeIoProfileRegistry.OutputMatchSemantics outputMatch,
+                                 List<EncodedSlot> slots) {}
 
     private static final class ReadBudget
     {

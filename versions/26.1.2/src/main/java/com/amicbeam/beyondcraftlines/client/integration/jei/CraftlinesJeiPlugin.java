@@ -33,6 +33,7 @@ import org.jetbrains.annotations.Nullable;
 @JeiPlugin
 public final class CraftlinesJeiPlugin implements IModPlugin
 {
+    private static final long CLIENT_FRAME_BUDGET_NANOS=2_000_000L;
     private static final Identifier UID = Identifier.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "jei_plugin");
     private static volatile IJeiRuntime runtime;
@@ -270,8 +271,12 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
     {
-        JeiCatalystIndex.tick();
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick();
+        long started=System.nanoTime();
+        long deadline=System.nanoTime()+CLIENT_FRAME_BUDGET_NANOS;
+        JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
+        long remaining=deadline-System.nanoTime();
+        if(remaining>0)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.recordFrameSlice(System.nanoTime()-started);
     }
 
     private static void queueOrder(OpenOrderMenuPayload payload)

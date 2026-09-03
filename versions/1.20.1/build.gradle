@@ -88,6 +88,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('NbtAccounter.create(MAX_TOTAL_NBT_BYTES)', 'new NbtAccounter(MAX_TOTAL_NBT_BYTES)')
             .replace('serializeNBT(level.registryAccess())', 'serializeNBT()')
             .replace('deserializeNBT(encoded, level.registryAccess())', 'deserializeNBT(encoded)')
+            .replace('deserializeNBT(encoded.nbt(), level.registryAccess())', 'deserializeNBT(encoded.nbt())')
             .replace('player.registryAccess()', '')
             .replace('new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME', 'RecipeOrderSavedData::load, RecipeOrderSavedData::new, NAME')
             .replace('new Factory<>(BindingSavedData::new, BindingSavedData::load), NAME', 'BindingSavedData::load, BindingSavedData::new, NAME')

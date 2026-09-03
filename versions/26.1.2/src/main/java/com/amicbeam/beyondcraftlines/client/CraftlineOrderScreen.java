@@ -129,7 +129,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Map<IStackKey<?>, NodeMetric> pendingNodeMetrics = new LinkedHashMap<>();
     private final Set<Identifier> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
-    private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
+    private ClientPlanningCatalogWarmup.Handle planningCatalogBuilder;
     private long planningCatalogRevision = -1;
     private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;

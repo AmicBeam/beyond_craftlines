@@ -28,7 +28,6 @@ public final class JeiCatalystIndex
 {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final int MAX_LAYOUTS_PER_FRAME = 32;
-    private static final long MAX_INDEX_NANOS_PER_FRAME = 2_000_000L;
     private static volatile Map<Identifier, Set<Identifier>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<Identifier, Component> TITLES_BY_TYPE = Map.of();
     private static volatile Map<Identifier, Set<String>> INPUT_GROUPS_BY_TYPE = Map.of();
@@ -156,12 +155,12 @@ public final class JeiCatalystIndex
     public static boolean inputGroupsReady(Set<Identifier> types)
     { return TYPE_STATE.ready(types); }
 
-    public static void tick()
+    public static void tick(long timeBudgetNanos)
     {
         IJeiRuntime current = runtime;
         if (current == null) return;
         int remaining = MAX_LAYOUTS_PER_FRAME;
-        long deadline = System.nanoTime() + MAX_INDEX_NANOS_PER_FRAME;
+        long deadline=System.nanoTime()+Math.max(0L,timeBudgetNanos);
         while (remaining > 0 && !TYPE_QUEUE.isEmpty() && System.nanoTime() < deadline)
         {
             SearchTask task = TYPE_QUEUE.peekFirst();

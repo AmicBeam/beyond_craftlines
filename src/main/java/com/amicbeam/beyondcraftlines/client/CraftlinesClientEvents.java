@@ -134,11 +134,6 @@ public final class CraftlinesClientEvents
             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
         }
 
-        @SubscribeEvent public static void advanceJeiRecipeIndex(ScreenEvent.Render.Post event)
-        {
-            com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
-        }
-
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openBoundMachineConfig(InputEvent.InteractionKeyMappingTriggered event)
         {

@@ -42,63 +42,6 @@ public final class ClientRecipePlanner
     public static CatalogBuilder restored(Catalog catalog, int total)
     { return new CatalogBuilder(catalog, total); }
 
-    private static List<Recipe> captureRecipes(Level level, RecipeHolder<?> holder)
-    {
-        List<KeyAmount> outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
-        if (outputs.isEmpty()) throw new IllegalArgumentException("recipe has no supported output: " + holder.id());
-        List<Recipe> captured = new ArrayList<>(outputs.size());
-        for (KeyAmount output : outputs)
-            captured.add(captureRecipeDirection(level, holder, output));
-        return List.copyOf(captured);
-    }
-
-    private static Recipe captureRecipeDirection(Level level, RecipeHolder<?> holder, KeyAmount output)
-    {
-        List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
-                RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
-        List<RecipePlan.IngredientSelection> baselineSelections = recipeIngredients.stream()
-                .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
-                .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
-                        IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
-        List<ItemStack> baselineSamples = SimulatedCrafting.selectedSamples(holder, baselineSelections);
-        List<Slot> slots = new ArrayList<>();
-        for (var ingredient : recipeIngredients)
-        {
-            LinkedHashMap<String, Candidate> candidates = new LinkedHashMap<>();
-            for (KeyAmount value : ingredient.candidates())
-            {
-                Candidate candidate = new Candidate(value.key(), value.amount());
-                if (value.key() instanceof ItemStackKey itemKey)
-                {
-                    ResourceLocation selectedItem = itemId(value.key());
-                    KeyAmount proxy = SimulatedCrafting.bucketFluidInput(holder, level, baselineSamples,
-                            ingredient.slot(), itemKey.getReadOnlyStack());
-                    if (proxy != null)
-                    {
-                        Candidate fluid = new Candidate(proxy.key(), proxy.amount(),
-                                FluidContainerChoice.proxy(selectedItem));
-                        candidates.putIfAbsent(fluid.selection(), fluid);
-                    }
-                }
-                candidates.putIfAbsent(candidate.selection(), candidate);
-            }
-            if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
-                    List.copyOf(candidates.values()), VirtualInputUse.CONSUMED));
-        }
-        List<RecipePlan.IngredientSelection> baseline = slots.stream()
-                .filter(slotEntry -> slotEntry.candidates().getFirst().selectionItem() != null)
-                .map(slotEntry -> new RecipePlan.IngredientSelection(
-                        slotEntry.index(), slotEntry.candidates().getFirst().selection())).toList();
-        boolean[] reusable = SimulatedCrafting.reusableIngredientSlots(holder, level, baseline);
-        slots = slots.stream().map(slotEntry -> new Slot(slotEntry.index(), slotEntry.candidates(),
-                VirtualInputUse.forRecipeSlot(holder.value(), slotEntry.index(),
-                        slotEntry.index() < reusable.length && reusable[slotEntry.index()]))).toList();
-        return new Recipe(holder.id(), RecipePlanningService.family(holder),
-                output.key(), Math.max(1, output.amount()),
-                RecipeIoProfileRegistry.outputMatchSemantics(
-                        holder.value(), holder.id().toString()), slots);
-    }
-
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
                                 ResourceLocation target, long requested,
                                 Map<ResourceLocation, ResourceLocation> manualRecipes,
@@ -407,6 +350,106 @@ public final class ClientRecipePlanner
 
     public record Catalog(List<Recipe> recipes) { public Catalog { recipes = List.copyOf(recipes); } }
 
+    /** Main-thread cursor that yields after each output, slot, or ingredient candidate. */
+    private static final class CaptureCursor
+    {
+        private final RecipeHolder<?> holder;
+        private final List<KeyAmount> outputs;
+        private final List<Recipe> captured;
+        private int outputIndex;
+        private DirectionCursor direction;
+
+        private CaptureCursor(Level level, RecipeHolder<?> holder)
+        {
+            this.holder = holder;
+            this.outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
+            if (outputs.isEmpty()) throw new IllegalArgumentException("recipe has no supported output: " + holder.id());
+            this.captured = new ArrayList<>(outputs.size());
+        }
+
+        private boolean advance(Level level)
+        {
+            if (direction == null) direction = new DirectionCursor(level, holder, outputs.get(outputIndex));
+            Recipe recipe = direction.advance(level);
+            if (recipe == null) return false;
+            captured.add(recipe);
+            direction = null;
+            outputIndex++;
+            return outputIndex >= outputs.size();
+        }
+
+        private List<Recipe> result() { return List.copyOf(captured); }
+    }
+
+    private static final class DirectionCursor
+    {
+        private final RecipeHolder<?> holder;
+        private final KeyAmount output;
+        private final List<RecipeResourceResolver.ResourceIngredient> ingredients;
+        private final List<ItemStack> baselineSamples;
+        private final List<Slot> slots = new ArrayList<>();
+        private int ingredientIndex;
+        private int candidateIndex;
+        private LinkedHashMap<String, Candidate> candidates;
+
+        private DirectionCursor(Level level, RecipeHolder<?> holder, KeyAmount output)
+        {
+            this.holder = holder;
+            this.output = output;
+            this.ingredients = RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
+            List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
+                    .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
+                    .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
+                            IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
+            this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+        }
+
+        private Recipe advance(Level level)
+        {
+            if (ingredientIndex < ingredients.size())
+            {
+                RecipeResourceResolver.ResourceIngredient ingredient = ingredients.get(ingredientIndex);
+                if (candidates == null) candidates = new LinkedHashMap<>();
+                if (candidateIndex < ingredient.candidates().size())
+                {
+                    KeyAmount value = ingredient.candidates().get(candidateIndex++);
+                    Candidate candidate = new Candidate(value.key(), value.amount());
+                    if (value.key() instanceof ItemStackKey itemKey)
+                    {
+                        ResourceLocation selectedItem = itemId(value.key());
+                        KeyAmount proxy = SimulatedCrafting.bucketFluidInput(holder, level, baselineSamples,
+                                ingredient.slot(), itemKey.getReadOnlyStack());
+                        if (proxy != null)
+                        {
+                            Candidate fluid = new Candidate(proxy.key(), proxy.amount(),
+                                    FluidContainerChoice.proxy(selectedItem));
+                            candidates.putIfAbsent(fluid.selection(), fluid);
+                        }
+                    }
+                    candidates.putIfAbsent(candidate.selection(), candidate);
+                    return null;
+                }
+                if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
+                        List.copyOf(candidates.values()), VirtualInputUse.CONSUMED));
+                ingredientIndex++;
+                candidateIndex = 0;
+                candidates = null;
+                return null;
+            }
+            List<RecipePlan.IngredientSelection> baseline = slots.stream()
+                    .filter(slot -> slot.candidates().getFirst().selectionItem() != null)
+                    .map(slot -> new RecipePlan.IngredientSelection(
+                            slot.index(), slot.candidates().getFirst().selection())).toList();
+            boolean[] reusable = SimulatedCrafting.reusableIngredientSlots(holder, level, baseline);
+            List<Slot> completedSlots = slots.stream().map(slot -> new Slot(slot.index(), slot.candidates(),
+                    VirtualInputUse.forRecipeSlot(holder.value(), slot.index(),
+                            slot.index() < reusable.length && reusable[slot.index()]))).toList();
+            return new Recipe(holder.id(), RecipePlanningService.family(holder), output.key(),
+                    Math.max(1, output.amount()), RecipeIoProfileRegistry.outputMatchSemantics(
+                    holder.value(), holder.id().toString()), completedSlots);
+        }
+    }
+
     public static final class CatalogBuilder
     {
         private Level level;
@@ -416,6 +459,12 @@ public final class ClientRecipePlanner
         private final int total;
         private int next;
         private int completed;
+        private CaptureCursor cursor;
+        private long captureNanos;
+        private long captureSteps;
+        private long mergeNanos;
+        private List<Recipe> ordered;
+        private int mergeIndex;
         private Catalog catalog;
 
         private CatalogBuilder(Level level, List<RecipeHolder<?>> holders)
@@ -424,7 +473,7 @@ public final class ClientRecipePlanner
             this.allHolders = List.copyOf(holders);
             this.total = holders.size();
             this.holders = this.allHolders;
-            if (this.holders.isEmpty()) finishCatalog();
+            if (this.holders.isEmpty()) advanceMerge(Long.MAX_VALUE);
         }
 
         private CatalogBuilder(Catalog catalog, int total)
@@ -444,22 +493,41 @@ public final class ClientRecipePlanner
             long started = System.nanoTime();
             while (next < holders.size() && (processed < 1 || System.nanoTime() - started < timeBudgetNanos))
             {
-                RecipeHolder<?> holder = holders.get(next++);
-                List<Recipe> captured = List.copyOf(captureRecipes(level, holder));
-                captures.put(holder.id(), captured);
-                completed++;
+                long captureStarted = System.nanoTime();
+                if (cursor == null) cursor = new CaptureCursor(level, holders.get(next));
+                boolean holderComplete = cursor.advance(level);
+                captureSteps++;
+                captureNanos += System.nanoTime() - captureStarted;
+                if (holderComplete)
+                {
+                    RecipeHolder<?> holder = holders.get(next++);
+                    captures.put(holder.id(), cursor.result());
+                    cursor = null;
+                    completed++;
+                }
                 processed++;
             }
-            if (next == holders.size())
-                finishCatalog();
+            if (next == holders.size() && !complete())
+                advanceMerge(Math.max(1L, timeBudgetNanos - (System.nanoTime() - started)));
         }
 
-        private void finishCatalog()
+        private void advanceMerge(long timeBudgetNanos)
         {
-            List<Recipe> ordered = new ArrayList<>();
-            for (RecipeHolder<?> holder : allHolders)
+            long mergeStarted = System.nanoTime();
+            if (ordered == null) ordered = new ArrayList<>();
+            int processed = 0;
+            while (mergeIndex < allHolders.size()
+                    && (processed < 1 || System.nanoTime() - mergeStarted < timeBudgetNanos))
+            {
+                RecipeHolder<?> holder = allHolders.get(mergeIndex++);
                 ordered.addAll(captures.getOrDefault(holder.id(), List.of()));
+                captures.remove(holder.id());
+                processed++;
+            }
+            mergeNanos += System.nanoTime() - mergeStarted;
+            if (mergeIndex < allHolders.size()) return;
             catalog = new Catalog(ordered);
+            ordered = null;
             captures.clear();
             allHolders = List.of();
             holders = List.of();
@@ -469,6 +537,9 @@ public final class ClientRecipePlanner
         public boolean complete() { return catalog != null; }
         public int completedRecipes() { return completed; }
         public int totalRecipes() { return total; }
+        public long captureMillis() { return captureNanos / 1_000_000L; }
+        public long captureSteps() { return captureSteps; }
+        public long mergeMillis() { return mergeNanos / 1_000_000L; }
         public Catalog catalog()
         {
             if (catalog == null) throw new IllegalStateException("recipe catalog is still building");

@@ -39,7 +39,7 @@ final class ClientPlanningCatalogCache
     static final int MAGIC = 0x42434C43;
     static final int VERSION = 2;
     private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
-    private static final long MAX_TOTAL_NBT_BYTES = 512L * 1024L * 1024L;
+    private static final long MAX_TOTAL_NBT_BYTES = 1024L * 1024L * 1024L;
     private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
     private static final long MAX_TOTAL_ENTRIES = 8_000_000L;
     private static final int MAX_RECIPES = 200_000;

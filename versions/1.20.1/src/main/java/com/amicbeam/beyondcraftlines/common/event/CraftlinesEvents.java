@@ -72,9 +72,6 @@ public final class CraftlinesEvents {
     @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) {
         var server = event.getPlayerList().getServer();
         if (event.getPlayer() == null) {
-            if (recipeAliasServer == server)
-                com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                        .invalidatePersistedServerIndex(server);
             RecipePlanningService.clearRecipeCache();
         }
         if (event.getPlayer() == null || recipeAliasServer != server) {

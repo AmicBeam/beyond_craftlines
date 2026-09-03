@@ -157,8 +157,6 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
         if ("client plan is incomplete".equals(error)
                 || "validated plan does not match the order".equals(error))
             return Component.translatable("error.beyond_craftlines.planning_protocol_invalid");
-        if ("server recipe index is still building".equals(error))
-            return Component.translatable("error.beyond_craftlines.server_recipe_indexing");
         return Component.translatable("error.beyond_craftlines.order_failed_generic");
     }
 

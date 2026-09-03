@@ -350,7 +350,7 @@ public final class ClientRecipePlanner
     public static final class Catalog
     {
         private final List<Recipe> recipes;private final Map<IStackKey<?>,List<Recipe>> byOutput;
-        public Catalog(List<Recipe> recipes){this.recipes=List.copyOf(recipes);LinkedHashMap<IStackKey<?>,List<Recipe>> index=new LinkedHashMap<>();for(Recipe recipe:this.recipes)index.computeIfAbsent(recipe.output(),ignored->new ArrayList<>()).add(recipe);index.values().forEach(values->values.sort(Comparator.comparing(recipe->recipe.id().toString())));LinkedHashMap<IStackKey<?>,List<Recipe>> frozen=new LinkedHashMap<>();index.forEach((key,value)->frozen.put(key,List.copyOf(value)));this.byOutput=Map.copyOf(frozen);}
+        public Catalog(List<Recipe> recipes){this.recipes=List.copyOf(recipes);OutputRecipeMap index=new OutputRecipeMap();for(Recipe recipe:this.recipes)index.computeIfAbsent(recipe.output(),ignored->new ArrayList<>()).add(recipe);index.values().forEach(values->values.sort(Comparator.comparing(recipe->recipe.id().toString())));index.finish();this.byOutput=index;}
         public List<Recipe> recipes(){return recipes;}private Map<IStackKey<?>,List<Recipe>> byOutput(){return byOutput;}
     }
 
@@ -561,6 +561,7 @@ public final class ClientRecipePlanner
 
     static List<Recipe> recipesFor(Map<IStackKey<?>, List<Recipe>> byOutput, IStackKey<?> resource)
     {
+        if(byOutput instanceof OutputRecipeMap indexed)return indexed.lookup(resource);
         List<Recipe> exact = SymmetricMapLookup.first(byOutput, resource, StackKeyMatch::exact);
         if (!exact.isEmpty()) return exact;
         for (var entry : byOutput.entrySet())
@@ -579,6 +580,14 @@ public final class ClientRecipePlanner
                 "{} client dependency exact miss requested={} sameItemCandidates={}",
                 OrderDiagnostics.PREFIX, OrderDiagnostics.resource(resource), sameItemCandidates);
         return List.of();
+    }
+
+    private static final class OutputRecipeMap extends LinkedHashMap<IStackKey<?>,List<Recipe>>
+    {
+        private Map<String,List<Recipe>> byResolution=Map.of();
+        private Map<String,List<Map.Entry<IStackKey<?>,List<Recipe>>>> byCoarse=Map.of();
+        private void finish(){LinkedHashMap<String,List<Recipe>> exact=new LinkedHashMap<>();LinkedHashMap<String,List<Map.Entry<IStackKey<?>,List<Recipe>>>> coarse=new LinkedHashMap<>();replaceAll((key,value)->List.copyOf(value));for(var entry:entrySet()){exact.computeIfAbsent(RecipeResourceResolver.resolutionKey(entry.getKey()),ignored->new ArrayList<>()).addAll(entry.getValue());coarse.computeIfAbsent(RecipeResourceResolver.sortKey(entry.getKey()),ignored->new ArrayList<>()).add(Map.entry(entry.getKey(),entry.getValue()));}exact.replaceAll((key,value)->List.copyOf(value));coarse.replaceAll((key,value)->List.copyOf(value));byResolution=Map.copyOf(exact);byCoarse=Map.copyOf(coarse);}
+        private List<Recipe> lookup(IStackKey<?> resource){List<Recipe> exact=byResolution.getOrDefault(RecipeResourceResolver.resolutionKey(resource),List.of()).stream().filter(recipe->StackKeyMatch.exact(resource,recipe.output())).toList();if(!exact.isEmpty())return exact;List<Map.Entry<IStackKey<?>,List<Recipe>>> candidates=byCoarse.getOrDefault(RecipeResourceResolver.sortKey(resource),List.of());for(var entry:candidates){List<Recipe> configured=entry.getValue().stream().filter(recipe->RecipeIoProfileRegistry.outputMatches(recipe.outputMatch(),resource,entry.getKey(),StackKeyMatch::exact,(left,right)->left.isSame(right)||right.isSame(left))).toList();if(!configured.isEmpty())return configured;}if(!candidates.isEmpty())OrderDiagnostics.LOGGER.warn("{} client dependency exact miss requested={} sameItemCandidates={}",OrderDiagnostics.PREFIX,OrderDiagnostics.resource(resource),candidates.stream().limit(16).map(entry->OrderDiagnostics.resource(entry.getKey())+"="+entry.getValue().stream().map(recipe->recipe.id().toString()).toList()).toList());return List.of();}
     }
 
     private static long available(MatchingStock<IStackKey<?>, Identifier> stock,

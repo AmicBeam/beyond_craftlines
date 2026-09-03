@@ -83,9 +83,6 @@ public final class CraftlinesEvents
         var server = event.getPlayerList().getServer();
         if (event.getPlayer() == null)
         {
-            if (recipeAliasServer == server)
-                com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                        .invalidatePersistedServerIndex(server);
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
         }
         if (event.getPlayer() == null || recipeAliasServer != server)

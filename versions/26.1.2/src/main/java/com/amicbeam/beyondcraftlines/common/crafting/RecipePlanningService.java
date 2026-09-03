@@ -51,8 +51,6 @@ public final class RecipePlanningService
         VISIBLE_RECIPE_CACHE.clear();
         LOADED_FAMILY_CACHE.clear();
         RecipeIngredientResolver.clearCache();
-        PlanningSnapshotService.clearRecipeEpochCache();
-        com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.clearRecipeIndexCache();
     }
 
     public static Set<String> loadedFamilies(Level level)

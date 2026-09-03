@@ -7,10 +7,7 @@ import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.item.crafting.RecipeManager;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,8 +17,6 @@ import java.util.WeakHashMap;
 /** Immutable component-aware inventory view used by client proposals and authoritative verification. */
 public final class PlanningSnapshotService
 {
-    private static final Map<RecipeManager, List<RecipeIdentity>> RECIPE_IDENTITIES =
-            java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<UnifiedStorage, InventoryCache> INVENTORY_CACHES =
             java.util.Collections.synchronizedMap(new WeakHashMap<>());
     private PlanningSnapshotService() {}
@@ -45,53 +40,6 @@ public final class PlanningSnapshotService
 
     public static long recipeEpoch(Level level, Set<String> availableFamilies)
     { return 0L; }
-
-    public static void clearRecipeEpochCache() { RECIPE_IDENTITIES.clear(); }
-
-    private static List<RecipeIdentity> identities(Level level)
-    {
-        return RECIPE_IDENTITIES.computeIfAbsent(level.getRecipeManager(), ignored -> {
-            List<RecipeIdentity> result = new ArrayList<>();
-            for (var holder : RecipePlanningService.visibleRecipes(level))
-            {
-                String family = RecipePlanningService.family(holder);
-                var recipe = holder.value();
-                var output = RecipeOutputResolver.primary(recipe, level.registryAccess());
-                if (output == null) continue;
-                StringBuilder identity = new StringBuilder(holder.id().toString()).append('|').append(family)
-                        .append('|').append(BuiltInRegistries.RECIPE_SERIALIZER.getKey(recipe.getSerializer()))
-                        .append('|').append(RecipeResourceResolver.sortKey(output.key())).append(':')
-                        .append(output.amount());
-                int slot = 0;
-                for (var ingredient : RecipeResourceResolver.ingredients(recipe))
-                {
-                    identity.append('|').append(slot++).append('=');
-                    List<String> candidates = new ArrayList<>();
-                    for (var value : ingredient.candidates()) candidates.add(
-                            RecipeResourceResolver.sortKey(value.key()) + ":" + value.amount());
-                    candidates.stream().distinct().sorted().forEach(candidate -> identity.append(candidate).append(','));
-                }
-                result.add(new RecipeIdentity(family, identity.toString()));
-            }
-            result.sort(Comparator.comparing(RecipeIdentity::value));
-            return List.copyOf(result);
-        });
-    }
-
-    private static long offset() { return 0xCBF29CE484222325L; }
-    private static long mix(long hash, String value)
-    {
-        for (int i = 0; i < value.length(); i++)
-        {
-            char character = value.charAt(i);
-            hash ^= character & 0xFF;
-            hash *= 0x100000001B3L;
-            hash ^= character >>> 8;
-            hash *= 0x100000001B3L;
-        }
-        return hash;
-    }
-    private static long positive(long hash) { return hash & Long.MAX_VALUE; }
 
     public record Entry(ResourceLocation item, long amount)
     {
@@ -130,8 +78,6 @@ public final class PlanningSnapshotService
             return result;
         }
     }
-
-    private record RecipeIdentity(String family, String value) {}
 
     /** Main-thread cache maintained from Beyond Dimensions' exact-key storage deltas. */
     private static final class InventoryCache

@@ -13,57 +13,30 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.BlockPos;
 
 import java.util.List;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.Map;
 import java.util.LinkedHashMap;
-import java.util.WeakHashMap;
-import java.util.Collection;
-import java.util.Iterator;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import com.google.gson.Gson;
 
 public final class CraftlineOrderMenu extends AbstractContainerMenu
 {
-    private static final Map<Object, RecipeIndex> RECIPE_INDEX_CACHE = new WeakHashMap<>();
-    private static final Set<MinecraftServer> FORCED_SERVER_INDEX_REBUILDS =
-            java.util.Collections.newSetFromMap(new WeakHashMap<>());
-    private static final Gson INDEX_GSON = new Gson();
-    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
-    private static final ExecutorService INDEX_IO = Executors.newSingleThreadExecutor(runnable -> {
-        Thread thread = new Thread(runnable, "beyond-craftlines-recipe-index-io");
-        thread.setDaemon(true);
-        return thread;
-    });
     private final Player player;
     private final int networkId;
     private final IStackKey<?> initialTarget;
     private final ResourceLocation initialRecipe;
     private final boolean initialRecipePinned;
     private final Set<String> availableFamilies;
-    private final RecipeIndex recipeIndex;
     private final RecipeHolder<?> initialRecipeHolder;
     private final BlockPos dashboardPosition;
     private final boolean initialBlockingMode;
     private final long initialDashboardDesired;
     private final String initialDashboardStockMode;
     private String initialError;
-    private final SimpleContainerData serverIndexProgress = new SimpleContainerData(2);
 
     public CraftlineOrderMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
@@ -99,11 +72,8 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
         this.initialDashboardStockMode = initialDashboardStockMode == null ? "network" : initialDashboardStockMode;
         this.initialError = "";
         var level = player.level();
-        this.recipeIndex = new RecipeIndex(List.of(), level);
         this.initialRecipeHolder = initialRecipe == null ? null
                 : findDisplayRecipe(level, initialRecipe);
-        addDataSlots(serverIndexProgress);
-        updateServerIndexProgress();
     }
 
     public int networkId() { return networkId; }
@@ -212,56 +182,14 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private boolean available(RecipeHolder<?> holder)
     { return RecipeIndexVisibility.includes(RecipePlanningService.family(holder), availableFamilies); }
 
-    public void advanceRecipeIndex(int recipeBudget, long timeBudgetNanos) {}
     public boolean recipeIndexComplete()
     { return !player.level().isClientSide() || com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.ready(); }
     public int indexedRecipeCandidates()
     { return player.level().isClientSide() ? com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
-            .handle().completedRecipes() : recipeIndex.completedCandidates(); }
+            .handle().completedRecipes() : 0; }
     public int totalRecipeCandidates()
     { return player.level().isClientSide() ? com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
-            .handle().totalRecipes() : recipeIndex.totalCandidates(); }
-    public boolean serverRecipeIndexComplete()
-    { return true; }
-    public int indexedServerRecipeCandidates() { return serverIndexProgress.get(0); }
-    public int totalServerRecipeCandidates() { return serverIndexProgress.get(1); }
-
-    @Override public void broadcastChanges()
-    {
-        updateServerIndexProgress();
-        super.broadcastChanges();
-    }
-
-    private void ensureRecipeIndexForServer()
-    { /* The global server index is built incrementally from the server tick; never block an order request. */ }
-
-    private void updateServerIndexProgress()
-    {
-        if (!player.level().isClientSide())
-        {
-            int total = Math.max(1, recipeIndex.totalCandidates());
-            serverIndexProgress.set(0, recipeIndex.complete() ? total : recipeIndex.completedCandidates());
-            serverIndexProgress.set(1, total);
-        }
-    }
-
-    public static void tickServerRecipeIndex(MinecraftServer server)
-    {}
-
-    public static long serverRecipeEpoch(ServerLevel level, Set<String> availableFamilies)
-    { return 0L; }
-
-    private static RecipeIndex serverIndex(ServerLevel level)
-    {
-        synchronized (RECIPE_INDEX_CACHE)
-        {
-            return RECIPE_INDEX_CACHE.computeIfAbsent(level.getRecipeManager(), ignored -> {
-                Collection<RecipeHolder<?>> recipes = level.getRecipeManager().getRecipes();
-                return new RecipeIndex(recipes, recipes.size(), level, indexPath(level.getServer()),
-                        FORCED_SERVER_INDEX_REBUILDS.remove(level.getServer()));
-            });
-        }
-    }
+            .handle().totalRecipes() : 0; }
 
     /** Stable native base; JEI-only recipes are already keyed and cached separately by the planning catalog. */
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
@@ -288,292 +216,6 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                 .or(() -> com.amicbeam.beyondcraftlines.common.crafting
                         .VirtualProvisionerRecipeRegistry.find(id)).orElse(null);
     }
-
-    private static RecipeHolder<?> findRecipe(net.minecraft.world.level.Level level, ResourceLocation id)
-    { return findDisplayRecipe(level, id); }
-
-    private static Path indexPath(MinecraftServer server)
-    {
-        return server.getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT)
-                .resolve("data").resolve("beyond_craftlines_recipe_index_v1.json");
-    }
-
-    public static void invalidatePersistedServerIndex(MinecraftServer server)
-    {
-        try { Files.deleteIfExists(indexPath(server)); }
-        catch (java.io.IOException ignored) {}
-    }
-
-    public static void clearRecipeIndexCache()
-    {
-        synchronized (RECIPE_INDEX_CACHE) { RECIPE_INDEX_CACHE.clear(); }
-    }
-
-    public static void rebuildServerRecipeIndex(MinecraftServer server)
-    {
-        invalidatePersistedServerIndex(server);
-        synchronized (RECIPE_INDEX_CACHE)
-        {
-            FORCED_SERVER_INDEX_REBUILDS.add(server);
-            RecipePlanningService.clearRecipeCache();
-        }
-        tickServerRecipeIndex(server);
-    }
-
-    private static final class RecipeIndex
-    {
-        private final Iterator<RecipeHolder<?>> candidates;
-        private final int totalCandidates;
-        private final net.minecraft.world.level.Level level;
-        private final List<RecipeHolder<?>> recipes = new ArrayList<>();
-        private final Map<ResourceLocation, RecipeHolder<?>> recipesById = new LinkedHashMap<>();
-        private final Map<String, ResourceLocation> itemOutputsByToken = new LinkedHashMap<>();
-        private final Map<ResourceLocation, Set<String>> outputTokensByRecipe = new LinkedHashMap<>();
-        private final Map<ResourceLocation, RecipeHolder<?>> recipeByOutput = new LinkedHashMap<>();
-        private final Map<ResourceLocation, List<RecipeHolder<?>>> recipesByOutput = new LinkedHashMap<>();
-        private final Map<String, List<RecipeHolder<?>>> recipesByResourceOutput = new LinkedHashMap<>();
-        private final Map<String, List<String>> recipeIdsByResourceOutput = new LinkedHashMap<>();
-        private final com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator epochAccumulator =
-                new com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator();
-        private int next;
-        private final Path cachePath;
-        private final CompletableFuture<PersistedIndex> cacheLoad;
-        private boolean cacheChecked;
-        private boolean cachePersisted;
-        private boolean buildAnnounced;
-
-        private RecipeIndex(List<RecipeHolder<?>> candidates, net.minecraft.world.level.Level level)
-        { this(candidates, candidates.size(), level, null, false); }
-
-        private RecipeIndex(Iterable<RecipeHolder<?>> candidates, int totalCandidates,
-                            net.minecraft.world.level.Level level, Path cachePath, boolean skipCacheLoad)
-        {
-            this.candidates = candidates.iterator();
-            this.totalCandidates = totalCandidates;
-            this.level = level;
-            this.cachePath = cachePath;
-            this.cacheLoad = cachePath == null || skipCacheLoad ? null : CompletableFuture.supplyAsync(
-                    () -> readPersistedIndex(cachePath), INDEX_IO);
-        }
-
-        private synchronized void advance(int recipeBudget, long timeBudgetNanos)
-        {
-            if (recipeBudget < 1 || timeBudgetNanos < 1 || complete()) return;
-            if (!loadCacheIfReady()) return;
-            announceBuildStarted();
-            int end = (int) Math.min(totalCandidates, (long) next + recipeBudget);
-            int minimum = Math.min(1, recipeBudget);
-            int processed = 0;
-            long started = System.nanoTime();
-            while (next < end && (processed < minimum || System.nanoTime() - started < timeBudgetNanos))
-            {
-                if (!candidates.hasNext()) { next = totalCandidates; break; }
-                RecipeHolder<?> holder = candidates.next();
-                next++;
-                if (RecipePlanningService.supported(holder)) add(holder);
-                processed++;
-            }
-            if (complete()) persistAsync();
-        }
-
-        private void add(RecipeHolder<?> holder)
-        {
-            var outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
-            if (outputs.isEmpty()) return;
-            String family = RecipePlanningService.family(holder);
-            if (level instanceof ServerLevel)
-                epochAccumulator.add(family, identityHash(holder, outputs));
-            recipes.add(holder);
-            recipesById.putIfAbsent(holder.id(), holder);
-            for (var output : outputs)
-            {
-                String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                        .sortKey(output.key());
-                outputTokensByRecipe.computeIfAbsent(holder.id(), ignored -> new LinkedHashSet<>()).add(token);
-                recipesByResourceOutput.computeIfAbsent(token, ignored -> new ArrayList<>()).add(holder);
-                recipeIdsByResourceOutput.computeIfAbsent(token, ignored -> new ArrayList<>())
-                        .add(holder.id().toString());
-                if (output.key() instanceof ItemStackKey itemKey)
-                {
-                    ResourceLocation outputId = net.minecraft.core.registries.BuiltInRegistries.ITEM
-                            .getKey(itemKey.getSource());
-                    itemOutputsByToken.putIfAbsent(token, outputId);
-                    recipeByOutput.putIfAbsent(outputId, holder);
-                    recipesByOutput.computeIfAbsent(outputId, ignored -> new ArrayList<>()).add(holder);
-                }
-            }
-        }
-
-        private synchronized List<RecipeHolder<?>> recipes() { return List.copyOf(recipes); }
-        private synchronized List<RecipeHolder<?>> recipesForOutput(ResourceLocation output)
-        { return List.copyOf(recipesByOutput.getOrDefault(output, List.of())); }
-        private synchronized List<RecipeHolder<?>> recipesForResourceOutput(IStackKey<?> output)
-        {
-            String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(output);
-            if (!(level instanceof ServerLevel))
-                return List.copyOf(recipesByResourceOutput.getOrDefault(token, List.of()));
-            List<RecipeHolder<?>> result = new ArrayList<>();
-            for (String recipeId : recipeIdsByResourceOutput.getOrDefault(token, List.of()))
-            {
-                ResourceLocation id = ResourceLocation.tryParse(recipeId);
-                RecipeHolder<?> holder = id == null ? null : findRecipe(level, id);
-                if (holder == null || !RecipePlanningService.supported(holder)) continue;
-                boolean produces = RecipeOutputResolver.outputs(holder.value(), level.registryAccess()).stream()
-                        .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
-                                .RecipeResourceResolver.sortKey(value.key())));
-                if (produces) result.add(holder);
-            }
-            return List.copyOf(result);
-        }
-        private synchronized RecipeHolder<?> recipe(ResourceLocation id)
-        { return level instanceof ServerLevel ? findRecipe(level, id) : recipesById.get(id); }
-        private synchronized ResourceLocation itemOutputForToken(String token) { return itemOutputsByToken.get(token); }
-        private synchronized boolean recipeProduces(ResourceLocation recipe, String token)
-        {
-            if (level instanceof ServerLevel)
-            {
-                RecipeHolder<?> holder = findRecipe(level, recipe);
-                return holder != null && RecipeOutputResolver.outputs(holder.value(), level.registryAccess()).stream()
-                        .anyMatch(value -> token.equals(com.amicbeam.beyondcraftlines.common.crafting
-                                .RecipeResourceResolver.sortKey(value.key())));
-            }
-            return outputTokensByRecipe.getOrDefault(recipe, Set.of()).contains(token);
-        }
-        private synchronized int completedCandidates() { return next; }
-        private int totalCandidates() { return totalCandidates; }
-        private synchronized boolean complete() { return next >= totalCandidates; }
-
-        private boolean loadCacheIfReady()
-        {
-            if (cacheChecked || cacheLoad == null) return true;
-            if (!cacheLoad.isDone()) return false;
-            cacheChecked = true;
-            PersistedIndex persisted;
-            try { persisted = cacheLoad.join(); }
-            catch (RuntimeException ignored) { return true; }
-            if (persisted == null || persisted.format() != 1 || persisted.totalRecipes() != totalCandidates
-                    || persisted.recipesByOutput() == null || persisted.outputsByRecipe() == null)
-                return true;
-            recipeIdsByResourceOutput.clear();
-            persisted.recipesByOutput().forEach((token, ids) ->
-                    recipeIdsByResourceOutput.put(token, new ArrayList<>(ids)));
-            outputTokensByRecipe.clear();
-            persisted.outputsByRecipe().forEach((recipe, tokens) -> {
-                ResourceLocation id = ResourceLocation.tryParse(recipe);
-                if (id != null) outputTokensByRecipe.put(id, new LinkedHashSet<>(tokens));
-            });
-            epochAccumulator.restore(persisted.epoch());
-            next = totalCandidates;
-            cachePersisted = true;
-            LOGGER.info("Loaded persisted Craftlines server recipe index with {} recipes", totalCandidates);
-            return false;
-        }
-
-        private void persistAsync()
-        {
-            if (cachePath == null || cachePersisted) return;
-            cachePersisted = true;
-            LinkedHashMap<String, List<String>> byOutput = new LinkedHashMap<>();
-            recipeIdsByResourceOutput.forEach((token, ids) -> byOutput.put(token, List.copyOf(ids)));
-            LinkedHashMap<String, List<String>> byRecipe = new LinkedHashMap<>();
-            outputTokensByRecipe.forEach((recipe, tokens) ->
-                    byRecipe.put(recipe.toString(), List.copyOf(tokens)));
-            PersistedIndex persisted = new PersistedIndex(1, totalCandidates,
-                    Map.copyOf(byOutput), Map.copyOf(byRecipe), epochAccumulator.snapshot());
-            MinecraftServer server = ((ServerLevel) level).getServer();
-            CompletableFuture.supplyAsync(() -> writePersistedIndex(cachePath, persisted), INDEX_IO)
-                    .thenAccept(success -> server.execute(() -> broadcastToPlayers(server,
-                            success ? "message.beyond_craftlines.server_recipe_index_complete"
-                                    : "error.beyond_craftlines.server_recipe_index_persist_failed",
-                            persisted.totalRecipes())));
-        }
-
-        private void announceBuildStarted()
-        {
-            if (buildAnnounced || cachePath == null || !(level instanceof ServerLevel serverLevel)) return;
-            buildAnnounced = true;
-            broadcastToPlayers(serverLevel.getServer(),
-                    "message.beyond_craftlines.server_recipe_index_started", totalCandidates);
-        }
-
-        private synchronized long epoch(Set<String> availableFamilies)
-        { return epochAccumulator.epoch(availableFamilies); }
-
-        private long identityHash(RecipeHolder<?> holder,
-                                  java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> outputs)
-        {
-            long hash = com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator
-                    .mix(0xCBF29CE484222325L, holder.id().toString());
-            hash = com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator
-                    .mix(hash, RecipePlanningService.family(holder));
-            var serializer = holder.value().getSerializer();
-            hash = com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.mix(hash,
-                    java.util.Objects.toString(
-                    net.minecraft.core.registries.BuiltInRegistries.RECIPE_SERIALIZER.getKey(serializer), ""));
-            for (var output : outputs.stream().sorted(java.util.Comparator.comparing(value ->
-                    com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(value.key())))
-                    .toList())
-                hash = com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.mix(hash,
-                        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                        .sortKey(output.key()) + "@" + output.amount());
-            for (var ingredient : com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                    .ingredients(holder.value()))
-                for (var candidate : ingredient.candidates().stream().sorted(java.util.Comparator.comparing(value ->
-                        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(value.key())))
-                        .toList())
-                    hash = com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.mix(hash,
-                            ingredient.slot() + "="
-                            + com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                            .sortKey(candidate.key()) + "@" + candidate.amount());
-            return hash;
-        }
-    }
-
-    private static PersistedIndex readPersistedIndex(Path path)
-    {
-        if (!Files.isRegularFile(path)) return null;
-        try (var reader = Files.newBufferedReader(path, StandardCharsets.UTF_8))
-        { return INDEX_GSON.fromJson(reader, PersistedIndex.class); }
-        catch (Exception exception)
-        {
-            LOGGER.warn("Unable to read persisted Craftlines recipe index from {}", path, exception);
-            return null;
-        }
-    }
-
-    private static boolean writePersistedIndex(Path path, PersistedIndex persisted)
-    {
-        Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
-        try
-        {
-            Files.createDirectories(path.getParent());
-            try (var writer = Files.newBufferedWriter(temporary, StandardCharsets.UTF_8))
-            { INDEX_GSON.toJson(persisted, writer); }
-            try { Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE); }
-            catch (java.nio.file.AtomicMoveNotSupportedException ignored)
-            { Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING); }
-            LOGGER.info("Persisted Craftlines server recipe index with {} recipes", persisted.totalRecipes());
-            return true;
-        }
-        catch (Exception exception)
-        {
-            LOGGER.warn("Unable to persist Craftlines recipe index to {}", path, exception);
-            return false;
-        }
-    }
-
-    private static void broadcastToPlayers(MinecraftServer server, String translationKey, int recipeCount)
-    {
-        var message = net.minecraft.network.chat.Component.translatable(translationKey, recipeCount);
-        for (var player : server.getPlayerList().getPlayers())
-            player.displayClientMessage(message, false);
-    }
-
-    private record PersistedIndex(int format, int totalRecipes,
-                                  Map<String, List<String>> recipesByOutput,
-                                  Map<String, List<String>> outputsByRecipe,
-                                  com.amicbeam.beyondcraftlines.common.crafting.RecipeEpochAccumulator.Snapshot epoch) {}
 
     public boolean canAccessNetwork(Player player)
     {

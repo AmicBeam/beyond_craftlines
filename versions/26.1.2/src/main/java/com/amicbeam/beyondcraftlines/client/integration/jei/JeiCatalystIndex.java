@@ -100,6 +100,12 @@ public final class JeiCatalystIndex
     public static boolean recipeTypesReady(java.util.Collection<String> types)
     { return runtime == null || TYPE_STATE.ready(knownRecipeTypes(types)); }
 
+    public static int completedRecipeTypes(java.util.Collection<String> types)
+    { return TYPE_STATE.completedCount(knownRecipeTypes(types)); }
+
+    public static int totalRecipeTypes(java.util.Collection<String> types)
+    { return knownRecipeTypes(types).size(); }
+
     private static Set<Identifier> knownRecipeTypes(java.util.Collection<String> types)
     {
         LinkedHashSet<Identifier> parsed = new LinkedHashSet<>();

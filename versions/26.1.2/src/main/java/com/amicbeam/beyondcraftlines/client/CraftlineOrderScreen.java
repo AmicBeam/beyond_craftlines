@@ -148,7 +148,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private long planningGeneration;
     private boolean initialized;
     private boolean preferencesLoaded;
-    private boolean waitingForServerRecipeIndex;
     private boolean terminalMenuError;
     private String loadingStatus = "";
 
@@ -229,7 +228,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
     private boolean canQueueOrder()
     {
-        return !terminalMenuError&&planningCatalog != null && menu.serverRecipeIndexComplete()
+        return !terminalMenuError&&planningCatalog != null
                 && (!menu.dashboardConfiguration() || proposalReady);
     }
     private int rightPanelLeft() { return leftPos + imageWidth - rightPanelWidth(); }
@@ -249,7 +248,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
-        if(terminalMenuError){waitingForServerRecipeIndex=false;loadingStatus="";if(orderButton!=null)orderButton.active=false;return;}
+        if(terminalMenuError){loadingStatus="";if(orderButton!=null)orderButton.active=false;return;}
         boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
         if (!jeiTypesReady)
         {
@@ -276,19 +275,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 planningCatalog=planningCatalogBuilder.catalog();
                 planningCatalogRevision = planningCatalogBuildRevision;
-                waitForServerRecipeIndexOrPlan();
+                finishPlanningCatalogPreparation();
             }
             else loadingStatus=indexingRecipesText();
-        }
-        if (planningCatalog != null && waitingForServerRecipeIndex)
-        {
-            if (menu.serverRecipeIndexComplete())
-            {
-                waitingForServerRecipeIndex = false;
-                loadingStatus = "";
-                markPreviewDirty();
-            }
-            else loadingStatus = serverRecipeIndexingText();
         }
         if (++refreshTicks >= 40)
         {
@@ -320,7 +309,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             planningCatalog=planningCatalogBuilder.catalog();
             planningCatalogRevision = planningCatalogBuildRevision;
-            waitForServerRecipeIndexOrPlan();
+            finishPlanningCatalogPreparation();
         }
         else loadingStatus = indexingRecipesText();
     }
@@ -349,7 +338,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void enterTerminalMenuError(String error)
     {
-        terminalMenuError=true;waitingForServerRecipeIndex=false;previewDirty=false;
+        terminalMenuError=true;previewDirty=false;
         submitWhenReady=false;proposalReady=false;selected=null;cancelPlanningTask();loadingStatus="";
         previewError=localizedPlanningError(error);planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.RUNTIME_UNAVAILABLE;
         clearDisplayMetrics();if(orderButton!=null)orderButton.active=false;rebuildTree(false);
@@ -374,21 +363,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private String jeiTypeIndexingText()
     { return Component.translatable("gui.beyond_craftlines.indexing_jei_types").getString(); }
 
-    private String serverRecipeIndexingText()
+    private void finishPlanningCatalogPreparation()
     {
-        return Component.translatable("gui.beyond_craftlines.indexing_server_recipes",
-                menu.indexedServerRecipeCandidates(), menu.totalServerRecipeCandidates()).getString();
-    }
-
-    private void waitForServerRecipeIndexOrPlan()
-    {
-        waitingForServerRecipeIndex = !menu.serverRecipeIndexComplete();
-        if (waitingForServerRecipeIndex) loadingStatus = serverRecipeIndexingText();
-        else
-        {
-            loadingStatus = "";
-            markPreviewDirty();
-        }
+        loadingStatus="";markPreviewDirty();
     }
 
     private void requestNetworkAmount()
@@ -727,7 +704,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int current;
         int total;
-        if (!menu.recipeIndexComplete())
+        if(!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
+        {
+            current=JeiCatalystIndex.completedRecipeTypes(menu.availableFamilies());
+            total=JeiCatalystIndex.totalRecipeTypes(menu.availableFamilies());
+        }
+        else if (!menu.recipeIndexComplete())
         {
             current = menu.indexedRecipeCandidates();
             total = menu.totalRecipeCandidates();
@@ -736,11 +718,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             current=planningCatalogBuilder.completedRecipes();
             total=planningCatalogBuilder.totalRecipes();
-        }
-        else if (waitingForServerRecipeIndex)
-        {
-            current = menu.indexedServerRecipeCandidates();
-            total = menu.totalServerRecipeCandidates();
         }
         else return;
         int left = treeLeft() + 5;
@@ -1835,12 +1812,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         previewDirty = false;
         previewDelay = 0;
         if (minecraft.level == null) return;
-        if (!menu.serverRecipeIndexComplete())
-        {
-            waitingForServerRecipeIndex = true;
-            loadingStatus = serverRecipeIndexingText();
-            return;
-        }
         IStackKey<?> target = menu.initialTarget();
         long nonce = previewNonce;
         boolean preferAutomaticChoices = amountOnlyPreviewChange;
@@ -2246,13 +2217,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         if (!preview.success())
         {
-            if ("server recipe index is still building".equals(preview.error()))
-            {
-                waitingForServerRecipeIndex = true;
-                loadingStatus = serverRecipeIndexingText();
-                previewError = "";
-                return;
-            }
             loadingStatus = "";
             clearPendingPreviewMetrics();
             proposalReady = false;

@@ -51,6 +51,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
+    private static final ScheduledThreadPoolExecutor OPTIMIZATION_EXECUTOR = planningExecutor();
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -143,6 +144,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int planningMaxDepth;
     private int planningMaxNodes;
     private Future<?> planningTask;
+    private Future<?> optimizationTask;
     private long planningGeneration;
     private boolean initialized;
     private boolean preferencesLoaded;
@@ -2215,7 +2217,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                       Map<String, ResourceLocation> preferredRecipes,
                                       Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients)
     {
-        planningTask = PLANNING_EXECUTOR.submit(() -> {
+        optimizationTask = OPTIMIZATION_EXECUTOR.submit(() -> {
             ClientRecipePlanner.Proposal improved;
             try
             {
@@ -2225,12 +2227,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             }
             catch (RuntimeException ignored)
             {
-                minecraft.execute(() -> { if (generation == planningGeneration) planningTask = null; });
+                minecraft.execute(() -> { if (generation == planningGeneration) optimizationTask = null; });
                 return;
             }
             minecraft.execute(() -> {
                 if (generation != planningGeneration || nonce != previewNonce) return;
-                planningTask = null;
+                optimizationTask = null;
                 if (!improved.craftable()) return;
                 automaticRecipes.clear();
                 automaticResourceRecipes.clear();
@@ -2321,7 +2323,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Future<?> task = planningTask;
         planningTask = null;
         if (task != null) task.cancel(true);
+        Future<?> optimization = optimizationTask;
+        optimizationTask = null;
+        if (optimization != null) optimization.cancel(true);
         PLANNING_EXECUTOR.purge();
+        OPTIMIZATION_EXECUTOR.purge();
     }
 
     private static ScheduledThreadPoolExecutor planningExecutor()

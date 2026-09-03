@@ -52,6 +52,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
+    private static final ScheduledThreadPoolExecutor OPTIMIZATION_EXECUTOR=planningExecutor();
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -143,6 +144,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int planningMaxDepth;
     private int planningMaxNodes;
     private Future<?> planningTask;
+    private Future<?> optimizationTask;
     private long planningGeneration;
     private boolean initialized;
     private boolean preferencesLoaded;
@@ -2120,7 +2122,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void startOptimalPlanning(long generation,long nonce,IStackKey<?> target,long count,long stockRevision,long recipeEpoch,int maxDepth,int maxNodes,Map<IStackKey<?>,Long> stock,Map<String,Identifier> preferredRecipes,Map<ClientRecipePlanner.IngredientKey,String> preferredIngredients)
     {
-        planningTask=PLANNING_EXECUTOR.submit(()->{ClientRecipePlanner.Proposal improved;try{improved=ClientRecipePlanner.plan(planningCatalog,stock,target,count,preferredRecipes,preferredIngredients,maxDepth,maxNodes,ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,true);}catch(RuntimeException ignored){minecraft.execute(()->{if(generation==planningGeneration)planningTask=null;});return;}minecraft.execute(()->{if(generation!=planningGeneration||nonce!=previewNonce)return;planningTask=null;if(!improved.craftable())return;automaticRecipes.clear();automaticResourceRecipes.clear();improved.recipes().forEach((output,recipe)->{automaticResourceRecipes.put(output,recipe);Identifier item=itemOutputForToken(output);if(item!=null)automaticRecipes.put(item,recipe);});automaticIngredients.clear();improved.ingredients().forEach((key,value)->automaticIngredients.put(new IngredientSlotKey(key.recipe(),key.slot()),value));uploadProposal(nonce,target,count,stockRevision,recipeEpoch,improved);rebuildTree(false);com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info("{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,nonce,improved.recipes().size(),improved.ingredients().size(),com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));});});
+        optimizationTask=OPTIMIZATION_EXECUTOR.submit(()->{ClientRecipePlanner.Proposal improved;try{improved=ClientRecipePlanner.plan(planningCatalog,stock,target,count,preferredRecipes,preferredIngredients,maxDepth,maxNodes,ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,true);}catch(RuntimeException ignored){minecraft.execute(()->{if(generation==planningGeneration)optimizationTask=null;});return;}minecraft.execute(()->{if(generation!=planningGeneration||nonce!=previewNonce)return;optimizationTask=null;if(!improved.craftable())return;automaticRecipes.clear();automaticResourceRecipes.clear();improved.recipes().forEach((output,recipe)->{automaticResourceRecipes.put(output,recipe);Identifier item=itemOutputForToken(output);if(item!=null)automaticRecipes.put(item,recipe);});automaticIngredients.clear();improved.ingredients().forEach((key,value)->automaticIngredients.put(new IngredientSlotKey(key.recipe(),key.slot()),value));uploadProposal(nonce,target,count,stockRevision,recipeEpoch,improved);rebuildTree(false);com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info("{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,nonce,improved.recipes().size(),improved.ingredients().size(),com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));});});
     }
 
     private Map<String, Identifier> visibleTreeRecipes()
@@ -2178,7 +2180,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Future<?> task = planningTask;
         planningTask = null;
         if (task != null) task.cancel(true);
+        Future<?> optimization=optimizationTask;
+        optimizationTask=null;
+        if(optimization!=null)optimization.cancel(true);
         PLANNING_EXECUTOR.purge();
+        OPTIMIZATION_EXECUTOR.purge();
     }
 
     private static ScheduledThreadPoolExecutor planningExecutor()

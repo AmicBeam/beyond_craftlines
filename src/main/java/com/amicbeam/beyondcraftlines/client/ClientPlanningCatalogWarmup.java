@@ -29,6 +29,7 @@ public final class ClientPlanningCatalogWarmup
     private static List<RecipeHolder<?>> pendingHolders = List.of();
     private static long observedVirtualRevision = -1;
     private static long generation;
+    private static RecipeSnapshotBuilder snapshotBuilder;
     private static ClientPlanningCatalogCache.LoadJob loadJob;
     private static ClientRecipePlanner.CatalogBuilder builder;
     private static ClientRecipeLookupIndex.Builder lookupBuilder;
@@ -58,14 +59,32 @@ public final class ClientPlanningCatalogWarmup
         if (!requested || level == null || timeBudgetNanos < 1 || !JeiCatalystIndex.recipeTypesReady(families)) return;
         long revision = VirtualProvisionerRecipeRegistry.revision();
         if (!active() || recipeSource != level.getRecipeManager() || observedVirtualRevision != revision)
+            beginSnapshot(level, revision);
+        long deadline = tickStarted + timeBudgetNanos;
+        RecipeSnapshotBuilder snapshot = snapshotBuilder;
+        if (snapshot != null && System.nanoTime() < deadline)
         {
             long scanStarted = System.nanoTime();
-            List<RecipeHolder<?>> recipes = planningRecipes(level, families);
-            long scanElapsed = System.nanoTime() - scanStarted;
-            acquire(level, families, recipes);
-            snapshotNanos += scanElapsed;
+            snapshot.advance(Math.max(1L, deadline - scanStarted));
+            snapshotNanos += System.nanoTime() - scanStarted;
+            if (snapshot.complete())
+            {
+                snapshotBuilder = null;
+                if (builder != null && builder.complete() && holderIds.equals(snapshot.holderIds()))
+                    LOGGER.info("{} client planning catalog retained after recipe snapshot holders={} generation={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            holderIds.size(), generation);
+                else
+                {
+                    builder = null;
+                    lookupBuilder = null;
+                    ClientRecipeLookupIndex.clear();
+                    startPrepared(snapshot.holders(), snapshot.holderIds());
+                }
+            }
         }
-        advance(level, timeBudgetNanos);
+        if (snapshotBuilder == null && System.nanoTime() < deadline)
+            advance(level, Math.max(1L, deadline - System.nanoTime()));
         recordFrameSlice(System.nanoTime() - tickStarted);
     }
 
@@ -91,18 +110,43 @@ public final class ClientPlanningCatalogWarmup
 
     private static void start(List<RecipeHolder<?>> holders, List<String> ids)
     {
-        cancelLoad();
-        generation++;
+        invalidateCapture();
+        startedNanos = System.nanoTime();
+        nextMetricsNanos = startedNanos + METRICS_INTERVAL_NANOS;
+        maxMainSliceNanos = 0L;
+        snapshotNanos = 0L;
+        startPrepared(holders, ids);
+    }
+
+    private static void beginSnapshot(Level level, long revision)
+    {
+        if (complete())
+        {
+            generation++;
+            cancelLoad();
+            snapshotBuilder = null;
+        }
+        else invalidateCapture();
+        recipeSource = level.getRecipeManager();
+        observedVirtualRevision = revision;
+        snapshotBuilder = new RecipeSnapshotBuilder(level, families);
+        startedNanos = System.nanoTime();
+        nextMetricsNanos = startedNanos + METRICS_INTERVAL_NANOS;
+        maxMainSliceNanos = 0L;
+        snapshotNanos = 0L;
+        LOGGER.info("{} client planning recipe snapshot started candidates={} generation={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                snapshotBuilder.totalCandidates(), generation);
+    }
+
+    private static void startPrepared(List<RecipeHolder<?>> holders, List<String> ids)
+    {
         holderIds = List.copyOf(ids);
         pendingHolders = List.copyOf(holders);
         builder = null;
         lookupBuilder = null;
         ClientRecipeLookupIndex.clear();
-        loadJob = ClientPlanningCatalogCache.loadAsync(holderIds, generation);
-        startedNanos = System.nanoTime();
-        nextMetricsNanos = startedNanos + METRICS_INTERVAL_NANOS;
-        maxMainSliceNanos = 0L;
-        snapshotNanos = 0L;
+        loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation);
         completionLogged = false;
         cachePersisted = false;
         LOGGER.info("{} client planning catalog preparation started holders={} generation={}",
@@ -159,6 +203,15 @@ public final class ClientPlanningCatalogWarmup
     public static synchronized void invalidate()
     { invalidateCapture(); }
 
+    /** Recheck a new client recipe manager while retaining a completed catalog until IDs differ. */
+    public static synchronized void refresh()
+    {
+        if (!complete()) { invalidateCapture(); return; }
+        snapshotBuilder = null;
+        recipeSource = null;
+        observedVirtualRevision = -1;
+    }
+
     public static synchronized void clear()
     {
         requested = false;
@@ -170,9 +223,13 @@ public final class ClientPlanningCatalogWarmup
     public static synchronized void pause()
     {
         requested = false;
-        recipeSource = null;
-        if (!complete()) invalidateCapture();
-        com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.clearResolutionKeyCache();
+        snapshotBuilder = null;
+        if (!complete())
+        {
+            recipeSource = null;
+            invalidateCapture();
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.clearResolutionKeyCache();
+        }
     }
 
     private static void invalidateCapture()
@@ -183,6 +240,7 @@ public final class ClientPlanningCatalogWarmup
         holderIds = List.of();
         pendingHolders = List.of();
         observedVirtualRevision = -1;
+        snapshotBuilder = null;
         builder = null;
         lookupBuilder = null;
         ClientRecipeLookupIndex.clear();
@@ -200,7 +258,7 @@ public final class ClientPlanningCatalogWarmup
     }
 
     private static boolean active()
-    { return loadJob != null || builder != null; }
+    { return snapshotBuilder != null || loadJob != null || builder != null; }
 
     private static boolean complete()
     { return builder != null && builder.complete() && lookupBuilder != null && lookupBuilder.complete(); }
@@ -215,7 +273,8 @@ public final class ClientPlanningCatalogWarmup
         nextMetricsNanos = now + METRICS_INTERVAL_NANOS;
         LOGGER.info("{} client planning progress stage={} completed={}/{} queueDepth={} maxMainSliceMs={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                loadJob != null ? "cache_decode" : "recipe_capture", HANDLE.completedRecipes(),
+                snapshotBuilder != null ? "recipe_snapshot"
+                        : loadJob != null ? "cache_decode" : "recipe_capture", HANDLE.completedRecipes(),
                 HANDLE.totalRecipes(), loadJob == null ? 0 : loadJob.queueDepth(), maxMainSliceNanos / 1_000_000L);
         maxMainSliceNanos = 0L;
     }
@@ -237,22 +296,67 @@ public final class ClientPlanningCatalogWarmup
                 maxMainSliceNanos / 1_000_000L);
     }
 
-    private static List<RecipeHolder<?>> planningRecipes(Level level, Set<String> availableFamilies)
+    private static final class RecipeSnapshotBuilder
     {
-        // Keep expensive output resolution inside the cooperative capture cursor. Doing it in
-        // this snapshot produced a single multi-second render-thread stall on large packs.
-        java.util.LinkedHashMap<String, RecipeHolder<?>> selected =
-                new java.util.LinkedHashMap<>();
-        java.util.stream.Stream.concat(RecipePlanningService.allRecipes(level).stream(),
-                VirtualProvisionerRecipeRegistry.recipes().stream()).forEach(holder -> {
+        private final java.util.Iterator<RecipeHolder<?>> nativeRecipes;
+        private final java.util.Iterator<RecipeHolder<?>> virtualRecipes;
+        private final int totalCandidates;
+        private final Set<String> availableFamilies;
+        private final java.util.TreeMap<String, RecipeHolder<?>> selected = new java.util.TreeMap<>();
+        private java.util.Iterator<java.util.Map.Entry<String, RecipeHolder<?>>> sorted;
+        private final java.util.ArrayList<RecipeHolder<?>> holders = new java.util.ArrayList<>();
+        private final java.util.ArrayList<String> holderIds = new java.util.ArrayList<>();
+        private int scanned;
+        private boolean complete;
+
+        private RecipeSnapshotBuilder(Level level, Set<String> availableFamilies)
+        {
+            Collection<RecipeHolder<?>> nativeValues = RecipePlanningService.allRecipes(level);
+            List<RecipeHolder<?>> virtualValues = VirtualProvisionerRecipeRegistry.recipes();
+            nativeRecipes = nativeValues.iterator();
+            virtualRecipes = virtualValues.iterator();
+            totalCandidates = nativeValues.size() + virtualValues.size();
+            this.availableFamilies = Set.copyOf(availableFamilies);
+        }
+
+        private void advance(long timeBudgetNanos)
+        {
+            long started = System.nanoTime();
+            int processed = 0;
+            while (!complete && (processed < 1 || System.nanoTime() - started < timeBudgetNanos))
+            {
+                if (nativeRecipes.hasNext()) accept(nativeRecipes.next());
+                else if (virtualRecipes.hasNext()) accept(virtualRecipes.next());
+                else
+                {
+                    if (sorted == null) sorted = selected.entrySet().iterator();
+                    if (sorted.hasNext())
+                    {
+                        var entry = sorted.next();
+                        holderIds.add(entry.getKey());
+                        holders.add(entry.getValue());
+                    }
+                    else complete = true;
+                }
+                processed++;
+            }
+        }
+
+        private void accept(RecipeHolder<?> holder)
+        {
+            scanned++;
             String family = RecipePlanningService.family(holder);
             if (RecipePlanningService.supported(holder)
                     && VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family)
                     && RecipeIndexVisibility.includes(family, availableFamilies))
                 selected.putIfAbsent(holder.id().toString(), holder);
-        });
-        return selected.values().stream().sorted(java.util.Comparator.comparing(
-                holder -> holder.id().toString())).toList();
+        }
+
+        private boolean complete() { return complete; }
+        private int completedCandidates() { return scanned; }
+        private int totalCandidates() { return totalCandidates; }
+        private List<RecipeHolder<?>> holders() { return holders; }
+        private List<String> holderIds() { return holderIds; }
     }
 
     public static final class Handle
@@ -271,11 +375,13 @@ public final class ClientPlanningCatalogWarmup
         }
         public int completedRecipes()
         {
+            if (snapshotBuilder != null) return snapshotBuilder.completedCandidates();
             if (loadJob != null) return loadJob.completedRecipes();
             return builder == null ? 0 : builder.completedRecipes();
         }
         public int totalRecipes()
         {
+            if (snapshotBuilder != null) return snapshotBuilder.totalCandidates();
             if (loadJob != null) return loadJob.totalRecipes();
             return builder == null ? pendingHolders.size() : builder.totalRecipes();
         }

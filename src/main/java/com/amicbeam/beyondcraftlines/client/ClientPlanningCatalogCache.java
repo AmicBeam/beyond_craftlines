@@ -51,6 +51,7 @@ final class ClientPlanningCatalogCache
             new ArrayBlockingQueue<>(2), runnable -> {
         Thread thread = new Thread(runnable, "beyond-craftlines-planning-cache");
         thread.setDaemon(true);
+        thread.setPriority(Thread.MIN_PRIORITY);
         return thread;
     }, new ThreadPoolExecutor.AbortPolicy());
 
@@ -59,9 +60,16 @@ final class ClientPlanningCatalogCache
     static LoadJob loadAsync(List<String> holderIds, long generation)
     { return loadAsync(path(), holderIds, generation); }
 
+    static LoadJob loadAsync(Level level, List<String> holderIds, long generation)
+    {
+        LoadJob job = new LoadJob(path(), generation, List.copyOf(holderIds), level);
+        job.start();
+        return job;
+    }
+
     static LoadJob loadAsync(Path cachePath, List<String> holderIds, long generation)
     {
-        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds));
+        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds), null);
         job.start();
         return job;
     }
@@ -249,22 +257,25 @@ final class ClientPlanningCatalogCache
         private final long generation;
         private final Path cachePath;
         private final List<String> holderIds;
+        private final Level backgroundLevel;
         private final ArrayBlockingQueue<EncodedRecipe> queue = new ArrayBlockingQueue<>(2);
         private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
         private final java.util.Map<IStackKey<?>, IStackKey<?>> decodedKeys = new java.util.HashMap<>();
         private volatile State state = State.QUEUED;
         private volatile int totalRecipes;
+        private volatile int decodedRecipes;
         private volatile Future<?> future;
         private volatile boolean cancelled;
         private volatile long ioNanos;
         private volatile long headerNanos;
         private volatile long parseNanos;
-        private long decodeNanos;
+        private volatile long decodeNanos;
         private DecodeCursor decoder;
-        private ClientRecipePlanner.Catalog catalog;
+        private volatile ClientRecipePlanner.Catalog catalog;
 
-        private LoadJob(Path cachePath, long generation, List<String> holderIds)
-        { this.cachePath = cachePath; this.generation = generation; this.holderIds = holderIds; }
+        private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel)
+        { this.cachePath = cachePath; this.generation = generation; this.holderIds = holderIds;
+            this.backgroundLevel = backgroundLevel; }
 
         private void start()
         {
@@ -296,9 +307,31 @@ final class ClientPlanningCatalogCache
                         long parseStarted = System.nanoTime();
                         EncodedRecipe encoded = readEncodedRecipe(input, budget, nbtBudget);
                         parseNanos += System.nanoTime() - parseStarted;
-                        queue.put(encoded);
+                        if (backgroundLevel == null) queue.put(encoded);
+                        else
+                        {
+                            long decodeStarted = System.nanoTime();
+                            DecodeCursor cursor = new DecodeCursor(encoded);
+                            ClientRecipePlanner.Recipe recipe = null;
+                            while (recipe == null && !cancelled) recipe = cursor.advance(backgroundLevel);
+                            if (recipe != null)
+                            {
+                                decoded.add(recipe);
+                                decodedRecipes = decoded.size();
+                            }
+                            decodeNanos += System.nanoTime() - decodeStarted;
+                        }
                     }
-                    state = cancelled ? State.CANCELLED : State.EOF;
+                    if (cancelled) state = State.CANCELLED;
+                    else if (backgroundLevel != null)
+                    {
+                        long decodeStarted = System.nanoTime();
+                        catalog = new ClientRecipePlanner.Catalog(decoded);
+                        decodedKeys.clear();
+                        decodeNanos += System.nanoTime() - decodeStarted;
+                        state = State.EOF;
+                    }
+                    else state = State.EOF;
                 }
             }
             catch (InterruptedException exception)
@@ -318,6 +351,7 @@ final class ClientPlanningCatalogCache
 
         synchronized void advance(Level level, long timeBudgetNanos)
         {
+            if (backgroundLevel != null) return;
             if (catalog != null || terminalWithoutCatalog() || timeBudgetNanos < 1) return;
             long started = System.nanoTime();
             int processed = 0;
@@ -333,6 +367,7 @@ final class ClientPlanningCatalogCache
                 if (recipe != null)
                 {
                     decoded.add(recipe);
+                    decodedRecipes = decoded.size();
                     decoder = null;
                 }
                 processed++;
@@ -359,9 +394,12 @@ final class ClientPlanningCatalogCache
             cancelled = true;
             state = State.CANCELLED;
             queue.clear();
-            decoded.clear();
-            decodedKeys.clear();
-            decoder = null;
+            if (backgroundLevel == null)
+            {
+                decoded.clear();
+                decodedKeys.clear();
+                decoder = null;
+            }
             Future<?> task = future;
             if (task != null) task.cancel(true);
         }
@@ -375,7 +413,7 @@ final class ClientPlanningCatalogCache
         }
         boolean terminalWithoutCatalog()
         { return state == State.MISS || state == State.FAILED || state == State.CANCELLED; }
-        int completedRecipes() { return decoded.size(); }
+        int completedRecipes() { return decodedRecipes; }
         int totalRecipes() { return totalRecipes > 0 ? totalRecipes : holderIds.size(); }
         int queueDepth() { return queue.size(); }
         long ioMillis() { return ioNanos / 1_000_000L; }

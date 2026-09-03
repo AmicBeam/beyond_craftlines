@@ -119,7 +119,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
         Minecraft.getInstance().execute(CraftlinesJeiPlugin::requestNetworkAvailability);
     }
 
@@ -127,7 +127,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     {
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
     }
 
     public static boolean showRecipesFor(ItemStack stack)

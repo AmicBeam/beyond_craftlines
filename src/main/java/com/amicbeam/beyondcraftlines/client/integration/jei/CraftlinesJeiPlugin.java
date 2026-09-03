@@ -34,11 +34,13 @@ import org.jetbrains.annotations.Nullable;
 public final class CraftlinesJeiPlugin implements IModPlugin
 {
     private static final long CLIENT_FRAME_BUDGET_NANOS = 2_000_000L;
+    private static final long PENDING_RECIPE_HINT_TTL_NANOS = 300_000_000_000L;
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath(
             BeyondCraftlines.MOD_ID, "jei_plugin");
     private static volatile IJeiRuntime runtime;
     private static volatile NetworkAvailability networkAvailability = NetworkAvailability.UNKNOWN;
     private static volatile long nextNetworkCheckNanos;
+    private static volatile PendingRecipeHint pendingRecipeHint;
 
     @Override
     public ResourceLocation getPluginUid()
@@ -189,6 +191,29 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         else if (Minecraft.getInstance().player != null)
             Minecraft.getInstance().player.displayClientMessage(Component.translatable(
                     "error.beyond_craftlines.middle_click_recipe_not_found"), true);
+    }
+
+    /** Opens immediately; the recipe screen consumes the exact recipe after its index is ready. */
+    public static void orderPreferredTargetDeferred(IStackKey<?> target, ResourceLocation preferredRecipe)
+    {
+        if (target == null || target.isEmpty() || preferredRecipe == null) return;
+        pendingRecipeHint = new PendingRecipeHint(target, preferredRecipe, System.nanoTime());
+        orderTarget(target);
+    }
+
+    public static @Nullable ResourceLocation consumePendingRecipeHint(IStackKey<?> target)
+    {
+        PendingRecipeHint hint = pendingRecipeHint;
+        if (hint == null) return null;
+        if (System.nanoTime() - hint.createdNanos() > PENDING_RECIPE_HINT_TTL_NANOS)
+        {
+            pendingRecipeHint = null;
+            return null;
+        }
+        if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(
+                target, hint.target())) return null;
+        pendingRecipeHint = null;
+        return hint.recipe();
     }
 
     private static @Nullable OpenOrderMenuPayload focusedOrderPayload(IStackKey<?> target)
@@ -488,6 +513,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             tooltip.add(Component.translatable("gui.beyond_craftlines.order_from_jei"));
         }
     }
+
+    private record PendingRecipeHint(IStackKey<?> target, ResourceLocation recipe, long createdNanos) {}
 
     private enum NetworkAvailability
     {

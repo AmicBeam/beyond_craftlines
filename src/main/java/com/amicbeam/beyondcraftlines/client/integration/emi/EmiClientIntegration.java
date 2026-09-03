@@ -7,11 +7,13 @@ import com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
+import dev.emi.emi.EmiRenderHelper;
 import dev.emi.emi.api.EmiApi;
 import dev.emi.emi.api.recipe.EmiRecipe;
 import dev.emi.emi.api.stack.EmiIngredient;
 import dev.emi.emi.api.stack.EmiStack;
 import dev.emi.emi.bom.BoM;
+import dev.emi.emi.runtime.EmiDrawContext;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -33,7 +35,7 @@ import java.util.Set;
 public final class EmiClientIntegration
 {
     private static final EmiStack ICON = EmiStack.of(new ItemStack(CraftlinesItems.NETWORK_LINKER.get()));
-    private static final int RECIPE_BUTTON_SIZE = 13;
+    private static final int RECIPE_BUTTON_SIZE = 12;
     private static Screen recipeButtonScreen;
     private static final List<RecipeButton> recipeButtons = new ArrayList<>();
     private static volatile Object metadataManager;
@@ -203,7 +205,7 @@ public final class EmiClientIntegration
         try { target = recipeTarget(recipe); }
         catch (RuntimeException | LinkageError ignored) { return false; }
         if (target == null) return false;
-        CraftlinesJeiPlugin.orderPreferredTarget(target.output(), target.recipe());
+        CraftlinesJeiPlugin.orderPreferredTargetDeferred(target.output(), target.recipe());
         return true;
     }
 
@@ -219,15 +221,13 @@ public final class EmiClientIntegration
         if (screen != recipeButtonScreen || graphics == null || recipe == null) return;
         boolean hovered = mouseX >= x && mouseX < x + RECIPE_BUTTON_SIZE
                 && mouseY >= y && mouseY < y + RECIPE_BUTTON_SIZE;
-        int fill = hovered ? 0xFF9A9A9A : 0xFF747474;
-        graphics.fill(x, y, x + RECIPE_BUTTON_SIZE, y + RECIPE_BUTTON_SIZE, 0xFF101010);
-        graphics.fill(x + 1, y + 1, x + RECIPE_BUTTON_SIZE - 1,
-                y + RECIPE_BUTTON_SIZE - 1, fill);
-        graphics.fill(x + 2, y + 2, x + RECIPE_BUTTON_SIZE - 2, y + 3, 0xFFC8C8C8);
-        graphics.fill(x + 2, y + 2, x + 3, y + RECIPE_BUTTON_SIZE - 2, 0xFFC8C8C8);
+        EmiDrawContext context = EmiDrawContext.wrap(graphics);
+        context.resetColor();
+        context.drawTexture(EmiRenderHelper.BUTTONS, x, y, 12, 12,
+                72, hovered ? 12 : 0, 12, 12, 256, 256);
         graphics.pose().pushPose();
-        graphics.pose().translate(x + 1.5, y + 1.5, 200);
-        graphics.pose().scale(0.625f, 0.625f, 1.0f);
+        graphics.pose().translate(x + 2.0, y + 2.0, 200);
+        graphics.pose().scale(0.5f, 0.5f, 1.0f);
         ICON.render(graphics, 0, 0, partialTick);
         graphics.pose().popPose();
         recipeButtons.add(new RecipeButton(x, y, recipe));

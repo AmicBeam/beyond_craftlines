@@ -29,8 +29,8 @@ public abstract class EmiRecipeScreenMixin
     @Shadow(remap = false) int backgroundWidth;
     @Shadow(remap = false) int x;
 
-    @Unique private static final int beyondCraftlines$buttonWidth = 13;
-    @Unique private static final int beyondCraftlines$buttonHeight = 13;
+    @Unique private static final int beyondCraftlines$buttonWidth = 12;
+    @Unique private static final int beyondCraftlines$buttonHeight = 12;
     @Inject(method = "render", at = @At("TAIL"), remap = false)
     private void beyondCraftlines$renderButtons(GuiGraphics graphics, int mouseX, int mouseY,
                                                  float partialTick, CallbackInfo callback)

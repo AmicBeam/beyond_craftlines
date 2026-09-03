@@ -347,12 +347,21 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void selectInitialTarget()
     {
         if (minecraft.level == null) return;
-        selected = menu.initialRecipe() != null && menu.initialRecipeHolder() != null && menu.recipeProduces(
-                        menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
+        ResourceLocation hintedRecipe = menu.initialRecipe() == null
+                ? com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                        .consumePendingRecipeHint(menu.initialTarget()) : null;
+        ResourceLocation initialRecipe = menu.initialRecipe() != null ? menu.initialRecipe() : hintedRecipe;
+        selected = initialRecipe != null && menu.recipeProduces(initialRecipe, menu.targetToken())
+                ? menu.recipe(initialRecipe) : null;
         if (selected != null)
         {
-            if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
-                recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
+            if ((menu.initialRecipePinned() || hintedRecipe != null)
+                    && menu.initialTarget() instanceof ItemStackKey itemKey)
+            {
+                recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), initialRecipe);
+                resourceRecipeOverrides.put(com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeResourceResolver.resolutionKey(menu.initialTarget()), initialRecipe);
+            }
             else if (!menu.initialRecipePinned())
                 selected = selectedResourceRecipe(menu.initialTarget(), selected);
         }

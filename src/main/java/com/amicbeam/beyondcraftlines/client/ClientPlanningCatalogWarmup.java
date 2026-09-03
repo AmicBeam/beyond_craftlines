@@ -21,6 +21,13 @@ public final class ClientPlanningCatalogWarmup
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final long BACKGROUND_TIME_BUDGET_NANOS = 2_000_000L;
     private static final long METRICS_INTERVAL_NANOS = 5_000_000_000L;
+    private static final java.util.concurrent.ExecutorService SNAPSHOT_EXECUTOR =
+            java.util.concurrent.Executors.newSingleThreadExecutor(runnable -> {
+                Thread thread = new Thread(runnable, "beyond-craftlines-recipe-snapshot");
+                thread.setDaemon(true);
+                thread.setPriority(Thread.MIN_PRIORITY);
+                return thread;
+            });
     private static final Handle HANDLE = new Handle();
     private static boolean requested;
     private static Set<String> families = Set.of();
@@ -30,13 +37,14 @@ public final class ClientPlanningCatalogWarmup
     private static long observedVirtualRevision = -1;
     private static long generation;
     private static RecipeSnapshotBuilder snapshotBuilder;
+    private static java.util.concurrent.Future<?> snapshotTask;
     private static ClientPlanningCatalogCache.LoadJob loadJob;
     private static ClientRecipePlanner.CatalogBuilder builder;
     private static ClientRecipeLookupIndex.Builder lookupBuilder;
     private static long startedNanos;
     private static long nextMetricsNanos;
     private static long maxMainSliceNanos;
-    private static long snapshotNanos;
+    private static volatile long snapshotNanos;
     private static boolean completionLogged;
     private static boolean cachePersisted;
 
@@ -60,31 +68,25 @@ public final class ClientPlanningCatalogWarmup
         long revision = VirtualProvisionerRecipeRegistry.revision();
         if (!active() || recipeSource != level.getRecipeManager() || observedVirtualRevision != revision)
             beginSnapshot(level, revision);
-        long deadline = tickStarted + timeBudgetNanos;
         RecipeSnapshotBuilder snapshot = snapshotBuilder;
-        if (snapshot != null && System.nanoTime() < deadline)
+        if (snapshot != null && snapshot.complete())
         {
-            long scanStarted = System.nanoTime();
-            snapshot.advance(Math.max(1L, deadline - scanStarted));
-            snapshotNanos += System.nanoTime() - scanStarted;
-            if (snapshot.complete())
+            snapshotBuilder = null;
+            snapshotTask = null;
+            if (builder != null && builder.complete() && holderIds.equals(snapshot.holderIds()))
+                LOGGER.info("{} client planning catalog retained after recipe snapshot holders={} generation={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        holderIds.size(), generation);
+            else
             {
-                snapshotBuilder = null;
-                if (builder != null && builder.complete() && holderIds.equals(snapshot.holderIds()))
-                    LOGGER.info("{} client planning catalog retained after recipe snapshot holders={} generation={}",
-                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                            holderIds.size(), generation);
-                else
-                {
-                    builder = null;
-                    lookupBuilder = null;
-                    ClientRecipeLookupIndex.clear();
-                    startPrepared(snapshot.holders(), snapshot.holderIds());
-                }
+                builder = null;
+                lookupBuilder = null;
+                ClientRecipeLookupIndex.clear();
+                startPrepared(snapshot.holders(), snapshot.holderIds());
             }
         }
-        if (snapshotBuilder == null && System.nanoTime() < deadline)
-            advance(level, Math.max(1L, deadline - System.nanoTime()));
+        if (snapshotBuilder == null)
+            advance(level, timeBudgetNanos);
         recordFrameSlice(System.nanoTime() - tickStarted);
     }
 
@@ -124,6 +126,7 @@ public final class ClientPlanningCatalogWarmup
         {
             generation++;
             cancelLoad();
+            cancelSnapshot();
             snapshotBuilder = null;
         }
         else invalidateCapture();
@@ -134,6 +137,12 @@ public final class ClientPlanningCatalogWarmup
         nextMetricsNanos = startedNanos + METRICS_INTERVAL_NANOS;
         maxMainSliceNanos = 0L;
         snapshotNanos = 0L;
+        RecipeSnapshotBuilder taskSnapshot = snapshotBuilder;
+        snapshotTask = SNAPSHOT_EXECUTOR.submit(() -> {
+            long scanStarted = System.nanoTime();
+            taskSnapshot.advance(Long.MAX_VALUE);
+            snapshotNanos += System.nanoTime() - scanStarted;
+        });
         LOGGER.info("{} client planning recipe snapshot started candidates={} generation={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 snapshotBuilder.totalCandidates(), generation);
@@ -208,6 +217,7 @@ public final class ClientPlanningCatalogWarmup
     {
         if (!complete()) { invalidateCapture(); return; }
         snapshotBuilder = null;
+        cancelSnapshot();
         recipeSource = null;
         observedVirtualRevision = -1;
     }
@@ -223,6 +233,7 @@ public final class ClientPlanningCatalogWarmup
     public static synchronized void pause()
     {
         requested = false;
+        cancelSnapshot();
         snapshotBuilder = null;
         if (!complete())
         {
@@ -236,6 +247,7 @@ public final class ClientPlanningCatalogWarmup
     {
         generation++;
         cancelLoad();
+        cancelSnapshot();
         recipeSource = null;
         holderIds = List.of();
         pendingHolders = List.of();
@@ -255,6 +267,13 @@ public final class ClientPlanningCatalogWarmup
         ClientPlanningCatalogCache.LoadJob loading = loadJob;
         loadJob = null;
         if (loading != null) loading.cancel();
+    }
+
+    private static void cancelSnapshot()
+    {
+        java.util.concurrent.Future<?> task = snapshotTask;
+        snapshotTask = null;
+        if (task != null) task.cancel(true);
     }
 
     private static boolean active()
@@ -306,8 +325,8 @@ public final class ClientPlanningCatalogWarmup
         private java.util.Iterator<java.util.Map.Entry<String, RecipeHolder<?>>> sorted;
         private final java.util.ArrayList<RecipeHolder<?>> holders = new java.util.ArrayList<>();
         private final java.util.ArrayList<String> holderIds = new java.util.ArrayList<>();
-        private int scanned;
-        private boolean complete;
+        private volatile int scanned;
+        private volatile boolean complete;
 
         private RecipeSnapshotBuilder(Level level, Set<String> availableFamilies)
         {
@@ -325,6 +344,7 @@ public final class ClientPlanningCatalogWarmup
             int processed = 0;
             while (!complete && (processed < 1 || System.nanoTime() - started < timeBudgetNanos))
             {
+                if (Thread.currentThread().isInterrupted()) return;
                 if (nativeRecipes.hasNext()) accept(nativeRecipes.next());
                 else if (virtualRecipes.hasNext()) accept(virtualRecipes.next());
                 else

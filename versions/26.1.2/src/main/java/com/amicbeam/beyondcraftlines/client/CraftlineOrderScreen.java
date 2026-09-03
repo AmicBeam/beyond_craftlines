@@ -228,7 +228,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
     private boolean canQueueOrder()
     {
-        return !terminalMenuError&&selected != null && planningCatalog != null && menu.serverRecipeIndexComplete()
+        return !terminalMenuError&&planningCatalog != null && menu.serverRecipeIndexComplete()
                 && (!menu.dashboardConfiguration() || proposalReady);
     }
     private int rightPanelLeft() { return leftPos + imageWidth - rightPanelWidth(); }
@@ -439,7 +439,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void submit()
     {
-        if (selected == null || minecraft.level == null) return;
+        if (minecraft.level == null) return;
         if (!proposalReady)
         {
             submitWhenReady = true;
@@ -460,7 +460,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void saveDashboardRecipe()
     {
-        if (selected == null || minecraft.level == null || !proposalReady
+        if (minecraft.level == null || !proposalReady
                 || menu.dashboardPosition() == null) return;
         ClientPacketDistributor.sendToServer(new SaveDashboardRecipePayload(menu.dashboardPosition(),
                 amountValue(), dashboardStockMode.id(), previewNonce, proposalRecipeEpoch, blockingMode));
@@ -835,7 +835,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return;
         }
         IStackKey<?> rootKey = menu.initialTarget();
-        RecipeHolder<?> rootRecipe = selected == null ? null : selectedResourceRecipe(rootKey, selected);
+        Identifier automaticRoot = automaticResourceRecipes.get(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(rootKey));
+        RecipeHolder<?> rootRecipe = selected == null
+                ? automaticRoot == null ? null : menu.recipe(automaticRoot)
+                : selectedResourceRecipe(rootKey, selected);
         ItemStack rootStack = rootKey instanceof ItemStackKey itemKey
                 ? itemKey.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY;
         Identifier rootItem = rootKey instanceof ItemStackKey itemKey
@@ -855,7 +859,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             treeOffsetY = 14;
         }
         closeIngredientPicker();
-        if (requestPreview && selected != null) markPreviewDirty();
+        if (requestPreview) markPreviewDirty();
     }
 
     private int nodeX(GraphNode node) { return treeLeft() + (int) treeOffsetX + (int) (node.row * 46 * treeZoom); }
@@ -1824,7 +1828,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         previewDirty = false;
         previewDelay = 0;
-        if (selected == null || minecraft.level == null) return;
+        if (minecraft.level == null) return;
         if (!menu.serverRecipeIndexComplete())
         {
             waitingForServerRecipeIndex = true;
@@ -1858,7 +1862,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void receivePlanningSnapshot(PlanningSnapshotPayload snapshot)
     {
-        if (selected == null || snapshot.nonce() != previewNonce
+        if (snapshot.nonce() != previewNonce
                 || !snapshot.itemId().equals(menu.targetToken())) return;
         var header = snapshot.header();
         if (!header.status().success())
@@ -2026,7 +2030,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             minecraft.execute(() -> {
                     if (generation != planningGeneration) return;
                     planningTask = null;
-                    if (nonce != previewNonce || selected == null
+                    if (nonce != previewNonce
                             || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                             .exact(target, menu.initialTarget())) return;
                     loadingStatus = "";
@@ -2222,7 +2226,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void receivePlanPreview(PlanPreviewPayload preview)
     {
-        if (selected == null || preview.nonce() != previewNonce || !preview.itemId().equals(menu.targetToken()))
+        if (preview.nonce() != previewNonce || !preview.itemId().equals(menu.targetToken()))
             return;
         if (!preview.success())
         {

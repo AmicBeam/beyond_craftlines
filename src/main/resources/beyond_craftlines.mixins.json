@@ -5,9 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "client": [
     "emi.BoMPreferenceMixin",
-    "emi.EmiRecipeScreenMixin",
-    "emi.RecipeButtonAccessor",
-    "emi.RecipeDefaultButtonMixin"
+    "emi.EmiRecipeScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

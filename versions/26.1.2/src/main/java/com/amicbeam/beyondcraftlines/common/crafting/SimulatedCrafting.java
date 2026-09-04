@@ -198,8 +198,9 @@ public final class SimulatedCrafting
                     && StackKeyMatch.exact(input.key(), proxy.key()))
                 activeProxies.put(input.ingredientSlot(), proxy);
         }
+        VirtualInputUse[] inputUses=inputUses(holder,level,selections);
         Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts,
-                networkSnapshot, activeProxies);
+                networkSnapshot, activeProxies,inputUses);
         if (prepared == null) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         ItemStack output;
@@ -282,7 +283,7 @@ public final class SimulatedCrafting
                                     List<RecipePlan.IngredientSelection> selections,
                                     Map<IStackKey<?>, Long> orderReserved,
                                     PlanningSnapshotService.Snapshot networkSnapshot,
-                                    Map<Integer, KeyAmount> fluidProxies)
+                                    Map<Integer, KeyAmount> fluidProxies,VirtualInputUse[] inputUses)
     {
         List<Ingredient> ingredients = recipe.placementInfo().ingredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
@@ -334,7 +335,9 @@ public final class SimulatedCrafting
                         || available.amount() <= reserved.getOrDefault(key, 0L)) continue;
                 ItemStack candidate = key.getReadOnlyStack();
                 String selectedItem = selectedItems.get(ingredientIndex);
-                if(!matchesSelection(selectedItem,candidate))
+                if(!matchesSelection(selectedItem,candidate)&&!matchesDurabilitySelection(
+                        ingredient,selectedItem,candidate,ingredientIndex<inputUses.length
+                                ?inputUses[ingredientIndex]:VirtualInputUse.CONSUMED))
                     continue;
                 if (ingredient.test(candidate)) { selected = key; break; }
             }
@@ -357,23 +360,30 @@ public final class SimulatedCrafting
                 return candidate.copyWithCount(1);
         return ItemStack.EMPTY;
     }
+    private static boolean matchesDurabilitySelection(Ingredient ingredient,String selected,
+                                                       ItemStack candidate,VirtualInputUse use)
+    {
+        if(use.kind()!=VirtualInputUse.Kind.DURABILITY)return false;
+        ItemStack expected=selectedSample(ingredient,selected);
+        return !expected.isEmpty()&&VirtualInputUse.matchesDurabilityVariant(expected,candidate);
+    }
     private static boolean matchesSelection(String selection,ItemStack candidate){if(selection==null)return true;Identifier container=FluidContainerChoice.itemOrNull(selection);
         if(FluidContainerChoice.isProxy(selection))return container!=null&&container.equals(BuiltInRegistries.ITEM.getKey(candidate.getItem()));
         return IngredientSelectionKey.matches(selection,new ItemStackKey(candidate));}
 
-    public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder, Level level,
-                                                    List<RecipePlan.IngredientSelection> selections)
+    public static VirtualInputUse[] inputUses(RecipeHolder<?> holder,Level level,
+                                              List<RecipePlan.IngredientSelection> selections)
     {
         var virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value());
         if (virtual != null)
         {
-            boolean[] reusable = new boolean[virtual.inputs().size()];
-            for (int i = 0; i < reusable.length; i++) reusable[i] = virtual.inputs().get(i).use().sharedReusable();
-            return reusable;
+            VirtualInputUse[] uses=new VirtualInputUse[virtual.inputs().size()];
+            for(int i=0;i<uses.length;i++)uses[i]=virtual.inputs().get(i).use();return uses;
         }
         List<Ingredient> ingredients = RecipeIngredientResolver.ingredients(holder.value());
-        boolean[] reusable = new boolean[ingredients.size()];
-        if (!(holder.value() instanceof CraftingRecipe recipe)) return reusable;
+        VirtualInputUse[] uses=new VirtualInputUse[ingredients.size()];
+        java.util.Arrays.fill(uses,VirtualInputUse.CONSUMED);
+        if (!(holder.value() instanceof CraftingRecipe recipe)) return uses;
         Map<Integer, String> selectedItems = new LinkedHashMap<>();
         for (RecipePlan.IngredientSelection selection : selections)
             selectedItems.put(selection.slot(),selection.selection());
@@ -391,14 +401,27 @@ public final class SimulatedCrafting
         try
         {
             CraftingInput input = matchingInput(recipe, samples, level);
-            if (input == null) return reusable;
+            if (input == null) return uses;
             NonNullList<ItemStack> remaining = recipe.getRemainingItems(input);
             for (int i = 0; i < Math.min(ingredients.size(), remaining.size()); i++)
-                reusable[i] = !samples.get(i).isEmpty() && !remaining.get(i).isEmpty()
-                        && samples.get(i).is(remaining.get(i).getItem());
+            {
+                ItemStack source=samples.get(i),remainder=remaining.get(i);
+                uses[i]=VirtualInputUse.fromRemainder(!source.isEmpty()&&!remainder.isEmpty()
+                                &&ItemStack.isSameItem(source,remainder),
+                        !source.isEmpty()&&!remainder.isEmpty()&&ItemStack.isSameItemSameComponents(source,remainder),
+                        !source.isEmpty()&&source.isDamageableItem(),source.isEmpty()?0:source.getDamageValue(),
+                        remainder.isEmpty()?0:remainder.getDamageValue());
+            }
         }
         catch (RuntimeException ignored) {}
-        return reusable;
+        return uses;
+    }
+
+    public static boolean[] reusableIngredientSlots(RecipeHolder<?> holder,Level level,
+                                                    List<RecipePlan.IngredientSelection> selections)
+    {
+        VirtualInputUse[] uses=inputUses(holder,level,selections);boolean[] reusable=new boolean[uses.length];
+        for(int i=0;i<uses.length;i++)reusable[i]=uses[i].sharedReusable();return reusable;
     }
 
     private static CraftingInput matchingInput(CraftingRecipe recipe, List<ItemStack> chosen, Level level)

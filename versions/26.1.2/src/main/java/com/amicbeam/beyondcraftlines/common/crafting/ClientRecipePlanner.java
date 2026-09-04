@@ -261,6 +261,7 @@ public final class ClientRecipePlanner
                                         List<Candidate> variant)
     {
         LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
+        LinkedHashMap<IStackKey<?>, Long> durabilityInputs=new LinkedHashMap<>();
         LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
@@ -290,7 +291,8 @@ public final class ClientRecipePlanner
             boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(output, candidate.key());
             long inputAmount = selfInput ? candidate.count()
                     : slot.use().requiredAmount(crafts, candidate.key(), candidate.count(),state.stock);
-            (slot.use().sharedReusable() ? reusableInputs : inputs)
+            (slot.use().sharedReusable()?reusableInputs:slot.use().kind()==VirtualInputUse.Kind.DURABILITY
+                    ?durabilityInputs:inputs)
                     .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
         }
         for (var input : inputs.entrySet())
@@ -298,6 +300,12 @@ public final class ClientRecipePlanner
                 consumeLeaf(state, input.getKey(), input.getValue());
             else resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
                         manualIngredients, depth + 1, maxDepth, budget);
+        for(var input:durabilityInputs.entrySet())
+        {
+            long used=consumeDurability(state,input.getKey(),input.getValue());
+            if(used<input.getValue())resolve(input.getKey(),input.getValue()-used,byOutput,visiting,state,
+                    manualRecipes,manualIngredients,depth+1,maxDepth,budget);
+        }
         for (var input : reusableInputs.entrySet())
         {
             if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
@@ -322,6 +330,10 @@ public final class ClientRecipePlanner
         long used = consume(state, key, amount);
         if (used < amount) state.missing.merge(key, amount - used, SaturatingLongMath::add);
     }
+
+    private static long consumeDurability(State state,IStackKey<?> requested,long amount)
+    {return state.stock.consume(requested.getTypeId(),key->VirtualInputUse.matchesDurabilityVariant(requested,key),
+            amount,(key,used)->state.usedStock.merge(key,used,SaturatingLongMath::add));}
 
     private static int compare(State left, Recipe leftRecipe, State right, Recipe rightRecipe)
     {
@@ -393,8 +405,8 @@ public final class ClientRecipePlanner
                 ingredientIndex++;candidateIndex=0;candidates=null;return null;
             }
             List<RecipePlan.IngredientSelection> baseline=slots.stream().filter(slot->slot.candidates().getFirst().selectionItem()!=null).map(slot->new RecipePlan.IngredientSelection(slot.index(),slot.candidates().getFirst().selection())).toList();
-            boolean[] reusable=SimulatedCrafting.reusableIngredientSlots(holder,level,baseline);
-            List<Slot> completedSlots=slots.stream().map(slot->new Slot(slot.index(),slot.candidates(),VirtualInputUse.forRecipeSlot(holder.value(),slot.index(),slot.index()<reusable.length&&reusable[slot.index()]))).toList();
+            VirtualInputUse[] inputUses=SimulatedCrafting.inputUses(holder,level,baseline);
+            List<Slot> completedSlots=slots.stream().map(slot->new Slot(slot.index(),slot.candidates(),VirtualInputUse.forRecipeSlot(holder.value(),slot.index(),slot.index()<inputUses.length?inputUses[slot.index()]:VirtualInputUse.CONSUMED))).toList();
             return new Recipe(holder.id().identifier(),RecipePlanningService.family(holder),output.key(),Math.max(1,output.amount()),RecipeIoProfileRegistry.outputMatchSemantics(holder.value(),holder.id().identifier().toString()),completedSlots);
         }
     }

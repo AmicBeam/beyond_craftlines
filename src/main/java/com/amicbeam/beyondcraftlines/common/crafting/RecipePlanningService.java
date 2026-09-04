@@ -363,6 +363,7 @@ public final class RecipePlanningService
         long perCraft = Math.max(1, result.amount());
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
+        List<PlanningDependencyBatcher.Entry<IStackKey<?>>> durabilityDependencyInputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> reusableDependencyInputs = new ArrayList<>();
         Map<IStackKey<?>, Ingredient> dependencyIngredients = new LinkedHashMap<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
@@ -378,7 +379,7 @@ public final class RecipePlanningService
                         slot, IngredientSelectionKey.exact(variant.get(i).key())));
                 sampleItems.put(slot, item);
             }
-        boolean[] reusableSlots = SimulatedCrafting.reusableIngredientSlots(holder, level, selections);
+        VirtualInputUse[] inputUses = SimulatedCrafting.inputUses(holder, level, selections);
         Map<Integer, KeyAmount> fluidProxies = SimulatedCrafting.bucketFluidInputs(holder, level, selections);
         List<RecipePlan.IngredientSelection> finalSelections = new ArrayList<>();
         List<KeyAmount> selectedChoices = new ArrayList<>(variant.size());
@@ -410,7 +411,7 @@ public final class RecipePlanningService
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = selectedChoices.get(i);
             VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
-                    ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
+                    ingredient.slot() < inputUses.length ? inputUses[ingredient.slot()] : VirtualInputUse.CONSUMED);
             if (!StackKeyMatch.exact(outputKey, choice.key())) continue;
             seedPerCraft = SaturatingLongMath.add(seedPerCraft, choice.amount());
             if (!use.sharedReusable())
@@ -424,14 +425,16 @@ public final class RecipePlanningService
             RecipeResourceResolver.ResourceIngredient ingredient = recipeIngredients.get(i);
             KeyAmount choice = selectedChoices.get(i);
             VirtualInputUse use = VirtualInputUse.forRecipeSlot(holder.value(), ingredient.slot(),
-                    ingredient.slot() < reusableSlots.length && reusableSlots[ingredient.slot()]);
+                    ingredient.slot() < inputUses.length ? inputUses[ingredient.slot()] : VirtualInputUse.CONSUMED);
             boolean reusable = use.sharedReusable();
             boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(outputKey, choice.key());
             long inputAmount = selfInput ? choice.amount()
                     : use.requiredAmount(crafts, choice.key(), choice.amount(), state.stock);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
                     ingredient.inputGroup()));
-            (reusable ? reusableDependencyInputs : dependencyInputs)
+            (reusable ? reusableDependencyInputs
+                    : use.kind() == VirtualInputUse.Kind.DURABILITY
+                    ? durabilityDependencyInputs : dependencyInputs)
                     .add(new PlanningDependencyBatcher.Entry<>(choice.key(), inputAmount));
             dependencyIngredients.putIfAbsent(choice.key(), choice.key() instanceof
                     com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey
@@ -443,6 +446,10 @@ public final class RecipePlanningService
             else resolve(level, dependency.getKey(), dependency.getValue(),
                         dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
                         overrides, mode, depth + 1, maxDepth, budget);
+        for (var dependency : PlanningDependencyBatcher.aggregate(durabilityDependencyInputs).entrySet())
+            resolveDurability(level, dependency.getKey(), dependency.getValue(),
+                    dependencyIngredients.get(dependency.getKey()), byOutput, visiting, state,
+                    overrides, mode, depth + 1, maxDepth, budget);
         for (var dependency : PlanningDependencyBatcher.aggregate(reusableDependencyInputs).entrySet())
         {
             if (shape.selfIncrement() && StackKeyMatch.exact(outputKey, dependency.getKey()))
@@ -464,6 +471,23 @@ public final class RecipePlanningService
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);
+    }
+
+    private static void resolveDurability(ServerLevel level, IStackKey<?> resource, long needed,
+                                          Ingredient requiredIngredient,
+                                          Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
+                                          Set<IStackKey<?>> visiting, PlanningState state,
+                                          RecipeResolutionOverrides overrides, ResolutionMode mode,
+                                          int depth, int maxDepth, PlanningBudget budget)
+    {
+        long used = state.stock.consume(resource.getTypeId(),
+                key -> VirtualInputUse.matchesDurabilityVariant(resource, key)
+                        && (requiredIngredient == null || key instanceof ItemStackKey itemKey
+                        && requiredIngredient.test(itemKey.getReadOnlyStack())), needed,
+                (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
+        long remainder = needed - used;
+        if (remainder > 0) resolve(level, resource, remainder, requiredIngredient, byOutput, visiting,
+                state, overrides, mode, depth, maxDepth, budget);
     }
 
     private static void consumeLeaf(IStackKey<?> requested, long amount, PlanningState state)

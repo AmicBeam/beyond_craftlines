@@ -967,8 +967,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         currentSlot, com.amicbeam.beyondcraftlines.common.crafting
                         .IngredientSelectionKey.exact(itemKey)));
         }
-        boolean[] reusable = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
-                .reusableIngredientSlots(recipe, minecraft.level, selections);
+        var inputUses=com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
+                .inputUses(recipe,minecraft.level,selections);
         var fluidProxies = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
                 .bucketFluidInputs(recipe, minecraft.level, selections);
         for (int i = 0; i < selectedInputs.size(); i++)
@@ -992,7 +992,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
                         recipe.value(), selectedInput.slot(),
-                        selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]);
+                        selectedInput.slot()<inputUses.length?inputUses[selectedInput.slot()]
+                                :com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED);
                 seedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                         seedPerCraft, selectedInput.resource().amount());
                 if (!use.sharedReusable())
@@ -1013,7 +1014,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
             var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
-                    recipe.value(), currentSlot, currentSlot < reusable.length && reusable[currentSlot]);
+                    recipe.value(),currentSlot,currentSlot<inputUses.length?inputUses[currentSlot]
+                            :com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED);
             boolean reusableSlot = use.sharedReusable();
             boolean selfInput = shape.selfIncrement() && com.amicbeam.beyondcraftlines.common.crafting
                     .StackKeyMatch.exact(resourceKey, inputKey);

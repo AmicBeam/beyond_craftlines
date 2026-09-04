@@ -295,11 +295,19 @@ public final class RecipePlanningService
         List<List<KeyAmount>> options = new ArrayList<>();
         List<RecipeResourceResolver.ResourceIngredient> recipeIngredients =
                 RecipeResourceResolver.ingredientsForOutput(holder.value(), outputKey);
+        List<RecipePlan.IngredientSelection> baselineSelections=new ArrayList<>();
+        for(RecipeResourceResolver.ResourceIngredient ingredient:recipeIngredients)
+            ingredient.candidates().stream().filter(candidate->candidate.key() instanceof ItemStackKey).findFirst()
+                    .ifPresent(candidate->baselineSelections.add(new RecipePlan.IngredientSelection(
+                            ingredient.slot(),IngredientSelectionKey.exact(candidate.key()))));
+        VirtualInputUse[] baselineUses=SimulatedCrafting.inputUses(holder,level,baselineSelections);
         for (RecipeResourceResolver.ResourceIngredient ingredient : recipeIngredients)
         {
             int currentIndex = ingredient.slot();
+            VirtualInputUse use=VirtualInputUse.forRecipeSlot(holder.value(),currentIndex,
+                    currentIndex<baselineUses.length?baselineUses[currentIndex]:VirtualInputUse.CONSUMED);
             List<KeyAmount> choices = ingredientChoices(holder.id().identifier(), currentIndex, ingredient, state.stock,
-                    byOutput, overrides, mode, budget);
+                    byOutput,overrides,mode,budget,use);
             if (choices.isEmpty())
                 throw new IllegalArgumentException("ingredient cannot be enumerated for " + holder.id()
                         + " slot " + currentIndex);
@@ -472,7 +480,7 @@ public final class RecipePlanningService
                                                      Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput,
                                                      RecipeResolutionOverrides overrides,
                                                      ResolutionMode mode,
-                                                     PlanningBudget budget)
+                                                     PlanningBudget budget,VirtualInputUse use)
     {
         String selected = overrides.ingredientFor(recipe, slot);
         if (selected != null)
@@ -489,7 +497,7 @@ public final class RecipePlanningService
                 .anyMatch(choice -> choice.key() instanceof ItemStackKey))
             throw new IllegalArgumentException("client proposal is incomplete");
         Comparator<KeyAmount> comparator = Comparator.<KeyAmount>comparingLong(value -> stock.available(
-                        value.key().getTypeId(), key -> StackKeyMatch.exact(value.key(), key))).reversed()
+                        value.key().getTypeId(),key->use.matchesStock(value.key(),key))).reversed()
                 .thenComparing(value -> !recipesFor(byOutput, value.key()).isEmpty() ? 0 : 1)
                 .thenComparing(value -> RecipeResourceResolver.resolutionKey(value.key()));
         List<KeyAmount> choices = ingredient.candidates();

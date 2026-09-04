@@ -4,6 +4,15 @@ package com.amicbeam.beyondcraftlines.common.crafting;
 final class DurabilityInputMath
 {
     private DurabilityInputMath() {}
+
+    static long usesForRemainingDurability(long remainingDurability, long damagePerCraft)
+    {
+        if (remainingDurability < 1 || damagePerCraft < 1)
+            throw new IllegalArgumentException("invalid durability capacity");
+        return remainingDurability / damagePerCraft
+                + (remainingDurability % damagePerCraft == 0 ? 0 : 1);
+    }
+
     static long requiredTools(long crafts, long amountPerCraft, long usesPerTool)
     {
         if (crafts < 1 || amountPerCraft < 1 || usesPerTool < 1)

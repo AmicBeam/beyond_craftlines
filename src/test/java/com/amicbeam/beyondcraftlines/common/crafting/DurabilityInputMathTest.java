@@ -6,6 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class DurabilityInputMathTest
 {
+    @Test void includesTheFinalUseThatBreaksTheTool()
+    {
+        assertEquals(2, DurabilityInputMath.usesForRemainingDurability(3, 2));
+        assertEquals(1, DurabilityInputMath.usesForRemainingDurability(1, 2));
+        assertEquals(2, DurabilityInputMath.usesForRemainingDurability(4, 2));
+    }
+
     @Test void usesEachToolsRemainingCapacityBeforeRequestingAnother()
     {
         assertEquals(1, DurabilityInputMath.requiredTools(64, 1, 64));

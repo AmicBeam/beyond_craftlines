@@ -17,13 +17,15 @@ public record VirtualInputUse(Kind kind, int damagePerCraft)
     public static VirtualInputUse durability(int damagePerCraft)
     { return new VirtualInputUse(Kind.DURABILITY, damagePerCraft); }
     public boolean sharedReusable() { return kind == Kind.REUSABLE; }
+    public boolean matchesStock(IStackKey<?> expected,IStackKey<?> candidate)
+    {return StackKeyMatch.exact(expected,candidate)||kind==Kind.DURABILITY&&matchesDurabilityVariant(expected,candidate);}
     static VirtualInputUse fromRemainder(boolean sameItem,boolean sameComponents,
                                          boolean damageable,int damageBefore,int damageAfter)
     {
         if(!sameItem)return CONSUMED;if(sameComponents)return REUSABLE;
         return damageable&&damageAfter>damageBefore?durability(damageAfter-damageBefore):CONSUMED;
     }
-    static boolean matchesDurabilityVariant(IStackKey<?> expected,IStackKey<?> candidate)
+    public static boolean matchesDurabilityVariant(IStackKey<?> expected,IStackKey<?> candidate)
     {
         if(!(expected instanceof ItemStackKey expectedItem)||!(candidate instanceof ItemStackKey candidateItem))return false;
         return matchesDurabilityVariant(expectedItem.getReadOnlyStack(),candidateItem.getReadOnlyStack());
@@ -65,7 +67,7 @@ public record VirtualInputUse(Kind kind, int damagePerCraft)
     private long usesPerItem(IStackKey<?> key)
     {
         if(key instanceof ItemStackKey item){var stack=item.getReadOnlyStack();if(stack.isDamageableItem())
-            return Math.max(1L,((long)stack.getMaxDamage()-stack.getDamageValue())/damagePerCraft);return Long.MAX_VALUE;}
+            return DurabilityInputMath.usesForRemainingDurability(Math.max(1L,(long)stack.getMaxDamage()-stack.getDamageValue()),damagePerCraft);return Long.MAX_VALUE;}
         return 1;
     }
     public static VirtualInputUse forRecipeSlot(net.minecraft.world.item.crafting.Recipe<?> recipe,

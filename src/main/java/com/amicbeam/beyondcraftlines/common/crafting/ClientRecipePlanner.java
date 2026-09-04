@@ -223,7 +223,8 @@ public final class ClientRecipePlanner
             else
             {
                 candidates = slot.candidates().stream().sorted(Comparator
-                        .<Candidate>comparingLong(candidate -> available(state.stock, candidate.key())).reversed()
+                        .<Candidate>comparingLong(candidate -> available(
+                                state.stock, candidate.key(), slot.use())).reversed()
                         .thenComparing(candidate -> !recipesFor(byOutput, candidate.key()).isEmpty() ? 0 : 1)
                         .thenComparing(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))).toList();
             }
@@ -789,8 +790,8 @@ public final class ClientRecipePlanner
     }
 
     private static long available(MatchingStock<IStackKey<?>, ResourceLocation> stock,
-                                  IStackKey<?> requested)
-    { return stock.available(requested.getTypeId(), key -> StackKeyMatch.exact(requested, key)); }
+                                  IStackKey<?> requested, VirtualInputUse use)
+    { return stock.available(requested.getTypeId(), key -> use.matchesStock(requested, key)); }
 
     private static long consume(State state, IStackKey<?> requested, long amount)
     {

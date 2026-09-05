@@ -24,7 +24,8 @@ public final class ClientRecipeLookupIndex
     public static void clear() { snapshot = Snapshot.EMPTY; }
     public static boolean ready() { return snapshot.ready(); }
     public static List<String> recipeIdsForOutput(IStackKey<?> output)
-    { return snapshot.byOutput().getOrDefault(RecipeResourceResolver.resolutionKey(output), List.of()); }
+    { return recipeIdsForOutput(RecipeResourceResolver.resolutionKey(output),
+            RecipeResourceResolver.sortKey(output), snapshot.byOutput(), snapshot.byCompatibleOutput()); }
     public static List<String> recipeIdsForItem(String item)
     { return snapshot.byItem().getOrDefault(item, List.of()); }
     public static String itemForOutputToken(String token) { return snapshot.itemsByOutput().get(token); }
@@ -36,6 +37,7 @@ public final class ClientRecipeLookupIndex
     {
         private final List<ClientRecipePlanner.Recipe> recipes;
         private final Map<String, List<String>> byOutput = new LinkedHashMap<>();
+        private final Map<String, List<String>> byCompatibleOutput = new LinkedHashMap<>();
         private final Map<String, List<String>> byItem = new LinkedHashMap<>();
         private final Map<String, String> itemsByOutput = new LinkedHashMap<>();
         private final Map<String, Set<String>> outputsByRecipe = new LinkedHashMap<>();
@@ -58,6 +60,8 @@ public final class ClientRecipeLookupIndex
                 String coarseToken = RecipeResourceResolver.sortKey(recipe.output());
                 recipeIds.add(id);
                 byOutput.computeIfAbsent(token, ignored -> new ArrayList<>()).add(id);
+                if (recipe.outputMatch() == RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE)
+                    byCompatibleOutput.computeIfAbsent(coarseToken, ignored -> new ArrayList<>()).add(id);
                 outputsByRecipe.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).add(token);
                 outputsByRecipe.get(id).add(coarseToken);
                 if (recipe.output() instanceof ItemStackKey itemKey)
@@ -70,8 +74,9 @@ public final class ClientRecipeLookupIndex
                 processed++;
             }
             if (next < recipes.size()) return;
-            snapshot = new Snapshot(freezeLists(byOutput), freezeLists(byItem), Map.copyOf(itemsByOutput),
-                    freezeSets(outputsByRecipe), List.copyOf(recipeIds), true);
+            snapshot = new Snapshot(freezeLists(byOutput), freezeLists(byCompatibleOutput),
+                    freezeLists(byItem), Map.copyOf(itemsByOutput), freezeSets(outputsByRecipe),
+                    List.copyOf(recipeIds), true);
             complete = true;
         }
 
@@ -92,10 +97,21 @@ public final class ClientRecipeLookupIndex
         }
     }
 
-    private record Snapshot(Map<String, List<String>> byOutput, Map<String, List<String>> byItem,
+    static List<String> recipeIdsForOutput(String resolutionKey, String coarseKey,
+                                           Map<String, List<String>> exact,
+                                           Map<String, List<String>> compatible)
+    {
+        List<String> result = exact.getOrDefault(resolutionKey, List.of());
+        return result.isEmpty() ? compatible.getOrDefault(coarseKey, List.of()) : result;
+    }
+
+    private record Snapshot(Map<String, List<String>> byOutput,
+                            Map<String, List<String>> byCompatibleOutput,
+                            Map<String, List<String>> byItem,
                             Map<String, String> itemsByOutput, Map<String, Set<String>> outputsByRecipe,
                             List<String> recipeIds, boolean ready)
     {
-        private static final Snapshot EMPTY = new Snapshot(Map.of(), Map.of(), Map.of(), Map.of(), List.of(), false);
+        private static final Snapshot EMPTY = new Snapshot(
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(), false);
     }
 }

@@ -4,6 +4,13 @@
   "input_count_semantics": {
     "input": "batch_limit"
   },
+  "representation_fields": ["getMatchingStackList", "getMatchingStacks"],
+  "counted_wrappers": [
+    {
+      "value_fields": ["getBaseIngredient"],
+      "count_fields": ["getCount"]
+    }
+  ],
   "output_mappings": [
     {
       "type": "fluid",

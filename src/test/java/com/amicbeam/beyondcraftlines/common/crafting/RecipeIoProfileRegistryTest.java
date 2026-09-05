@@ -43,6 +43,11 @@ final class RecipeIoProfileRegistryTest
         assertEquals(Set.of("input"), profile.inputFields());
         assertEquals(RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT,
                 profile.inputCountSemantics().get("input"));
+        assertEquals(Set.of("getMatchingStackList", "getMatchingStacks"),
+                Set.copyOf(profile.representationFields()));
+        assertEquals(List.of(new RecipeIoProfileRegistry.CountedWrapper(
+                        Set.of("getBaseIngredient"), Set.of("getCount"))),
+                profile.countedWrappers());
         assertEquals(List.of(new RecipeIoProfileRegistry.OutputMapping(
                         RecipeIoProfileRegistry.OutputType.FLUID,
                         "immersiveengineering:creosote", "creosoteOutput")),

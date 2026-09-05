@@ -4,7 +4,6 @@ import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner;
 import com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
-import com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes;
 import com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry;
 import com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility;
 import net.minecraft.client.Minecraft;
@@ -366,9 +365,10 @@ public final class ClientPlanningCatalogWarmup
         {
             scanned++;
             String family = RecipePlanningService.family(holder);
+            boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
             if (RecipePlanningService.supported(holder)
-                    && VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family)
-                    && RecipeIndexVisibility.includes(family, availableFamilies))
+                    && RecipeIndexVisibility.includesPlanningRecipe(
+                            family, virtual, availableFamilies))
                 selected.putIfAbsent(holder.id().toString(), holder);
         }
 

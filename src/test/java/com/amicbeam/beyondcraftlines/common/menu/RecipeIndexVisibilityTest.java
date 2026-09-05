@@ -19,4 +19,19 @@ final class RecipeIndexVisibilityTest
         assertTrue(RecipeIndexVisibility.includes("example:crusher", available));
         assertFalse(RecipeIndexVisibility.includes("example:unbound_machine", available));
     }
+
+    @Test
+    void planningCatalogKeepsBoundJeiVirtualRecipesWithoutAdmittingNativeMachineRecipes()
+    {
+        Set<String> available = Set.of("mekanism:crushing");
+
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe(
+                "mekanism:crushing", true, available));
+        assertFalse(RecipeIndexVisibility.includesPlanningRecipe(
+                "mekanism:crushing", false, available));
+        assertFalse(RecipeIndexVisibility.includesPlanningRecipe(
+                "create:mixing", true, available));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe(
+                "crafting", false, available));
+    }
 }

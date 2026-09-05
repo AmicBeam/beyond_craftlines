@@ -35,6 +35,20 @@ final class RecipeIoProfileRegistryTest
                 "minecraft:diamond_sword", profile.recipeIdPrefixes()));
     }
 
+    @Test void shipsImmersiveEngineeringCokeOvenBatchAndCreosoteMappings()
+    {
+        RecipeIoProfileRegistry.Profile profile = read("immersiveengineering_coke_oven.json");
+
+        assertEquals(Set.of("immersiveengineering:coke_oven"), profile.recipeTypes());
+        assertEquals(Set.of("input"), profile.inputFields());
+        assertEquals(RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT,
+                profile.inputCountSemantics().get("input"));
+        assertEquals(List.of(new RecipeIoProfileRegistry.OutputMapping(
+                        RecipeIoProfileRegistry.OutputType.FLUID,
+                        "immersiveengineering:creosote", "creosoteOutput")),
+                profile.outputMappings());
+    }
+
     @Test void keepsUnconfiguredRecipesComponentExact()
     {
         Blade requested = new Blade("slashblade:slashblade", "awakened");

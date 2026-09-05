@@ -237,7 +237,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             var layout = current.getRecipeManager().createRecipeLayoutDrawable(
                     category, recipe, focusGroup).orElse(null);
             if (layout == null) continue;
-            var captured = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
+            var captured = JeiVirtualRecipeLayouts.capture(
+                    category.getRecipeType().getUid(), layout, target);
             if (captured == null) continue;
             boolean exact = com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                     .exact(target, captured.output().key());

@@ -225,11 +225,11 @@ public final class JeiCatalystIndex
     }
 
     private static void captured(ResourceLocation type, Object displayedRecipe,
-                                 JeiVirtualRecipeLayouts.Captured captured)
+                                 java.util.List<JeiVirtualRecipeLayouts.Captured> captures)
     {
         if (!JeiRecipeExecutionSource.usesServerRecipe(displayedRecipe))
-            JeiVirtualRecipeLayouts.register(captured);
-        mergeInputGroups(type, captured.inputs().stream().map(
+            captures.forEach(JeiVirtualRecipeLayouts::register);
+        mergeInputGroups(type, captures.stream().flatMap(captured -> captured.inputs().stream()).map(
                 com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload.VirtualInput::inputGroup)
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
     }
@@ -271,9 +271,9 @@ public final class JeiCatalystIndex
                 runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
                                 runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup())
                         .ifPresent(layout -> {
-                            var value = JeiVirtualRecipeLayouts.capture(category.getRecipeType().getUid(), layout);
-                            if (value != null)
-                                JeiCatalystIndex.captured(category.getRecipeType().getUid(), recipe, value);
+                            var values = JeiVirtualRecipeLayouts.captures(category.getRecipeType().getUid(), layout);
+                            if (!values.isEmpty())
+                                JeiCatalystIndex.captured(category.getRecipeType().getUid(), recipe, values);
                         });
                 if (!recipes.hasNext()) complete = true;
                 return true;

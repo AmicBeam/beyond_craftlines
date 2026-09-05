@@ -66,6 +66,14 @@ public final class RecipeIoProfileRegistry
     public static List<OutputMapping> outputMappings(Recipe<?> recipe)
     { return resolved(recipe).outputMappings(); }
 
+    /** JEI animation may show an arbitrary batch size; these profiles require stable recipe data. */
+    public static boolean requiresStructuredJeiCapture(Recipe<?> recipe)
+    {
+        ResolvedProfile profile = resolved(recipe);
+        return profile.inputCountSemantics().containsValue(InputCountSemantics.BATCH_LIMIT)
+                || !profile.outputMappings().isEmpty();
+    }
+
     static OutputMatchSemantics outputMatchSemantics(Recipe<?> recipe, String recipeId)
     { return resolved(recipe, recipeId).outputMatch(); }
 

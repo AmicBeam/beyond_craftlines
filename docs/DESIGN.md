@@ -61,7 +61,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 
 服务端是库存变化、计划有效性、订单状态和绑定权限的唯一权威。客户端基于服务端签发的只读库存快照搜索建议配方树，并负责页面中的库存抵扣、取料和缺料预览；点击下单后，服务端才按当前配方注册表和最新网络库存完整复算固定选择，缺少任一材料时直接报错且不创建订单。
 
-第三方机器配方可能把原版 `Recipe#getIngredients()` 或 `getResultItem()` 保持为空。此时规划器从配方公开的通用输入、输出 accessor 或公共字段读取结构化数据；能力式 I/O 容器中的 `content` / `getContent` 包装无论实现为 record 还是普通 class 都只解包实际资源，不把 chance 等元数据当材料；自定义物品 ingredient 以其实际候选为准，不依赖原版内部空值标记。输入和输出中的 `Ingredient` 均通过编译期映射后的 Minecraft API 展开，不使用会在生产混淆环境失效的方法名反射。input representations 通过 BD `IStackKey` 注册表转换为统一资源。物品、流体以及已加载 Mekanism 联动所注册的化学品等资源共同参与客户端树、库存抵扣、缺料与网络提取汇总、计划签名、服务端校验、订单预留和机器投送。依赖运行时输入才能确定产物的动态配方不作为固定产物机器配方索引。
+第三方机器配方可能把原版 `Recipe#getIngredients()` 或 `getResultItem()` 保持为空。此时规划器从配方公开的通用输入、输出 accessor 或公共字段读取结构化数据；能力式 I/O 容器中的 `content` / `getContent` 包装无论实现为 record 还是普通 class 都只解包实际资源，不把 chance 等元数据当材料；自定义物品 ingredient 以其实际候选为准，不依赖原版内部空值标记。输入和输出中的 `Ingredient` 均通过编译期映射后的 Minecraft API 展开，不使用会在生产混淆环境失效的方法名反射。input representations 通过 BD `IStackKey` 注册表转换为统一资源。物品、流体以及已加载 Mekanism 联动所注册的化学品等资源共同参与客户端树、库存抵扣、缺料与网络提取汇总、计划签名、服务端校验、订单预留和机器投送。依赖运行时输入才能确定产物的动态配方不作为固定产物机器配方索引。声明 `batch_limit` 或 `output_mappings` 的配方不会固化 JEI 动画当前帧，而是从 JEI 携带的真实 `Recipe` 读取单位输入和全部映射输出，再为每个输出注册一条稳定的 JEI 虚拟描述。
 
 ## 4. JEI 入口与订单界面
 

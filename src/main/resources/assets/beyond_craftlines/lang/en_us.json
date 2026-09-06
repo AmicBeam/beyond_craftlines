@@ -26,6 +26,7 @@
   "item.beyond_craftlines.network_linker": "Network Linker",
   "itemGroup.beyond_craftlines": "Beyond: Craftlines",
   "block.beyond_craftlines.craftline_provisioner": "Craftline Provisioner",
+  "item.beyond_craftlines.craftline_provisioner": "Craftline Provisioner",
   "message.beyond_craftlines.device_unbound": "Device unbound.",
   "message.beyond_craftlines.provisioner_recipes_cleared": "Cleared every recipe type and device connection from the selected Craftline Provisioner.",
   "error.beyond_craftlines.no_selected_provisioner_recipes": "No selected Craftline Provisioner has recipe bindings to clear.",

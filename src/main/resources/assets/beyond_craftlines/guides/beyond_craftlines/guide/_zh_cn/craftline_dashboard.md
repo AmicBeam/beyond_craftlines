@@ -4,6 +4,8 @@ navigation:
   title: 合成链仪表盘
   icon: craftline_dashboard
   position: 4
+item_ids:
+  - beyond_craftlines:craftline_dashboard
 ---
 
 # 合成链仪表盘

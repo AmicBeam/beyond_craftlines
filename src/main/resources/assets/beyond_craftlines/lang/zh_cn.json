@@ -26,6 +26,7 @@
   "item.beyond_craftlines.network_linker": "网络连接器",
   "itemGroup.beyond_craftlines": "超越维度：合成链",
   "block.beyond_craftlines.craftline_provisioner": "合成链供给器",
+  "item.beyond_craftlines.craftline_provisioner": "合成链供给器",
   "message.beyond_craftlines.device_unbound": "设备已解绑。",
   "message.beyond_craftlines.provisioner_recipes_cleared": "已清除所选合成链供给器的全部配方类型和设备连接。",
   "error.beyond_craftlines.no_selected_provisioner_recipes": "没有已选择且包含配方绑定的合成链供给器。",

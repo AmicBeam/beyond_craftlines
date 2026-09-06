@@ -4,6 +4,8 @@ navigation:
   title: Craftline Dashboard
   icon: craftline_dashboard
   position: 4
+item_ids:
+  - beyond_craftlines:craftline_dashboard
 ---
 
 # Craftline Dashboard

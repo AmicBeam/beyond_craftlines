@@ -4,7 +4,7 @@
 
 面向 Beyond Dimensions 的配方驱动自动合成系统。Beyond: Craftlines 将 JEI 中的配方展开为可交互的递归合成树，从 BD 网络统一预留原料、调度工作台与真实机器、回收产物，并以可追踪、可取消、可持久化的订单完成从“查到配方”到“拿到成品”的整条生产链。
 
-0.6.0 完整保留 JEI 槽位关联和多产物，确定副产物可以抵扣后续需求；扩展大网格输入上限，并修复配方重载后同 ID 缓存过期问题。分组仍通过 assets/profile 和资源包维护，不新增玩家配置页面。兼容以确定性配方识别为目标，产线由玩家控制，随机配方不纳入本轮优化；逐项识别状态见 [模组逐项检查](docs/COMPATIBILITY_0.6.0.md)，更新记录见 [0.6.0 变更](docs/CHANGELOG_0.6.0.md)。
+0.5.2 完整保留 JEI 槽位关联和多产物，确定副产物可以抵扣后续需求；扩展大网格输入上限，并修复配方重载后同 ID 缓存过期问题。分组仍通过 assets/profile 和资源包维护，不新增玩家配置页面。兼容以确定性配方识别为目标，产线由玩家控制，随机配方不纳入本轮优化；逐项识别状态见 [模组逐项检查](docs/COMPATIBILITY_0.5.2.md)，更新记录见 [0.5.2 变更](docs/CHANGELOG_0.5.2.md)。
 
 ## 核心功能
 
@@ -57,9 +57,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 三个产物分别位于：
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.6.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.6.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.6.0+26.1.2.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.5.2+1.20.1.jar`
+- `build/libs/beyond_craftlines-0.5.2+1.21.1.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.5.2+26.1.2.jar`
 
 ## 使用概要
 

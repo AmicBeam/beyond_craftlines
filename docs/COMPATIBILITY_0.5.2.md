@@ -1,4 +1,4 @@
-# Beyond: Craftlines 0.6.0 模组配方兼容检查
+# Beyond: Craftlines 0.5.2 模组配方兼容检查
 
 检查日期：2026-09-07。范围：用户两批模组清单（重复项合并）、封包所对应原模组，以及 Create、Mekanism、IE、Ender IO、AE2、Tech Reborn、Industrial Foregoing、GTCEu、PneumaticCraft。
 
@@ -162,8 +162,8 @@ Extended Crafting 原版工艺另见 [1.20 源码](https://github.com/BlakeBr0/E
 
 | Minecraft / 加载器 | 构建 | 自动测试 | 跳过 | JAR |
 |---|---|---:|---:|---|
-| 1.20.1 Forge | 成功 | 212 通过 | 3 | `versions/1.20.1/build/libs/beyond_craftlines-0.6.0+1.20.1.jar` |
-| 1.21.1 NeoForge | 成功 | 212 通过 | 3 | `build/libs/beyond_craftlines-0.6.0+1.21.1.jar` |
-| 26.1.2 NeoForge | 成功 | 220 通过 | 0 | `versions/26.1.2/build/libs/beyond_craftlines-0.6.0+26.1.2.jar` |
+| 1.20.1 Forge | 成功 | 212 通过 | 3 | `versions/1.20.1/build/libs/beyond_craftlines-0.5.2+1.20.1.jar` |
+| 1.21.1 NeoForge | 成功 | 212 通过 | 3 | `build/libs/beyond_craftlines-0.5.2+1.21.1.jar` |
+| 26.1.2 NeoForge | 成功 | 220 通过 | 0 | `versions/26.1.2/build/libs/beyond_craftlines-0.5.2+26.1.2.jar` |
 
 三个 JAR 均已检查六个新增输入分组、Create 概率/Occultism 展示过滤配置、JEI Mixin 类及加载声明；26.1.2 的配置仅含 JEI 桥接，不含 EMI。

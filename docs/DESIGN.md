@@ -24,7 +24,7 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge 和 
 | 支持矩阵 | `1.20.1` / Forge 47 / Java 17；`1.21.1` / NeoForge 21.1 / Java 21；`26.1.2` / NeoForge 26.1.2 / Java 25 |
 | 必需依赖 | 各版本对应的 Beyond Dimensions 与 JEI 构建，具体版本见各自 `gradle.properties` |
 | 可选显示联动 | Jade |
-| 当前版本 | `0.6.0` |
+| 当前版本 | `0.5.2` |
 
 本模组不再包含构象捕获、测试维、沙盒试产、试产报告、稳态产线、图纸复制或相关命令。这些内容不属于当前 JAR。
 
@@ -105,7 +105,7 @@ JEI drawable 物化与规划目录共享每个真实世界渲染帧的 2ms 总�
 
 Forge 1.20.1 的旧式 StackKey NBT 序列化成本显著高于后续版本，因此仅该版本在生成 ingredient 选择键时对默认状态物品使用注册 ID 快速路径：实际栈必须与同物品的新建基线栈 tag 相同且 Forge capability 状态兼容。任一 tag、损伤、药水、附魔、命名或 capability 状态差异都会保留完整序列化身份。1.21.1 与 26.1.2 继续直接使用 Data Components 精确身份，不应用此兼容优化。
 
-客户端收到当前主网络的可执行类型后，会在进入世界的正常渲染阶段预热规划目录。完成目录按资源会话令牌与有序 holder ID 集合的 SHA-256 指纹持久化到 `config/beyond_craftlines-planning-catalog-v3.dat`，采用流式压缩、原子替换、1 GiB 文件上限以及集合/字符串/NBT 解码上限。缓存读取、GZIP 解压、格式校验和原始 NBT 解析由单线程、有界队列的 I/O worker 完成；worker 到主线程的 encoded-recipe 队列容量为 2，主线程在 output/slot/candidate 边界使用 RegistryAccess 还原 StackKey，因此不会同时深拷贝两份完整目录。退出世界、配方 reload 或 generation 变化会取消旧 load job，旧 generation 不得安装结果；失败或队列饱和回退到主线程增量捕获。完成后的 builder 会立即释放 Level、RecipeHolder 列表和分组组装 map。日志分别记录缓存 header、解压解析、StackKey 解码、配方快照、候选捕获、Catalog 合并、队列深度和主线程最长时间片。resolution-key 身份缓存最多保留 4096 项，候选匹配使用不写缓存的编码路径，退出世界时清空该缓存。 0.6.0 不再跨进程或跨资源会话复用该磁盘目录：配方同步、JEI 重建、profile 同步和退出世界都会更换会话令牌，即使配方 ID 没变也不能命中旧内容。同会话的内存/磁盘复用保留，完整内容指纹尚未实现。
+客户端收到当前主网络的可执行类型后，会在进入世界的正常渲染阶段预热规划目录。完成目录按资源会话令牌与有序 holder ID 集合的 SHA-256 指纹持久化到 `config/beyond_craftlines-planning-catalog-v3.dat`，采用流式压缩、原子替换、1 GiB 文件上限以及集合/字符串/NBT 解码上限。缓存读取、GZIP 解压、格式校验和原始 NBT 解析由单线程、有界队列的 I/O worker 完成；worker 到主线程的 encoded-recipe 队列容量为 2，主线程在 output/slot/candidate 边界使用 RegistryAccess 还原 StackKey，因此不会同时深拷贝两份完整目录。退出世界、配方 reload 或 generation 变化会取消旧 load job，旧 generation 不得安装结果；失败或队列饱和回退到主线程增量捕获。完成后的 builder 会立即释放 Level、RecipeHolder 列表和分组组装 map。日志分别记录缓存 header、解压解析、StackKey 解码、配方快照、候选捕获、Catalog 合并、队列深度和主线程最长时间片。resolution-key 身份缓存最多保留 4096 项，候选匹配使用不写缓存的编码路径，退出世界时清空该缓存。 0.5.2 不再跨进程或跨资源会话复用该磁盘目录：配方同步、JEI 重建、profile 同步和退出世界都会更换会话令牌，即使配方 ID 没变也不能命中旧内容。同会话的内存/磁盘复用保留，完整内容指纹尚未实现。
 
 订单数量表示必须新制造的数量，而不是目标库存水位。网络中已有的最终产物只用于右侧“网络已有”显示，服务端规划、材料预留、实际提取和“本单将从网络取用”汇总均明确排除与最终产物等价的资源。
 
@@ -159,11 +159,11 @@ EMI 在 1.20.1 Forge 与 1.21.1 NeoForge 中是可选前端：`RecipeScreen` Mix
 
 JEI runtime 只同步建立分类、催化剂和标题的轻量索引；当前主网络已启用的机器分类随后进入客户端预算队列，每个 category 在本次 runtime 生命周期内完整物化一次，每帧最多处理 32 个 drawable 且不超过 2ms。首次进入尚未预热的具体 JEI 类型时只补该类型，之后所有配方树直接复用；网络入口在缺少类型快照时才保守地预热全部分类。客户端递归规划只读取已经物化并按确定性 ID 缓存的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。服务端数据包可在 `recipe_io_profiles` 中按 `recipe_type`、`recipe_classes`、`recipe_class_prefixes`、`recipe_id_prefixes` 或 `resource_namespaces` 限定配方结构和动态产物策略。完整的 `dynamic_output` 声明要求 `source=jei_focus`、`identity=exact`、`planning_fallback=same_resource` 与 `execution=assemble_selected_inputs` 同时成立：同资源回退把 JEI 具体产物关联到已验证的服务端配方，并沿该生产步骤或显式资源命名空间传播到运行时产物检测、最终交付和下一步原料选择；实际检测到的栈以自身完整组件键提取、预留和投料，不会被改写成 JEI 模板，缺少任一声明字段时恢复严格匹配。
 
-0.6.0 的 JEI 描述保存目标输出、全部其他输出与其中可保证的输出。显式 focus link 通过版本对应 JEI 布局桥接保留，联动槽按同一候选索引展开；独立输入候选仍保留为 OR。多候选输出缺少已知关联、资源无法转换或输入超出预算时拒绝该描述，并按类别/原因有界记录诊断，不截断后继续下单。服务端重算描述 ID 只验证描述一致性和网络端点，不证明第三方机器内部条件已满足。
+0.5.2 的 JEI 描述保存目标输出、全部其他输出与其中可保证的输出。显式 focus link 通过版本对应 JEI 布局桥接保留，联动槽按同一候选索引展开；独立输入候选仍保留为 OR。多候选输出缺少已知关联、资源无法转换或输入超出预算时拒绝该描述，并按类别/原因有界记录诊断，不截断后继续下单。服务端重算描述 ID 只验证描述一致性和网络端点，不证明第三方机器内部条件已满足。
 
 确定副产物作为生产库存抵扣后续需求，依赖图补充对前序副产物生产步骤的等待。`RecipePlan.Step` 与订单存档保留全部副产物，以便重启后回收。绑定机器产生的实际副产物进入订单预留，完成/取消时返还未使用部分；未实际产出的概率结果不会进入预留。可通过 `output_probability_rules` 声明概率字段，内置 Create 的概率规则；`ignored_output_fields` 用于排除 Occultism 等仅用于 JEI 说明的虚拟产物。
 
-输入分组继续位于资源包 assets。`jei_type_prefixes` 可补充明确的动态分类前缀，`fixed` cardinality 可描述源码确认的固定展示输入槽。新增配置及逐模组/逐版本证据和限制见 [0.6.0 兼容检查](COMPATIBILITY_0.6.0.md)。
+输入分组继续位于资源包 assets。`jei_type_prefixes` 可补充明确的动态分类前缀，`fixed` cardinality 可描述源码确认的固定展示输入槽。新增配置及逐模组/逐版本证据和限制见 [0.5.2 兼容检查](COMPATIBILITY_0.5.2.md)。
 
 ### 5.3 确定性规划
 

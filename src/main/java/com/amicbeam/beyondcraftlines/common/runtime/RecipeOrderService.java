@@ -878,8 +878,19 @@ public final class RecipeOrderService
         for (RecipeOrderJob.MachineLocation machine : outputLocations)
         {
             ServerLevel machineLevel = server.getLevel(machine.dimension());
-            if (machineLevel != null) drainWhitelistedMachineOutputs(machineLevel,
-                    network.getUnifiedStorage(), step, machine.position(), wait.outputKey());
+            if (machineLevel != null)
+            {
+                // These are observed machine products, not predicted yields. Hold them for later steps;
+                // cancellation and completion return unused products through the normal reservation ledger.
+                for (KeyAmount output : step.byproducts())
+                {
+                    long visible = BoundMachineAutomation.countExtractable(machineLevel, machine.position(), output.key());
+                    if (visible <= 0) continue;
+                    var collected = BoundMachineAutomation.extractStacks(machineLevel, machine.position(), output.key(), visible);
+                    job = addReserved(job, collected.stream().map(value ->
+                            new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
+                }
+            }
         }
 
         // Another automation may extract the primary output before this tick sees it in the
@@ -991,9 +1002,10 @@ public final class RecipeOrderService
 
     private static List<KeyAmount> recipeOutputs(ServerLevel level, RecipePlan.Step step)
     {
-        var holder = com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
-                .find(step.recipe()).orElse(null);
-        return holder == null ? List.of() : RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
+        List<KeyAmount> outputs = new ArrayList<>();
+        outputs.add(new KeyAmount(step.outputKey(), step.outputPerCraft()));
+        outputs.addAll(step.byproducts());
+        return List.copyOf(outputs);
     }
 
     private static RecipeOrderJob tickProvisioner(MinecraftServer server, DimensionsNet network,

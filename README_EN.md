@@ -4,6 +4,8 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
+Version 0.6.0 preserves JEI focus links and multiple outputs, credits guaranteed co-products to later requirements, expands large-grid input capacity, and invalidates stale recipe catalogs after reloads. Input groups remain resource-pack/profile driven, with no new player configuration screen. See the [mod compatibility audit](docs/COMPATIBILITY_0.6.0.md) and [0.6.0 changes](docs/CHANGELOG_0.6.0.md) for scope and limitations.
+
 ## Features
 
 - **Order directly from JEI, EMI, or the network**: JEI and optional EMI recipe pages expose a Craftlines button. One configurable “Order hovered resource” control (middle mouse by default) works across JEI, EMI recipe slots/index entries/favorites, and BD network slots. Recipe defaults synchronize both ways between the Craftlines tree and EMI BoM: selecting or forgetting a preference on either side updates the other, while the selected recipe is still revalidated by the JEI execution backend.
@@ -55,9 +57,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 The three artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.5.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.5.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.5.0+26.1.2.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.6.0+1.20.1.jar`
+- `build/libs/beyond_craftlines-0.6.0+1.21.1.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.6.0+26.1.2.jar`
 
 ## Usage Overview
 

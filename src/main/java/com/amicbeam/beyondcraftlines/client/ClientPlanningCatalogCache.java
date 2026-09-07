@@ -37,7 +37,10 @@ import java.util.zip.GZIPOutputStream;
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
-    static final int VERSION = 2;
+    static final int VERSION = 3;
+    // Recipe IDs do not describe KubeJS recipes, tags, profiles, or the connected server.
+    // Keep disk reuse within one verified resource session until a full content digest is available.
+    private static volatile String resourceSession = java.util.UUID.randomUUID().toString();
     private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
     private static final long MAX_TOTAL_NBT_BYTES = 1024L * 1024L * 1024L;
     private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
@@ -56,6 +59,9 @@ final class ClientPlanningCatalogCache
     }, new ThreadPoolExecutor.AbortPolicy());
 
     private ClientPlanningCatalogCache() {}
+
+    static void invalidateResources()
+    { resourceSession = java.util.UUID.randomUUID().toString(); }
 
     static LoadJob loadAsync(List<String> holderIds, long generation)
     { return loadAsync(path(), holderIds, generation); }
@@ -136,6 +142,12 @@ final class ClientPlanningCatalogCache
         writeKey(output, level, recipe.output());
         output.writeLong(recipe.outputCount());
         writeString(output, recipe.outputMatch().name());
+        output.writeInt(recipe.byproducts().size());
+        for (var byproduct : recipe.byproducts())
+        {
+            writeKey(output, level, byproduct.key());
+            output.writeLong(byproduct.amount());
+        }
         output.writeInt(recipe.slots().size());
         for (ClientRecipePlanner.Slot slot : recipe.slots())
         {
@@ -163,6 +175,11 @@ final class ClientPlanningCatalogCache
         long outputCount = input.readLong();
         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch =
                 RecipeIoProfileRegistry.OutputMatchSemantics.valueOf(readString(input, budget));
+        int byproductCount = bounded(input.readInt(), 64);
+        budget.addEntries(byproductCount);
+        List<EncodedYield> byproducts = new ArrayList<>(byproductCount);
+        for (int i = 0; i < byproductCount; i++)
+            byproducts.add(new EncodedYield(readEncodedKey(input, budget, nbtBudget), input.readLong()));
         int slotCount = bounded(input.readInt(), MAX_SLOTS);
         budget.addEntries(slotCount);
         List<EncodedSlot> slots = new ArrayList<>(slotCount);
@@ -185,7 +202,7 @@ final class ClientPlanningCatalogCache
             slots.add(new EncodedSlot(slotIndex, List.copyOf(candidates), use));
         }
         if (id == null) throw new IOException("invalid cached recipe");
-        return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots));
+        return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots), List.copyOf(byproducts));
     }
 
     private static void writeKey(DataOutputStream output, Level level, IStackKey<?> key) throws IOException
@@ -231,6 +248,7 @@ final class ClientPlanningCatalogCache
         try
         {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(resourceSession.getBytes(StandardCharsets.UTF_8));
             holderIds.forEach(id -> {
                 digest.update(id.getBytes(StandardCharsets.UTF_8));
                 digest.update((byte) 0);
@@ -243,7 +261,7 @@ final class ClientPlanningCatalogCache
 
     private static Path path()
     { return Minecraft.getInstance().gameDirectory.toPath().resolve("config")
-            .resolve("beyond_craftlines-planning-catalog-v2.dat"); }
+            .resolve("beyond_craftlines-planning-catalog-v3.dat"); }
 
     private static void moveReplacing(Path source, Path target) throws IOException
     {
@@ -427,6 +445,8 @@ final class ClientPlanningCatalogCache
             private final EncodedRecipe encoded;
             private final List<ClientRecipePlanner.Slot> slots;
             private IStackKey<?> output;
+            private int byproductIndex;
+            private final List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts = new ArrayList<>();
             private int slotIndex;
             private int candidateIndex;
             private List<ClientRecipePlanner.Candidate> candidates;
@@ -439,6 +459,13 @@ final class ClientPlanningCatalogCache
                 if (output == null)
                 {
                     output = decodeKey(encoded.output(), level);
+                    return null;
+                }
+                if (byproductIndex < encoded.byproducts().size())
+                {
+                    EncodedYield byproduct = encoded.byproducts().get(byproductIndex++);
+                    byproducts.add(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
+                            decodeKey(byproduct.key(), level), byproduct.amount()));
                     return null;
                 }
                 if (slotIndex < encoded.slots().size())
@@ -462,7 +489,7 @@ final class ClientPlanningCatalogCache
                     return null;
                 }
                 return new ClientRecipePlanner.Recipe(encoded.id(), encoded.family(), output,
-                        encoded.outputCount(), encoded.outputMatch(), slots);
+                        encoded.outputCount(), encoded.outputMatch(), slots, byproducts);
             }
         }
     }
@@ -470,10 +497,11 @@ final class ClientPlanningCatalogCache
     private enum State { QUEUED, READING, EOF, MISS, FAILED, CANCELLED }
     private record EncodedKey(ResourceLocation type, CompoundTag nbt) {}
     private record EncodedCandidate(EncodedKey key, long count, ResourceLocation selectionItem, String selection) {}
+    private record EncodedYield(EncodedKey key, long amount) {}
     private record EncodedSlot(int index, List<EncodedCandidate> candidates, VirtualInputUse use) {}
     private record EncodedRecipe(ResourceLocation id, String family, EncodedKey output, long outputCount,
                                  RecipeIoProfileRegistry.OutputMatchSemantics outputMatch,
-                                 List<EncodedSlot> slots) {}
+                                 List<EncodedSlot> slots, List<EncodedYield> byproducts) {}
 
     private static final class ReadBudget
     {

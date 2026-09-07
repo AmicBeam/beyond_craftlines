@@ -59,4 +59,28 @@ final class ClientPlanningCatalogCachePipelineTest
         assertTrue(cancelled.terminalWithoutCatalog());
         assertEquals("cancelled", cancelled.stateName());
     }
+    @Test void unchangedRecipeIdsDoNotReuseAPreviousResourceSession() throws Exception
+    {
+        List<String> ids = List.of("pack:changed_recipe");
+        Path cache = directory.resolve("stale.dat");
+        String old = ClientPlanningCatalogCache.fingerprint(ids);
+        try (DataOutputStream output = new DataOutputStream(new GZIPOutputStream(Files.newOutputStream(cache))))
+        {
+            output.writeInt(ClientPlanningCatalogCache.MAGIC);
+            output.writeInt(ClientPlanningCatalogCache.VERSION);
+            byte[] fingerprint = old.getBytes(StandardCharsets.UTF_8);
+            output.writeInt(fingerprint.length);
+            output.write(fingerprint);
+            output.writeInt(0);
+        }
+        ClientPlanningCatalogCache.invalidateResources();
+        assertNotEquals(old, ClientPlanningCatalogCache.fingerprint(ids));
+        var miss = ClientPlanningCatalogCache.loadAsync(cache, ids, 12L);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            while (!miss.terminalWithoutCatalog()) Thread.sleep(1L);
+        });
+        assertEquals("miss", miss.stateName());
+        assertFalse(miss.complete());
+    }
+
 }

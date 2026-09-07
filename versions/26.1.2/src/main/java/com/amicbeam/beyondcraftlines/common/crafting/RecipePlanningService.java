@@ -446,11 +446,20 @@ public final class RecipePlanningService
         }
         List<Integer> dependencies = java.util.stream.IntStream.range(dependencyStart, state.steps.size())
                 .boxed().toList();
+        java.util.LinkedHashSet<Integer> producers = new java.util.LinkedHashSet<>(dependencies);
+        for (int i = 0; i < state.steps.size(); i++)
+            if (state.steps.get(i).byproducts().stream().anyMatch(output -> inputs.stream()
+                    .anyMatch(input -> StackKeyMatch.exact(input.key(), output.key())))) producers.add(i);
+        dependencies = List.copyOf(producers);
         state.steps.add(new RecipePlan.Step(holder.id().identifier(), family(holder), outputKey,
-                perCraft, crafts, inputs, finalSelections, dependencies, shape.seed()));
+                perCraft, crafts, inputs, finalSelections, dependencies, shape.seed(), VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null
+                ? List.of() : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).byproducts()));
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);
+        var descriptor = VirtualProvisionerRecipeRegistry.descriptor(holder.value());
+        if (descriptor != null) for (KeyAmount byproduct : descriptor.guaranteedByproducts())
+            state.stock.add(byproduct.key(), SaturatingLongMath.multiply(byproduct.amount(), crafts));
     }
 
     private static void resolveDurability(ServerLevel level,IStackKey<?> resource,long needed,

@@ -39,7 +39,24 @@ public final class VirtualProvisionerRecipeRegistry
     public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
                                            List<InputSlot> inputs)
     {
-        Descriptor descriptor = new Descriptor(family, output, outputAmount, inputs);
+        return register(family, output, outputAmount, inputs, List.of());
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts)
+    {
+        return register(family, output, outputAmount, inputs, byproducts, byproducts);
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts,
+                                           List<KeyAmount> guaranteedByproducts)
+    {
+        return register(new Descriptor(family, output, outputAmount, inputs, byproducts, guaranteedByproducts));
+    }
+
+    public static RecipeHolder<?> register(Descriptor descriptor)
+    {
         ResourceLocation id = descriptor.id();
         RecipeHolder<?> existing = RECIPES.get(id);
         if (existing != null) return existing;
@@ -122,7 +139,7 @@ public final class VirtualProvisionerRecipeRegistry
         public InputSlot
         {
             if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
-                    || candidates.size() > 64 || candidates.stream().anyMatch(value -> value == null
+                    || candidates.size() > VirtualRecipeLimits.CANDIDATES || candidates.stream().anyMatch(value -> value == null
                     || value.isEmpty() || value.amount() < 1) || use == null)
                 throw new IllegalArgumentException("invalid virtual provisioner ingredient");
             candidates = List.copyOf(candidates);
@@ -130,15 +147,33 @@ public final class VirtualProvisionerRecipeRegistry
     }
 
     public record Descriptor(String family, IStackKey<?> output, long outputAmount,
-                             List<InputSlot> inputs)
+                             List<InputSlot> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
     {
+        public Descriptor(String family, IStackKey<?> output, long outputAmount, List<InputSlot> inputs)
+        { this(family, output, outputAmount, inputs, List.of(), List.of()); }
+
         public Descriptor
         {
             if (ResourceLocation.tryParse(family) == null || family.length() > 256
                     || output == null || output.isEmpty() || outputAmount < 1
-                    || inputs == null || inputs.isEmpty() || inputs.size() > 32)
+                    || inputs == null || inputs.isEmpty() || inputs.size() > VirtualRecipeLimits.INPUTS)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");
             inputs = List.copyOf(inputs);
+            VirtualRecipeLimits.requireInputs(inputs.size(), inputs.stream().mapToLong(slot -> slot.candidates().size()).sum());
+            if (byproducts == null || byproducts.size() >= VirtualRecipeLimits.OUTPUTS
+                    || byproducts.stream().anyMatch(value -> value == null || value.isEmpty()
+                    || value.amount() < 1 || StackKeyMatch.exact(output, value.key())))
+                throw new IllegalArgumentException("invalid virtual recipe byproducts");
+            byproducts = List.copyOf(byproducts);
+            guaranteedByproducts = List.copyOf(guaranteedByproducts);
+            if (byproducts.stream().map(value -> RecipeResourceResolver.resolutionKey(value.key())).distinct().count()
+                    != byproducts.size() || guaranteedByproducts.stream()
+                    .map(value -> RecipeResourceResolver.resolutionKey(value.key())).distinct().count() != guaranteedByproducts.size())
+                throw new IllegalArgumentException("duplicate virtual recipe byproduct");
+            for (KeyAmount guaranteed : guaranteedByproducts)
+                if (byproducts.stream().noneMatch(actual -> StackKeyMatch.exact(actual.key(), guaranteed.key())
+                        && actual.amount() == guaranteed.amount()))
+                    throw new IllegalArgumentException("guaranteed output is not a declared byproduct");
         }
 
         public ResourceLocation id()
@@ -152,6 +187,10 @@ public final class VirtualProvisionerRecipeRegistry
                 slot.candidates().stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }
+            byproducts.stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|byproduct:").append(value));
+            guaranteedByproducts.stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|guaranteed:").append(value));
             UUID uuid = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));
             return ResourceLocation.fromNamespaceAndPath("beyond_craftlines", "jei_virtual/" + uuid);
         }

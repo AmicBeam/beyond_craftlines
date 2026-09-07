@@ -1,0 +1,22 @@
+{
+  "jei_type": "industrialforegoing:dissolution",
+  "recipe_classes": [
+    "com.buuz135.industrial.recipe.DissolutionChamberRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "ingredients",
+      "cardinality": "collection",
+      "members": [
+        "input"
+      ]
+    },
+    {
+      "group": "input_fluid",
+      "cardinality": "single",
+      "members": [
+        "inputFluid"
+      ]
+    }
+  ]
+}

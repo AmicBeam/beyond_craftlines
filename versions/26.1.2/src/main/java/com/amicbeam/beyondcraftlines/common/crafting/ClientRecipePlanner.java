@@ -322,6 +322,8 @@ public final class ClientRecipePlanner
         state.steps++;
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         if (produced > remainder) state.stock.add(output, produced - remainder);
+        for (KeyAmount byproduct : recipe.byproducts())
+            state.stock.add(byproduct.key(), SaturatingLongMath.multiply(byproduct.amount(), crafts));
         return true;
     }
 
@@ -407,7 +409,8 @@ public final class ClientRecipePlanner
             List<RecipePlan.IngredientSelection> baseline=slots.stream().filter(slot->slot.candidates().getFirst().selectionItem()!=null).map(slot->new RecipePlan.IngredientSelection(slot.index(),slot.candidates().getFirst().selection())).toList();
             VirtualInputUse[] inputUses=SimulatedCrafting.inputUses(holder,level,baseline);
             List<Slot> completedSlots=slots.stream().map(slot->new Slot(slot.index(),slot.candidates(),VirtualInputUse.forRecipeSlot(holder.value(),slot.index(),slot.index()<inputUses.length?inputUses[slot.index()]:VirtualInputUse.CONSUMED))).toList();
-            return new Recipe(holder.id().identifier(),RecipePlanningService.family(holder),output.key(),Math.max(1,output.amount()),RecipeIoProfileRegistry.outputMatchSemantics(holder.value(),holder.id().identifier().toString()),completedSlots);
+            return new Recipe(holder.id().identifier(),RecipePlanningService.family(holder),output.key(),Math.max(1,output.amount()),RecipeIoProfileRegistry.outputMatchSemantics(holder.value(),holder.id().identifier().toString()),completedSlots, VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null ? List.of()
+                    : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).guaranteedByproducts());
         }
     }
 
@@ -483,14 +486,18 @@ public final class ClientRecipePlanner
         }
     }
     public record Recipe(Identifier id, String family, IStackKey<?> output, long outputCount,
-                         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots)
+                         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots, List<KeyAmount> byproducts)
     {
+        public Recipe(Identifier id, String family, IStackKey<?> output, long outputCount,
+                      RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots)
+        { this(id, family, output, outputCount, outputMatch, slots, List.of()); }
         public Recipe
         {
             Objects.requireNonNull(id); Objects.requireNonNull(family); Objects.requireNonNull(output);
             Objects.requireNonNull(outputMatch);
             if (outputCount < 1) throw new IllegalArgumentException("invalid recipe output");
             slots = List.copyOf(slots);
+            byproducts = List.copyOf(byproducts);
         }
     }
     public record Slot(int index, List<Candidate> candidates, VirtualInputUse use)

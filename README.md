@@ -4,6 +4,8 @@
 
 面向 Beyond Dimensions 的配方驱动自动合成系统。Beyond: Craftlines 将 JEI 中的配方展开为可交互的递归合成树，从 BD 网络统一预留原料、调度工作台与真实机器、回收产物，并以可追踪、可取消、可持久化的订单完成从“查到配方”到“拿到成品”的整条生产链。
 
+0.6.0 完整保留 JEI 槽位关联和多产物，确定副产物可以抵扣后续需求；扩展大网格输入上限，并修复配方重载后同 ID 缓存过期问题。分组仍通过 assets/profile 和资源包维护，不新增玩家配置页面。概率、世界事件和玩家操作等兼容边界见 [模组逐项检查](docs/COMPATIBILITY_0.6.0.md)，更新记录见 [0.6.0 变更](docs/CHANGELOG_0.6.0.md)。
+
 ## 核心功能
 
 - **从 JEI、EMI 或网络直接下单**：JEI 与可选的 EMI 配方页都提供 Craftlines 按钮；在 Minecraft「按键控制」中可配置统一的“下单悬浮资源”按键（默认中键），用于 JEI、EMI 物品索引/收藏/配方槽和 BD 网络物品槽。Craftlines 配方树与 EMI BoM 的配方偏好双向同步：任一侧选择或遗忘偏好都会同步到另一侧，最终配方仍由 JEI 执行后端重新验证。第一阶段按配置的每 tick 条目上限建立并缓存配方查找索引，完成后一次性显示完整树；第二阶段保持树形布局不变并继续准备规划目录。两级缓存仅在配方重载后失效，重复打开无需重新索引。
@@ -55,9 +57,9 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 三个产物分别位于：
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.5.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.5.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.5.0+26.1.2.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.6.0+1.20.1.jar`
+- `build/libs/beyond_craftlines-0.6.0+1.21.1.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.6.0+26.1.2.jar`
 
 ## 使用概要
 

@@ -80,7 +80,10 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 tasks.named('processResources', ProcessResources) {
-    exclude 'beyond_craftlines.mixins.json'
+    filesMatching('beyond_craftlines.mixins.json') {
+        // JEI layout links apply to all versions; EMI is not available on 26.1.2.
+        filter { String line -> line.contains('"emi.') ? '' : line }
+    }
     from('../../LICENSE') { into 'META-INF' }
     from('../../THIRD_PARTY_NOTICES.md') { into 'META-INF' }
 }

@@ -97,7 +97,7 @@ JEI drawable 物化与规划目录共享每个真实世界渲染帧的 2ms 总�
 
 Forge 1.20.1 的旧式 StackKey NBT 序列化成本显著高于后续版本，因此仅该版本在生成 ingredient 选择键时对默认状态物品使用注册 ID 快速路径：实际栈必须与同物品的新建基线栈 tag 相同且 Forge capability 状态兼容。任一 tag、损伤、药水、附魔、命名或 capability 状态差异都会保留完整序列化身份。1.21.1 与 26.1.2 继续直接使用 Data Components 精确身份，不应用此兼容优化。
 
-客户端收到当前主网络的可执行类型后，会在进入世界的正常渲染阶段预热规划目录。完成目录按有序 holder ID 集合的 SHA-256 指纹持久化到 `config/beyond_craftlines-planning-catalog-v2.dat`，采用流式压缩、原子替换、512 MiB 文件上限以及集合/字符串/NBT 解码上限。缓存读取、GZIP 解压、格式校验和原始 NBT 解析由单线程、有界队列的 I/O worker 完成；worker 到主线程的 encoded-recipe 队列容量为 2，主线程在 output/slot/candidate 边界使用 RegistryAccess 还原 StackKey，因此不会同时深拷贝两份完整目录。退出世界、配方 reload 或 generation 变化会取消旧 load job，旧 generation 不得安装结果；失败或队列饱和回退到主线程增量捕获。完成后的 builder 会立即释放 Level、RecipeHolder 列表和分组组装 map。日志分别记录缓存 header、解压解析、StackKey 解码、配方快照、候选捕获、Catalog 合并、队列深度和主线程最长时间片。resolution-key 身份缓存最多保留 4096 项，候选匹配使用不写缓存的编码路径，退出世界时清空该缓存。
+客户端收到当前主网络的可执行类型后，会在进入世界的正常渲染阶段预热规划目录。完成目录按资源会话令牌与有序 holder ID 集合的 SHA-256 指纹持久化到 `config/beyond_craftlines-planning-catalog-v3.dat`，采用流式压缩、原子替换、1 GiB 文件上限以及集合/字符串/NBT 解码上限。缓存读取、GZIP 解压、格式校验和原始 NBT 解析由单线程、有界队列的 I/O worker 完成；worker 到主线程的 encoded-recipe 队列容量为 2，主线程在 output/slot/candidate 边界使用 RegistryAccess 还原 StackKey，因此不会同时深拷贝两份完整目录。退出世界、配方 reload 或 generation 变化会取消旧 load job，旧 generation 不得安装结果；失败或队列饱和回退到主线程增量捕获。完成后的 builder 会立即释放 Level、RecipeHolder 列表和分组组装 map。日志分别记录缓存 header、解压解析、StackKey 解码、配方快照、候选捕获、Catalog 合并、队列深度和主线程最长时间片。resolution-key 身份缓存最多保留 4096 项，候选匹配使用不写缓存的编码路径，退出世界时清空该缓存。 0.6.0 不再跨进程或跨资源会话复用该磁盘目录：配方同步、JEI 重建、profile 同步和退出世界都会更换会话令牌，即使配方 ID 没变也不能命中旧内容。同会话的内存/磁盘复用保留，完整内容指纹尚未实现。
 
 订单数量表示必须新制造的数量，而不是目标库存水位。网络中已有的最终产物只用于右侧“网络已有”显示，服务端规划、材料预留、实际提取和“本单将从网络取用”汇总均明确排除与最终产物等价的资源。
 
@@ -150,6 +150,12 @@ Forge 1.20.1 的旧式 StackKey NBT 序列化成本显著高于后续版本，�
 EMI 在 1.20.1 Forge 与 1.21.1 NeoForge 中是可选前端：`RecipeScreen` Mixin 在 EMI 完成配方卡片布局后查找原生按钮空位，直接使用 EMI `buttons.png` 的 12×12 空白按钮单元并叠加缩放后的连接器贴图；`mouseClicked` Mixin 与 NeoForge/Forge 屏幕事件共享同一份屏幕坐标命中表，不依赖生产环境默认关闭的 recipe decorator。按钮点击只保存短生命周期的当前配方提示并立即打开空页面，页面索引就绪后再固定该配方，禁止在渲染或鼠标线程同步扫描 JEI。hover API 为统一的“下单悬浮资源”按键提供目标。Craftlines 配方树保存或遗忘配方偏好时通过可选桥调用 `BoM.addRecipe/removeRecipe`，`BoM` Mixin 则把 EMI 自身的偏好变更写回 Craftlines 客户端偏好，实现双向同步。所有 EMI 入口与偏好必须重新映射到 JEI recipe ID 并由现有 JEI 布局后端验证，EMI-only 配方不进入执行协议。EMI/JEMI 元数据完成后必须刷新 JEI 输入分组索引，保留供给器和绑定设备的语义子标签。26.1.2 因上游没有对应构件只提供 no-op 桥。EMI 不替换 Craftlines 规划树，也不改变 JEI 为必需执行后端的现状。
 
 JEI runtime 只同步建立分类、催化剂和标题的轻量索引；当前主网络已启用的机器分类随后进入客户端预算队列，每个 category 在本次 runtime 生命周期内完整物化一次，每帧最多处理 32 个 drawable 且不超过 2ms。首次进入尚未预热的具体 JEI 类型时只补该类型，之后所有配方树直接复用；网络入口在缺少类型快照时才保守地预热全部分类。客户端递归规划只读取已经物化并按确定性 ID 缓存的虚拟描述；规划完成后，仅把实际选中的配方按每页最多 8 条上传。服务端校验 category UID 已有网络端点，重新计算描述 ID，并只沿上传的固定链复算。服务端数据包可在 `recipe_io_profiles` 中按 `recipe_type`、`recipe_classes`、`recipe_class_prefixes`、`recipe_id_prefixes` 或 `resource_namespaces` 限定配方结构和动态产物策略。完整的 `dynamic_output` 声明要求 `source=jei_focus`、`identity=exact`、`planning_fallback=same_resource` 与 `execution=assemble_selected_inputs` 同时成立：同资源回退把 JEI 具体产物关联到已验证的服务端配方，并沿该生产步骤或显式资源命名空间传播到运行时产物检测、最终交付和下一步原料选择；实际检测到的栈以自身完整组件键提取、预留和投料，不会被改写成 JEI 模板，缺少任一声明字段时恢复严格匹配。
+
+0.6.0 的 JEI 描述保存目标输出、全部其他输出与其中可保证的输出。显式 focus link 通过版本对应 JEI 布局桥接保留，联动槽按同一候选索引展开；独立输入候选仍保留为 OR。多候选输出缺少已知关联、资源无法转换或输入超出预算时拒绝该描述，并按类别/原因有界记录诊断，不截断后继续下单。服务端重算描述 ID 只验证描述一致性和网络端点，不证明第三方机器内部条件已满足。
+
+确定副产物作为生产库存抵扣后续需求，依赖图补充对前序副产物生产步骤的等待。`RecipePlan.Step` 与订单存档保留全部副产物，以便重启后回收。绑定机器产生的实际副产物进入订单预留，完成/取消时返还未使用部分；未实际产出的概率结果不会进入预留。可通过 `output_probability_rules` 声明概率字段，内置 Create 的概率规则；`ignored_output_fields` 用于排除 Occultism 等仅用于 JEI 说明的虚拟产物。
+
+输入分组继续位于资源包 assets。`jei_type_prefixes` 可补充明确的动态分类前缀，`fixed` cardinality 可描述源码确认的固定展示输入槽。新增配置及逐模组/逐版本证据和限制见 [0.6.0 兼容检查](COMPATIBILITY_0.6.0.md)。
 
 ### 5.3 确定性规划
 
@@ -313,12 +319,13 @@ Ingredient 有多个候选时按以下顺序选择默认值：
 
 当前协议包括：打开菜单、请求分页规划快照、分页上传客户端固定选择、提交目的地并触发服务端权威复算、取消订单、请求订单状态、请求网络物品数量、绑定/解绑机器以及同步绑定视觉。
 
-所有改变状态的请求都在服务端重新校验菜单类型、玩家身份、网络上下文、距离、手持物品、目标资源 ID 和权限。客户端提供的 JEI category 只是候选，必须与服务端已加载配方类型再次匹配。
+所有改变状态的请求都在服务端重新校验菜单类型、玩家身份、网络上下文、距离、手持物品、目标资源 ID 和权限。客户端提供的 JEI category 必须与当前网络的有效执行端点匹配；虚拟描述需通过完整性与 ID 校验。原版代理步骤仍使用服务端真实配方。
 
 以下协议上限固定，不开放配置：
 
 - 字符串最大 256 UTF-8 字符；
 - 单次绑定最多 32 个 JEI 配方类型；
+- 单个虚拟配方最多 256 输入槽、每槽 256 候选、总计 8192 候选、64 种输出；超过预算明确拒绝，不截断配方；
 - 绑定目标必须在玩家 8 格内；
 - 订单数量必须为正 `long`，非法或非正输入归一为 1。
 - 规划库存快照和建议上传每页最多 256 项、最多 64 页；必须按 nonce 和连续页码组装。

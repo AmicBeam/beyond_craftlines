@@ -1,0 +1,4 @@
+{
+  "recipe_classes": ["com.klikli_dev.occultism.crafting.recipe.RitualRecipe"],
+  "ignored_output_fields": ["getRitualDummy"]
+}

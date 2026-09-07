@@ -4,6 +4,7 @@ import com.amicbeam.beyondcraftlines.common.crafting.RecipePlan;
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
 import com.wintercogs.beyonddimensions.api.storage.key.StackKeyRegistry;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
@@ -175,6 +176,15 @@ public final class RecipeOrderSavedData extends SavedData
         tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
         tag.putLong("self_increment_seed", step.selfIncrementSeed());
+        ListTag byproducts = new ListTag();
+        for (KeyAmount output : step.byproducts())
+        {
+            CompoundTag value = new CompoundTag();
+            writeKey(value, output.key(), registries);
+            value.putLong("amount", output.amount());
+            byproducts.add(value);
+        }
+        tag.put("byproducts", byproducts);
         ListTag inputs = new ListTag();
         for (RecipePlan.Material input : step.inputs())
         {
@@ -225,10 +235,17 @@ public final class RecipeOrderSavedData extends SavedData
                 : new ItemStackKey(new net.minecraft.world.item.ItemStack(
                 net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
                         ResourceLocation.parse(tag.getString("output")))));
+        List<KeyAmount> byproducts = new ArrayList<>();
+        ListTag encodedByproducts = tag.getList("byproducts", Tag.TAG_COMPOUND);
+        for (int i = 0; i < encodedByproducts.size(); i++)
+        {
+            CompoundTag value = encodedByproducts.getCompound(i);
+            byproducts.add(new KeyAmount(readKey(value, registries), value.getLong("amount")));
+        }
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
                 output, tag.getLong("per"), tag.getLong("crafts"), inputs, selections,
                 java.util.Arrays.stream(tag.getIntArray("dependencies")).boxed().toList(),
-                tag.getLong("self_increment_seed"));
+                tag.getLong("self_increment_seed"), byproducts);
     }
 
     private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,

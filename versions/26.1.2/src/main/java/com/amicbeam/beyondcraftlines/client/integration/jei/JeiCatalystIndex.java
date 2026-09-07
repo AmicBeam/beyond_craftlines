@@ -43,6 +43,8 @@ public final class JeiCatalystIndex
     /** Runtime startup only records category metadata. Recipe layouts are materialized on demand. */
     public static void rebuild(IJeiRuntime runtime)
     {
+        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
+        JeiVirtualRecipeLayouts.resetDiagnostics();
         Set<Identifier> previousActiveTypes = TYPE_STATE.activeTypes();
         JeiCatalystIndex.runtime = runtime;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(

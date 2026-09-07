@@ -1,0 +1,22 @@
+{
+  "jei_type": "occultism:ritual",
+  "recipe_classes": [
+    "com.klikli_dev.occultism.crafting.recipe.RitualRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "activation_item",
+      "cardinality": "single",
+      "members": [
+        "getActivationItem"
+      ]
+    },
+    {
+      "group": "offerings",
+      "cardinality": "collection",
+      "members": [
+        "getIngredients"
+      ]
+    }
+  ]
+}

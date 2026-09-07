@@ -70,6 +70,26 @@ final class RecipeOrderJobStepAccessTest
         assertTrue(remaining.inputs().stream().anyMatch(input -> input.key() == other && input.amount() == 9));
     }
 
+    @Test
+    void partialBatchesRetainAllByproducts() throws ReflectiveOperationException
+    {
+        assumeTrue(classPresent("net.minecraft.resources.ResourceLocation")
+                || classPresent("net.minecraft.resources.Identifier"));
+        Constructor<?> constructor = Arrays.stream(RecipePlan.Step.class.getDeclaredConstructors())
+                .filter(value -> value.getParameterCount() == 10).findFirst().orElseThrow();
+        Object recipe = identifier(constructor.getParameterTypes()[0], "multiple_outputs");
+        var byproducts = List.of(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(key("fluid"), 250));
+        RecipePlan.Step step = (RecipePlan.Step) constructor.newInstance(recipe, "example:machine", key("primary"),
+                1L, 3L, List.of(), List.of(), List.of(), 0L, byproducts);
+        Constructor<?> jobConstructor = Arrays.stream(RecipeOrderJob.class.getDeclaredConstructors())
+                .filter(value -> value.getParameterCount() == 13).findFirst().orElseThrow();
+        RecipeOrderJob job = (RecipeOrderJob) jobConstructor.newInstance(UUID.randomUUID(), UUID.randomUUID(),
+                1, recipe, 3L, List.of(RecipeOrderJob.StepExecution.pending(step)), 0, true,
+                RecipeOrderJob.Status.RUNNING, "", 1L, 0L, List.of());
+        assertEquals(byproducts, job.completeCrafts(1, 10L).step(0).byproducts());
+        assertEquals(byproducts, job.completeExternalBatch().step(0).byproducts());
+    }
+
     private static RecipePlan.Step step(String path) throws ReflectiveOperationException
     {
         Constructor<?> constructor = Arrays.stream(RecipePlan.Step.class.getDeclaredConstructors())

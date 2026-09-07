@@ -74,6 +74,18 @@ public final class RecipeIoProfileRegistry
                 || !profile.outputMappings().isEmpty();
     }
 
+    public static Set<String> ignoredOutputFields(Object recipe)
+    {
+        return entries.stream().map(Entry::profile).filter(profile -> matchesProfile(recipe, "", profile))
+                .flatMap(profile -> profile.ignoredOutputFields().stream()).collect(java.util.stream.Collectors.toSet());
+    }
+
+    public static List<RecipeOutputProbabilities.Rule> outputProbabilityRules(Object recipe)
+    {
+        return entries.stream().map(Entry::profile).filter(profile -> matchesProfile(recipe, "", profile))
+                .flatMap(profile -> profile.outputProbabilityRules().stream()).toList();
+    }
+
     static OutputMatchSemantics outputMatchSemantics(Recipe<?> recipe, String recipeId)
     { return resolved(recipe, recipeId).outputMatch(); }
 
@@ -202,7 +214,9 @@ public final class RecipeIoProfileRegistry
                 resourceNamespaces, includeDefaults,
                 inputFields, distinctInputFields, outputFields, outputMatch,
                 dynamicOutput, representationFields, structuralWrappers, outputWrappers,
-                countSemantics, outputMappings, countedWrappers, directions, multipliers);
+                countSemantics, outputMappings, countedWrappers, directions, multipliers,
+                RecipeOutputProbabilities.parse(object.getAsJsonArray("output_probability_rules")),
+                strings(object.getAsJsonArray("ignored_output_fields"), MEMBER_NAME, 32));
     }
 
     private static ResolvedProfile resolved(Object recipe)
@@ -508,7 +522,8 @@ public final class RecipeIoProfileRegistry
                           Set<String> outputWrapperFields,
                           Map<String, InputCountSemantics> inputCountSemantics,
                           List<OutputMapping> outputMappings, List<CountedWrapper> countedWrappers,
-                          List<DirectionRule> directions, List<MultiplierRule> multipliers)
+                          List<DirectionRule> directions, List<MultiplierRule> multipliers,
+                          List<RecipeOutputProbabilities.Rule> outputProbabilityRules, Set<String> ignoredOutputFields)
     {
         boolean scoped()
         { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty()

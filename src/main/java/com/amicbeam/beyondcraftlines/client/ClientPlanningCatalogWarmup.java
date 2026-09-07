@@ -209,20 +209,20 @@ public final class ClientPlanningCatalogWarmup
     }
 
     public static synchronized void invalidate()
-    { invalidateCapture(); }
+    {
+        ClientPlanningCatalogCache.invalidateResources();
+        invalidateCapture();
+    }
 
-    /** Recheck a new client recipe manager while retaining a completed catalog until IDs differ. */
+    /** A recipe sync can change contents without changing any IDs. */
     public static synchronized void refresh()
     {
-        if (!complete()) { invalidateCapture(); return; }
-        snapshotBuilder = null;
-        cancelSnapshot();
-        recipeSource = null;
-        observedVirtualRevision = -1;
+        invalidate();
     }
 
     public static synchronized void clear()
     {
+        ClientPlanningCatalogCache.invalidateResources();
         requested = false;
         families = Set.of();
         invalidateCapture();

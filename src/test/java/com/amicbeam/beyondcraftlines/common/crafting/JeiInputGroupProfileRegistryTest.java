@@ -70,6 +70,8 @@ final class JeiInputGroupProfileRegistryTest
 
         var goety = read("goety.json");
         assertEquals("goety:ritual", goety.jeiType());
+        assertTrue(goety.matchesType("goety:ritual_craft"));
+        org.junit.jupiter.api.Assertions.assertFalse(goety.matchesType("goety:cauldron"));
         assertTrue(goety.recipeClasses().isEmpty());
         assertEquals(List.of("activation_item", "offerings"),
                 goety.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
@@ -95,6 +97,46 @@ final class JeiInputGroupProfileRegistryTest
                 malum.sections().stream().map(JeiInputGroupProfileRegistry.Section::group).toList());
         assertEquals(java.util.Set.of("extraInputs", "extraItems"),
                 java.util.Set.copyOf(malum.sections().get(1).members()));
+    }
+
+    @Test
+    void sourceBackedProfilesFollowJeiCreationOrder()
+    {
+        var petals = read("botania_petals.json");
+        assertEquals("botania:petals", petals.jeiType());
+        assertEquals(List.of("water", "reagent", "ingredients", "ingredients"),
+                resolveFixture(petals, new GroupFixture(), 4));
+        assertEquals(List.of("livingrock", "ingredients", "ingredients"),
+                resolveFixture(read("botania_runic_altar.json"), new GroupFixture(), 3));
+        assertEquals(List.of("center", "ingredients", "ingredients"),
+                resolveFixture(read("embers_alchemy.json"), new GroupFixture(), 3));
+        assertEquals(List.of("activation_item", "offerings", "offerings"),
+                resolveFixture(read("occultism_ritual.json"), new GroupFixture(), 3));
+        assertEquals(List.of("mercury", "sulfur", "salt"),
+                resolveFixture(read("theurgy_incubation.json"), new GroupFixture(), 3));
+        assertEquals(List.of("ingredients", "ingredients", "input_fluid"),
+                resolveFixture(read("industrialforegoing_dissolution.json"), new GroupFixture(), 3));
+        assertEquals(List.of(), resolveFixture(petals, new GroupFixture(), 3));
+    }
+
+    private static List<String> resolveFixture(JeiInputGroupProfileRegistry.Profile source, Object fixture, int slots)
+    {
+        return JeiInputGroupProfileRegistry.resolve(new JeiInputGroupProfileRegistry.Profile(source.jeiType(),
+                java.util.Set.of(fixture.getClass().getName()), source.sections()), fixture, slots);
+    }
+
+    public static final class GroupFixture
+    {
+        public Object getReagent() { return new Object(); }
+        public Object getCenterInput() { return new Object(); }
+        public Object getActivationItem() { return new Object(); }
+        public Object getMercury() { return new Object(); }
+        public Object getSulfur() { return new Object(); }
+        public Object getSalt() { return new Object(); }
+        public List<Object> getIngredients() { return List.of(new Object(), new Object()); }
+        public List<Object> getInputs() { return getIngredients(); }
+        public final Object[] input = {new Object(), new Object()};
+        public final Object inputFluid = new Object();
     }
 
     private static JeiInputGroupProfileRegistry.Profile read(String name)

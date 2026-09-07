@@ -12,6 +12,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -25,6 +26,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             Identifier.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "virtual_recipe_upload"));
     public static final StreamCodec<RegistryFriendlyByteBuf, VirtualRecipeUploadPayload> STREAM_CODEC =
             StreamCodec.of(VirtualRecipeUploadPayload::encode, VirtualRecipeUploadPayload::decode);
+
     public static List<VirtualRecipeUploadPayload> pages(long nonce, Set<Identifier> recipeIds)
     {
         List<Entry> entries = recipeIds.stream().sorted().map(id -> {
@@ -32,64 +34,89 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var descriptor = holder == null ? null : VirtualProvisionerRecipeRegistry.descriptor(holder.value());
             return descriptor == null ? null : new Entry(id.toString(), descriptor.family(), descriptor.output(),
                     descriptor.outputAmount(), descriptor.inputs().stream().map(input ->
-                    new Input(input.inputGroup(), input.candidates(), input.use())).toList());
+                    new Input(input.inputGroup(), input.candidates(), input.use())).toList(), descriptor.byproducts(), descriptor.guaranteedByproducts());
         }).filter(java.util.Objects::nonNull).toList();
         int count = Math.max(1, (entries.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         List<VirtualRecipeUploadPayload> pages = new ArrayList<>();
-        for (int page = 0; page < count; page++) pages.add(new VirtualRecipeUploadPayload(nonce, page, count,
-                entries.subList(page * PAGE_SIZE, Math.min(entries.size(), (page + 1) * PAGE_SIZE))));
+        for (int page = 0; page < count; page++)
+            pages.add(new VirtualRecipeUploadPayload(nonce, page, count,
+                    entries.subList(page * PAGE_SIZE, Math.min(entries.size(), (page + 1) * PAGE_SIZE))));
         return List.copyOf(pages);
     }
+
     private static void encode(RegistryFriendlyByteBuf buffer, VirtualRecipeUploadPayload payload)
     {
-        buffer.writeVarLong(payload.nonce()); buffer.writeVarInt(payload.pageIndex());
-        buffer.writeVarInt(payload.pageCount()); buffer.writeVarInt(payload.recipes().size());
+        buffer.writeVarLong(payload.nonce());
+        buffer.writeVarInt(payload.pageIndex());
+        buffer.writeVarInt(payload.pageCount());
+        buffer.writeVarInt(payload.recipes().size());
         for (Entry recipe : payload.recipes())
         {
-            buffer.writeUtf(recipe.id(), 256); buffer.writeUtf(recipe.family(), 256);
-            IStackKey.STREAM_CODEC.encode(buffer, recipe.output()); buffer.writeVarLong(recipe.outputAmount());
+            buffer.writeUtf(recipe.id(), 256);
+            buffer.writeUtf(recipe.family(), 256);
+            IStackKey.STREAM_CODEC.encode(buffer, recipe.output());
+            buffer.writeVarLong(recipe.outputAmount());
             buffer.writeVarInt(recipe.inputs().size());
             for (Input input : recipe.inputs())
             {
-                buffer.writeUtf(input.inputGroup(), 64); buffer.writeVarInt(input.use().kind().ordinal());
-                buffer.writeVarInt(input.use().damagePerCraft()); buffer.writeVarInt(input.candidates().size());
+                buffer.writeUtf(input.inputGroup(), 64);
+                buffer.writeVarInt(input.use().kind().ordinal());
+                buffer.writeVarInt(input.use().damagePerCraft());
+                buffer.writeVarInt(input.candidates().size());
                 for (KeyAmount candidate : input.candidates())
-                { IStackKey.STREAM_CODEC.encode(buffer, candidate.key()); buffer.writeVarLong(candidate.amount()); }
+                {
+                    IStackKey.STREAM_CODEC.encode(buffer, candidate.key());
+                    buffer.writeVarLong(candidate.amount());
+                }
             }
+            VirtualRecipeOutputs.write(buffer, recipe.byproducts());
+            VirtualRecipeOutputs.write(buffer, recipe.guaranteedByproducts());
         }
     }
+
     private static VirtualRecipeUploadPayload decode(RegistryFriendlyByteBuf buffer)
     {
-        long nonce = buffer.readVarLong(); int page = buffer.readVarInt(); int pages = buffer.readVarInt();
+        long nonce = buffer.readVarLong();
+        int page = buffer.readVarInt();
+        int pages = buffer.readVarInt();
         int size = buffer.readVarInt();
         if (size < 0 || size > PAGE_SIZE) throw new IllegalArgumentException("invalid virtual recipe page");
         List<Entry> recipes = new ArrayList<>();
         for (int index = 0; index < size; index++)
         {
-            String id = buffer.readUtf(256); String family = buffer.readUtf(256);
-            IStackKey<?> output = IStackKey.STREAM_CODEC.decode(buffer); long outputAmount = buffer.readVarLong();
+            String id = buffer.readUtf(256);
+            String family = buffer.readUtf(256);
+            IStackKey<?> output = IStackKey.STREAM_CODEC.decode(buffer);
+            long outputAmount = buffer.readVarLong();
             int inputCount = buffer.readVarInt();
-            if (inputCount < 1 || inputCount > 32) throw new IllegalArgumentException("invalid virtual inputs");
+            if (inputCount < 1 || inputCount > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.INPUTS) throw new IllegalArgumentException("invalid virtual inputs");
             List<Input> inputs = new ArrayList<>();
+            int totalCandidates = 0;
             for (int slot = 0; slot < inputCount; slot++)
             {
-                String group = buffer.readUtf(64); int useKind = buffer.readVarInt();
+                String group = buffer.readUtf(64);
+                int useKind = buffer.readVarInt();
                 int damagePerCraft = buffer.readVarInt();
                 var kinds = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.Kind.values();
                 if (useKind < 0 || useKind >= kinds.length) throw new IllegalArgumentException("invalid virtual input use");
-                var use = new com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse(kinds[useKind], damagePerCraft);
+                var use = new com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse(
+                        kinds[useKind], damagePerCraft);
                 int candidateCount = buffer.readVarInt();
-                if (candidateCount < 1 || candidateCount > 64)
+                if (candidateCount < 1 || candidateCount > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.CANDIDATES)
                     throw new IllegalArgumentException("invalid virtual candidates");
+                totalCandidates += candidateCount;
+                if (totalCandidates > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.TOTAL_CANDIDATES)
+                    throw new IllegalArgumentException("virtual recipe candidate budget exceeded");
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (int candidate = 0; candidate < candidateCount; candidate++)
                     candidates.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
                 inputs.add(new Input(group, candidates, use));
             }
-            recipes.add(new Entry(id, family, output, outputAmount, inputs));
+            recipes.add(new Entry(id, family, output, outputAmount, inputs, VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer)));
         }
         return new VirtualRecipeUploadPayload(nonce, page, pages, recipes);
     }
+
     public static void handle(VirtualRecipeUploadPayload payload, IPayloadContext context)
     { context.enqueueWork(() -> {
         if (!(context.player() instanceof ServerPlayer player)
@@ -102,20 +129,22 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
                 return;
             if (!com.amicbeam.beyondcraftlines.common.crafting.VanillaRecipeBatching
                     .validUploadedOutputAmount(recipe.family(), recipe.outputAmount())) return;
-            var holder = VirtualProvisionerRecipeRegistry.register(recipe.family(), recipe.output(),
+            var descriptor = new VirtualProvisionerRecipeRegistry.Descriptor(recipe.family(), recipe.output(),
                     recipe.outputAmount(), recipe.inputs().stream().map(input ->
-                    new VirtualProvisionerRecipeRegistry.InputSlot(
-                            input.inputGroup(), input.candidates(), input.use())).toList());
-            if (!holder.id().identifier().toString().equals(recipe.id()))
+                            new VirtualProvisionerRecipeRegistry.InputSlot(
+                                    input.inputGroup(), input.candidates(), input.use())).toList(), recipe.byproducts(), recipe.guaranteedByproducts());
+            if (!descriptor.id().toString().equals(recipe.id()))
                 return;
+            VirtualProvisionerRecipeRegistry.register(descriptor);
         }
     }); }
+
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
-    public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs) {}
+    public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts) {}
     public record Input(String inputGroup, List<KeyAmount> candidates,
                         com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
     {
-        public Input(String inputGroup,List<KeyAmount> candidates)
-        {this(inputGroup,candidates,com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED);}
+        public Input(String inputGroup, List<KeyAmount> candidates)
+        { this(inputGroup, candidates, com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED); }
     }
 }

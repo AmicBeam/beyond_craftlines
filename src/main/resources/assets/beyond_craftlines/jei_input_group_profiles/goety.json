@@ -3,13 +3,22 @@
   "input_sections": [
     {
       "group": "activation_item",
-      "members": ["getActivationItem", "activationItem"],
+      "members": [
+        "getActivationItem",
+        "activationItem"
+      ],
       "cardinality": "single"
     },
     {
       "group": "offerings",
-      "members": ["getIngredients", "ingredients"],
+      "members": [
+        "getIngredients",
+        "ingredients"
+      ],
       "cardinality": "collection"
     }
+  ],
+  "jei_type_prefixes": [
+    "goety:ritual_"
   ]
 }

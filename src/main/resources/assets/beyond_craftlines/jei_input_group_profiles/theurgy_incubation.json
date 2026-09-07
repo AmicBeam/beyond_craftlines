@@ -1,0 +1,29 @@
+{
+  "jei_type": "theurgy:incubation",
+  "recipe_classes": [
+    "com.klikli_dev.theurgy.content.recipe.IncubationRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "mercury",
+      "cardinality": "single",
+      "members": [
+        "getMercury"
+      ]
+    },
+    {
+      "group": "sulfur",
+      "cardinality": "single",
+      "members": [
+        "getSulfur"
+      ]
+    },
+    {
+      "group": "salt",
+      "cardinality": "single",
+      "members": [
+        "getSalt"
+      ]
+    }
+  ]
+}

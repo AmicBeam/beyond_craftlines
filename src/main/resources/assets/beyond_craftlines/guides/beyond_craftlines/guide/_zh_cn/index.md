@@ -13,4 +13,4 @@ Beyond: Craftlines 将配方转为由服务端校验的生产订单：从 Beyond
 
 <SubPages icons={true} />
 
-安装 GuideME 后，将鼠标悬停在 <ItemLink id="network_linker" /> 或 <ItemLink id="craftline_provisioner" /> 上并按住 **G**，即可直接打开对应页面。
+安装 GuideME 后，将鼠标悬停在 <ItemLink id="network_linker" />、<ItemLink id="craftline_provisioner" /> 或 <ItemLink id="craftline_dashboard" /> 上并按住 **G**，即可直接打开对应页面。

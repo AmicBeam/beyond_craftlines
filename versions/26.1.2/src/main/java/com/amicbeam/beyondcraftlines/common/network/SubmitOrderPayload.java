@@ -33,7 +33,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
     static final StreamCodec<ByteBuf, IngredientChoice> INGREDIENT_CHOICE_CODEC = StreamCodec.composite(
             ByteBufCodecs.stringUtf8(256), IngredientChoice::recipe,
             ByteBufCodecs.VAR_INT, IngredientChoice::slot,
-            ByteBufCodecs.stringUtf8(256), IngredientChoice::item,
+            ByteBufCodecs.stringUtf8(512), IngredientChoice::item,
             IngredientChoice::new);
     private static final StreamCodec<ByteBuf, Options> OPTIONS_CODEC = StreamCodec.composite(
             ByteBufCodecs.BOOL, Options::blockingMode,
@@ -64,24 +64,40 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 if (cooldown > 0 && last > 0 && now >= last && now - last < cooldown)
                     throw new IllegalStateException("orders are being submitted too quickly");
                 long count = Math.max(1, payload.count());
-                if (!menu.serverRecipeIndexComplete())
-                    throw new IllegalStateException("server recipe index is still building");
-                if (!menu.targetToken().equals(payload.itemId())
-                        || menu.recipeForResourceOutput(menu.initialTarget()) == null)
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} server submit request player={} nonce={} network={} count={} stockRevision={} recipeEpoch={} menuToken={} payloadToken={} canPlan={} target={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        player.getGameProfile().name(), payload.proposalNonce(), menu.networkId(), count,
+                        payload.stockRevision(), payload.recipeEpoch(),
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(menu.targetToken()),
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(payload.itemId()),
+                        true,
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
+                if (!menu.targetToken().equals(payload.itemId()))
                     throw new IllegalArgumentException("target is not available in this order menu");
                 var validated = ValidatedClientPlanCache.consume(player.getUUID(), payload.proposalNonce(), now);
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} server submit cache nonce={} hit={} cachedNetwork={} cachedCount={} cachedEpoch={} targetMatch={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        payload.proposalNonce(), validated != null,
+                        validated == null ? -1 : validated.networkId(), validated == null ? -1 : validated.count(),
+                        validated == null ? -1 : validated.recipeEpoch(), validated != null
+                                && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                .exact(validated.target(), menu.initialTarget()));
                 if (validated == null || validated.networkId() != menu.networkId()
-                        || !validated.target().isSame(menu.initialTarget()) || validated.count() != count
+                        || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(validated.target(), menu.initialTarget()) || validated.count() != count
                         || validated.recipeEpoch() != payload.recipeEpoch())
                     throw new IllegalStateException("client plan is missing or expired; refresh the preview");
-                long recipeEpoch = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService.recipeEpoch(
-                        player.level(), menu.availableFamilies());
-                if (PlanningFreshness.recipesChanged(validated.recipeEpoch(), recipeEpoch))
-                    throw new IllegalStateException("recipes changed; refresh the preview");
                 var snapshot = com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService
                         .capture(menu.networkId());
                 var currentPlan = RecipePlanningService.validateFixed(player.level(), menu.initialTarget(),
                         count, snapshot, menu.availableFamilies(), validated.overrides());
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} server submit fixed-plan steps={} missing={} reserved={} completeOverrides={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        currentPlan.steps().size(), currentPlan.missing().size(), currentPlan.reserved().size(),
+                        validated.overrides().completelyResolves(currentPlan));
                 if (!validated.overrides().completelyResolves(currentPlan))
                     throw new IllegalArgumentException("client plan is incomplete");
                 if (!currentPlan.craftable())
@@ -96,10 +112,23 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                 player.getPersistentData().putLong(LAST_SUBMIT_TICK, now);
                 player.sendSystemMessage(Component.translatable(
                         "message.beyond_craftlines.order_queued", job.id().toString()));
-                OpenOrderStatusMenuPayload.open(player, menu.networkId(), job);
+                try { OpenOrderStatusMenuPayload.open(player, menu.networkId(), job); }
+                catch (RuntimeException exception)
+                {
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                            "{} server order queued but status menu failed player={} order={} error={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            player.getGameProfile().name(), job.id(), exception.toString(), exception);
+                }
             }
             catch (RuntimeException exception)
             {
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                        "{} server submit rejected player={} nonce={} target={} error={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        player.getGameProfile().name(), payload.proposalNonce(),
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
+                        exception.toString(), exception);
                 player.sendSystemMessage(localizedFailure(exception.getMessage()));
             }
         });
@@ -128,8 +157,6 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
         if ("client plan is incomplete".equals(error)
                 || "validated plan does not match the order".equals(error))
             return Component.translatable("error.beyond_craftlines.planning_protocol_invalid");
-        if ("server recipe index is still building".equals(error))
-            return Component.translatable("error.beyond_craftlines.server_recipe_indexing");
         return Component.translatable("error.beyond_craftlines.order_failed_generic");
     }
 
@@ -145,7 +172,7 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
         List<RecipeResolutionOverrides.IngredientChoice> ingredients = ingredientChoices.stream()
                 .map(choice -> new RecipeResolutionOverrides.IngredientChoice(
                         Identifier.parse(choice.recipe()), choice.slot(),
-                        Identifier.parse(choice.item())))
+                        choice.item()))
                 .toList();
         return new RecipeResolutionOverrides(recipes, ingredients);
     }

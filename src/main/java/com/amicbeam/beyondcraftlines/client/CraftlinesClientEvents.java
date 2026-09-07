@@ -27,6 +27,7 @@ import net.neoforged.fml.event.config.ModConfigEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
+import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
@@ -39,6 +40,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.lwjgl.glfw.GLFW;
+
+import java.util.Set;
 
 public final class CraftlinesClientEvents
 {
@@ -61,6 +64,11 @@ public final class CraftlinesClientEvents
             event.register(CraftlinesMenus.PROVISIONER.get(), ProvisionerConfigScreen::new);
             event.register(CraftlinesMenus.DASHBOARD.get(), DashboardConfigScreen::new);
             event.register(CraftlinesMenus.DASHBOARD_STATUS.get(), CraftlineDashboardStatusScreen::new);
+        }
+
+        @SubscribeEvent public static void registerKeyMappings(RegisterKeyMappingsEvent event)
+        {
+            CraftlinesKeyMappings.register(event);
         }
 
         @SubscribeEvent public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event)
@@ -95,6 +103,8 @@ public final class CraftlinesClientEvents
     @EventBusSubscriber(modid = BeyondCraftlines.MOD_ID, value = Dist.CLIENT)
     public static final class GameBus
     {
+        private static PendingBoundConfig pendingBoundConfig;
+
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
         {
             ClientBindingVisuals.onLoggingIn(event);
@@ -103,16 +113,25 @@ public final class CraftlinesClientEvents
 
         @SubscribeEvent public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event)
         {
+            pendingBoundConfig = null;
             ClientBindingVisuals.onLoggingOut(event);
             com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.onLoggingOut();
         }
 
         @SubscribeEvent public static void render(RenderLevelStageEvent event)
-        { ClientBindingVisuals.render(event); }
+        {
+            ClientBindingVisuals.render(event);
+            if (event.getStage() == RenderLevelStageEvent.Stage.AFTER_PARTICLES)
+            {
+                com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.clientFrame();
+                sendPendingBoundConfigIfReady();
+            }
+        }
 
         @SubscribeEvent public static void recipesUpdated(RecipesUpdatedEvent event)
         {
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.refresh();
             com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
         }
 
@@ -128,14 +147,52 @@ public final class CraftlinesClientEvents
                     && !minecraft.player.getOffhandItem().is(CraftlinesItems.NETWORK_LINKER.get()))) return;
             var state = minecraft.level.getBlockState(hit.getBlockPos());
             var blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            boolean provisioner = state.is(com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks
+                    .CRAFTLINE_PROVISIONER.get());
+            boolean knownBound = !provisioner && ClientBindingVisuals.isBoundMachine(hit.getBlockPos(), blockId);
+            LinkerAttackPolicy.Action action = LinkerAttackPolicy.decide(
+                    provisioner, knownBound, ClientBindingVisuals.bindingSnapshotReady());
+            if (action == LinkerAttackPolicy.Action.IGNORE) return;
+            pendingBoundConfig = null;
+            if (action == LinkerAttackPolicy.Action.VERIFY_WITH_SERVER)
+            {
+                sendBoundConfig(hit.getBlockPos(), java.util.Set.of());
+                return;
+            }
             var types = new java.util.LinkedHashSet<>(
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    provisioner ? java.util.Set.<ResourceLocation>of()
+                            : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
                             .recipeTypesFor(new ItemStack(state.getBlock().asItem())));
-            if (types.isEmpty()) types.add(blockId);
-            PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(hit.getBlockPos(), types,
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types)));
-            event.setCanceled(true);
+            if (!provisioner && types.isEmpty()) types.add(blockId);
+            if (!types.isEmpty() && !com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    .inputGroupsReady(types))
+            {
+                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                        .requestInputGroupsFor(types);
+                pendingBoundConfig = new PendingBoundConfig(hit.getBlockPos().immutable(), Set.copyOf(types));
+            }
+            else sendBoundConfig(hit.getBlockPos(), types);
+            event.setCanceled(action == LinkerAttackPolicy.Action.OPEN_AND_CANCEL_ATTACK);
         }
+
+        private static void sendPendingBoundConfigIfReady()
+        {
+            PendingBoundConfig pending = pendingBoundConfig;
+            if (pending == null || !com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                    .inputGroupsReady(pending.types())) return;
+            pendingBoundConfig = null;
+            sendBoundConfig(pending.position(), pending.types());
+        }
+
+        private static void sendBoundConfig(net.minecraft.core.BlockPos position, Set<ResourceLocation> types)
+        {
+            PacketDistributor.sendToServer(OpenBoundMachineConfigPayload.of(position, types,
+                    com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
+                                    .inputGroupsFor(types))));
+        }
+
+        private record PendingBoundConfig(net.minecraft.core.BlockPos position, Set<ResourceLocation> types) {}
 
         @SubscribeEvent public static void addStatusButton(ScreenEvent.Init.Post event)
         {
@@ -159,34 +216,61 @@ public final class CraftlinesClientEvents
         }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
-        public static void openOrderFromMiddleClick(ScreenEvent.MouseButtonPressed.Pre event)
+        public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)
         {
-            if (event.getButton() != GLFW.GLFW_MOUSE_BUTTON_MIDDLE
-                    || Minecraft.getInstance().player == null
-                    || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return;
-            if (com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
-                    .orderIngredientUnderMouse())
+            if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
+                    && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .orderRecipeButtonUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
             {
                 event.setCanceled(true);
                 return;
             }
-            if (!(event.getScreen() instanceof DimensionsNetGUI<?> screen)) return;
+            if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(event.getButton())) return;
+            if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))
+                event.setCanceled(true);
+        }
+
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public static void openOrderFromKeyboard(ScreenEvent.KeyPressed.Pre event)
+        {
+            if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matches(
+                    event.getKeyCode(), event.getScanCode())) return;
+            Minecraft minecraft = Minecraft.getInstance();
+            int screenWidth = minecraft.getWindow().getScreenWidth();
+            int screenHeight = minecraft.getWindow().getScreenHeight();
+            if (screenWidth <= 0 || screenHeight <= 0) return;
+            double mouseX = minecraft.mouseHandler.xpos() * event.getScreen().width / screenWidth;
+            double mouseY = minecraft.mouseHandler.ypos() * event.getScreen().height / screenHeight;
+            if (openOrderUnderMouse(event.getScreen(), mouseX, mouseY)) event.setCanceled(true);
+        }
+
+        private static boolean openOrderUnderMouse(net.minecraft.client.gui.screens.Screen screen,
+                                                   double mouseX, double mouseY)
+        {
+            if (Minecraft.getInstance().player == null
+                    || !Minecraft.getInstance().player.containerMenu.getCarried().isEmpty()) return false;
+            if (com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                    .orderIngredientUnderMouse(mouseX, mouseY)
+                    || com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
+                    .orderIngredientUnderMouse())
+                return true;
+            if (!(screen instanceof DimensionsNetGUI<?> networkScreen)) return false;
             var level = Minecraft.getInstance().level;
-            if (level == null) return;
-            for (var slot : screen.getMenu().slots)
+            if (level == null) return false;
+            for (var slot : networkScreen.getMenu().slots)
             {
                 if (!(slot instanceof AbstractStackTypedSlot typed) || !slot.isActive()) continue;
-                int x = screen.getGuiLeft() + slot.x;
-                int y = screen.getGuiTop() + slot.y;
-                if (event.getMouseX() < x || event.getMouseX() >= x + 16
-                        || event.getMouseY() < y || event.getMouseY() >= y + 16) continue;
-                if (!(typed.getStack().key() instanceof ItemStackKey itemKey)) return;
-                PacketDistributor.sendToServer(new OpenOrderMenuPayload(
-                        new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)), "", ""));
-                event.setCanceled(true);
-                return;
+                int x = networkScreen.getGuiLeft() + slot.x;
+                int y = networkScreen.getGuiTop() + slot.y;
+                if (mouseX < x || mouseX >= x + 16 || mouseY < y || mouseY >= y + 16) continue;
+                if (!(typed.getStack().key() instanceof ItemStackKey itemKey)) return false;
+                com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin.orderTarget(
+                        new ItemStackKey(itemKey.getReadOnlyStack().copyWithCount(1)));
+                return true;
             }
+            return false;
         }
+
     }
 
     public static void showBindFeedback(String rawType)

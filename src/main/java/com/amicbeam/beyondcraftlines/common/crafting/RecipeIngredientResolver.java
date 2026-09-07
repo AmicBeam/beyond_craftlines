@@ -4,9 +4,12 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
 import java.util.Collections;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.WeakHashMap;
+import java.util.function.Supplier;
 
 /**
  * Reads item inputs from both vanilla recipes and common third-party recipe APIs.
@@ -21,10 +24,33 @@ public final class RecipeIngredientResolver
     private RecipeIngredientResolver() {}
 
     public static List<Ingredient> ingredients(Recipe<?> recipe)
+    { return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::resolve); }
+
+    private static List<Ingredient> resolve(Recipe<?> recipe)
     {
-        List<Ingredient> vanilla = List.copyOf(recipe.getIngredients());
+        List<Ingredient> vanilla = vanillaIngredients(recipe);
         if (!vanilla.isEmpty()) return vanilla;
-        return CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::customItemInputs);
+        return customItemInputs(recipe);
+    }
+
+    static List<Ingredient> vanillaIngredients(Recipe<?> recipe)
+    {
+        List<Ingredient> workstation = VanillaWorkstationRecipeIngredients.ingredients(recipe);
+        return workstation.isEmpty() ? safeGet(recipe::getIngredients) : workstation;
+    }
+
+    static <T> List<T> safeGet(Supplier<? extends Collection<T>> values)
+    {
+        try
+        { return safeCopy(values.get()); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
+    }
+
+    static <T> List<T> safeCopy(Collection<T> values)
+    {
+        if (values == null || values.isEmpty()) return List.of();
+        return values.stream().filter(Objects::nonNull).toList();
     }
 
     public static void clearCache()

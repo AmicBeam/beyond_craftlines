@@ -2,7 +2,9 @@ package com.amicbeam.beyondcraftlines.common.menu;
 
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -19,7 +21,8 @@ public final class CraftlineStatusMenu extends AbstractContainerMenu
     public CraftlineStatusMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
         this(id, inventory, data.readVarInt(), data.readBoolean() ? new InitialOrder(
-                data.readUUID(), data.readUtf(256), data.readVarLong(), data.readBoolean()) : null);
+                data.readUUID(), data.readUtf(256), IStackKey.STREAM_CODEC.decode(
+                (RegistryFriendlyByteBuf) data), data.readVarLong(), data.readBoolean()) : null);
     }
 
     public CraftlineStatusMenu(int id, Inventory inventory, int networkId)
@@ -48,5 +51,6 @@ public final class CraftlineStatusMenu extends AbstractContainerMenu
     @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
     @Override public boolean stillValid(Player player) { return canAccessNetwork(player); }
 
-    public record InitialOrder(UUID id, String target, long requested, boolean blockingMode) {}
+    public record InitialOrder(UUID id, String target, IStackKey<?> targetKey,
+                               long requested, boolean blockingMode) {}
 }

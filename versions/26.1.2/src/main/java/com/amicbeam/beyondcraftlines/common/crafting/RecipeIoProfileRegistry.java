@@ -5,6 +5,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.world.item.crafting.Recipe;
 import org.slf4j.Logger;
@@ -18,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
 
 /** Server-authoritative, datapack-defined structural recipe compatibility profiles. */
@@ -26,6 +28,8 @@ public final class RecipeIoProfileRegistry
     private static final Pattern MEMBER_NAME = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]{0,127}");
     private static final Pattern CLASS_NAME = Pattern.compile("[A-Za-z_$][A-Za-z0-9_.$]{0,255}");
     private static final Pattern RESOURCE_ID = Pattern.compile("[a-z0-9_.-]+:[a-z0-9/._-]+");
+    private static final Pattern RESOURCE_ID_PREFIX = Pattern.compile("[a-z0-9_.-]+:[a-z0-9/._-]*");
+    private static final Pattern NAMESPACE = Pattern.compile("[a-z0-9_.-]+");
     private static final Pattern STACK_TYPE = Pattern.compile("[a-z0-9_./-]+(?::[a-z0-9/._-]+)?");
     private static final Gson GSON = new Gson();
     private static volatile List<Entry> entries = List.of();
@@ -61,6 +65,42 @@ public final class RecipeIoProfileRegistry
 
     public static List<OutputMapping> outputMappings(Recipe<?> recipe)
     { return resolved(recipe).outputMappings(); }
+
+    /** JEI animation may show an arbitrary batch size; these profiles require stable recipe data. */
+    public static boolean requiresStructuredJeiCapture(Recipe<?> recipe)
+    {
+        ResolvedProfile profile = resolved(recipe);
+        return profile.inputCountSemantics().containsValue(InputCountSemantics.BATCH_LIMIT)
+                || !profile.outputMappings().isEmpty();
+    }
+
+    static OutputMatchSemantics outputMatchSemantics(Recipe<?> recipe, String recipeId)
+    { return resolved(recipe, recipeId).outputMatch(); }
+
+    public static boolean outputMatches(Recipe<?> recipe, String recipeId,
+                                        IStackKey<?> requested, IStackKey<?> declared)
+    {
+        return outputMatches(resolved(recipe, recipeId).outputMatch(), requested, declared,
+                StackKeyMatch::exact, (left, right) -> left.isSame(right) || right.isSame(left));
+    }
+
+    public static boolean outputMatches(String recipeId, IStackKey<?> requested, IStackKey<?> declared)
+    { return outputMatches(null, recipeId, requested, declared); }
+
+    public static boolean allowsSameResourceOutput(String recipeId)
+    { return resolved(null, recipeId).outputMatch() == OutputMatchSemantics.SAME_RESOURCE; }
+
+    public static boolean allowsSameResourceMaterial(String namespace)
+    {
+        return namespace != null && entries.stream().map(Entry::profile)
+                .anyMatch(profile -> profile.dynamicOutput().active()
+                        && profile.resourceNamespaces().contains(namespace));
+    }
+
+    static <T> boolean outputMatches(OutputMatchSemantics semantics, T requested, T declared,
+                                     BiPredicate<T, T> exact, BiPredicate<T, T> sameResource)
+    { return exact.test(requested, declared)
+            || semantics == OutputMatchSemantics.SAME_RESOURCE && sameResource.test(requested, declared); }
 
     static long inputMultiplier(Object recipe, String member)
     {
@@ -134,6 +174,10 @@ public final class RecipeIoProfileRegistry
                 valid(object.get("recipe_type").getAsString(), RESOURCE_ID));
         Set<String> recipeClasses = strings(object.getAsJsonArray("recipe_classes"), CLASS_NAME, 64);
         Set<String> recipeClassPrefixes = strings(object.getAsJsonArray("recipe_class_prefixes"), CLASS_NAME, 64);
+        Set<String> recipeIdPrefixes = strings(
+                object.getAsJsonArray("recipe_id_prefixes"), RESOURCE_ID_PREFIX, 64);
+        Set<String> resourceNamespaces = strings(
+                object.getAsJsonArray("resource_namespaces"), NAMESPACE, 32);
         boolean includeDefaults = !object.has("include_defaults") || object.get("include_defaults").getAsBoolean();
         Set<String> inputFields = strings(object.getAsJsonArray("input_fields"), MEMBER_NAME, 128);
         Set<String> distinctInputFields = strings(
@@ -141,6 +185,10 @@ public final class RecipeIoProfileRegistry
         distinctInputFields = distinctInputFields.stream().filter(inputFields::contains)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
         Set<String> outputFields = strings(object.getAsJsonArray("output_fields"), MEMBER_NAME, 64);
+        OutputMatchSemantics outputMatch = OutputMatchSemantics.parse(string(object, "output_match"));
+        DynamicOutputPolicy dynamicOutput = DynamicOutputPolicy.parse(
+                object.getAsJsonObject("dynamic_output"));
+        if (dynamicOutput.active()) outputMatch = dynamicOutput.planningFallback();
         Set<String> representationFields = strings(object.getAsJsonArray("representation_fields"), MEMBER_NAME, 64);
         Set<String> structuralWrappers = strings(object.getAsJsonArray("structural_wrapper_fields"), MEMBER_NAME, 32);
         Set<String> outputWrappers = strings(object.getAsJsonArray("output_wrapper_fields"), MEMBER_NAME, 32);
@@ -150,15 +198,20 @@ public final class RecipeIoProfileRegistry
         List<CountedWrapper> countedWrappers = parseCountedWrappers(object.getAsJsonArray("counted_wrappers"));
         List<DirectionRule> directions = parseDirections(object.getAsJsonArray("directions"));
         List<MultiplierRule> multipliers = parseMultipliers(object.getAsJsonArray("input_multipliers"));
-        return new Profile(recipeTypes, recipeClasses, recipeClassPrefixes, includeDefaults,
-                inputFields, distinctInputFields, outputFields, representationFields, structuralWrappers, outputWrappers,
+        return new Profile(recipeTypes, recipeClasses, recipeClassPrefixes, recipeIdPrefixes,
+                resourceNamespaces, includeDefaults,
+                inputFields, distinctInputFields, outputFields, outputMatch,
+                dynamicOutput, representationFields, structuralWrappers, outputWrappers,
                 countSemantics, outputMappings, countedWrappers, directions, multipliers);
     }
 
     private static ResolvedProfile resolved(Object recipe)
+    { return resolved(recipe, ""); }
+
+    private static ResolvedProfile resolved(Object recipe, String recipeId)
     {
         List<Profile> matching = entries.stream().map(Entry::profile)
-                .filter(profile -> matchesProfile(recipe, profile)).toList();
+                .filter(profile -> matchesProfile(recipe, recipeId, profile)).toList();
         boolean excludeDefaults = matching.stream().anyMatch(profile -> profile.scoped() && !profile.includeDefaults());
         LinkedHashSet<String> inputs = new LinkedHashSet<>();
         LinkedHashSet<String> distinctInputs = new LinkedHashSet<>();
@@ -166,6 +219,7 @@ public final class RecipeIoProfileRegistry
         LinkedHashSet<String> representations = new LinkedHashSet<>();
         LinkedHashSet<String> structuralWrappers = new LinkedHashSet<>();
         LinkedHashSet<String> outputWrappers = new LinkedHashSet<>();
+        OutputMatchSemantics outputMatch = OutputMatchSemantics.EXACT;
         LinkedHashMap<String, InputCountSemantics> countSemantics = new LinkedHashMap<>();
         ArrayList<OutputMapping> outputMappings = new ArrayList<>();
         ArrayList<CountedWrapper> countedWrappers = new ArrayList<>();
@@ -177,6 +231,8 @@ public final class RecipeIoProfileRegistry
             inputs.addAll(profile.inputFields());
             distinctInputs.addAll(profile.distinctInputFields());
             outputs.addAll(profile.outputFields());
+            if (profile.outputMatch() == OutputMatchSemantics.SAME_RESOURCE)
+                outputMatch = OutputMatchSemantics.SAME_RESOURCE;
             representations.addAll(profile.representationFields());
             structuralWrappers.addAll(profile.structuralWrapperFields());
             outputWrappers.addAll(profile.outputWrapperFields());
@@ -186,20 +242,28 @@ public final class RecipeIoProfileRegistry
             profile.directions().forEach(value -> addDistinct(directions, value));
             profile.multipliers().forEach(value -> addDistinct(multipliers, value));
         }
-        return new ResolvedProfile(List.copyOf(inputs), Set.copyOf(distinctInputs), List.copyOf(outputs), List.copyOf(representations),
+        return new ResolvedProfile(List.copyOf(inputs), Set.copyOf(distinctInputs), List.copyOf(outputs), outputMatch,
+                List.copyOf(representations),
                 List.copyOf(structuralWrappers), List.copyOf(outputWrappers), Map.copyOf(countSemantics),
                 List.copyOf(outputMappings), List.copyOf(countedWrappers), List.copyOf(directions),
                 List.copyOf(multipliers));
     }
 
-    private static boolean matchesProfile(Object recipe, Profile profile)
+    private static boolean matchesProfile(Object recipe, String recipeId, Profile profile)
     {
         if (!profile.recipeTypes().isEmpty())
         {
             String family = recipe instanceof Recipe<?> typed ? RecipePlanningService.family(typed.getType()) : null;
             if (family == null || !profile.recipeTypes().contains(family)) return false;
         }
+        if (!matchesRecipeId(recipeId, profile.recipeIdPrefixes())) return false;
         return matchesClass(recipe, profile.recipeClasses(), profile.recipeClassPrefixes());
+    }
+
+    static boolean matchesRecipeId(String recipeId, Set<String> prefixes)
+    {
+        if (prefixes.isEmpty()) return true;
+        return recipeId != null && prefixes.stream().anyMatch(recipeId::startsWith);
     }
 
     static boolean matchesClass(Object target, Set<String> classes, Set<String> prefixes)
@@ -365,6 +429,43 @@ public final class RecipeIoProfileRegistry
         }
     }
 
+    public enum OutputMatchSemantics
+    {
+        EXACT("exact"), SAME_RESOURCE("same_resource");
+
+        private final String encoded;
+        OutputMatchSemantics(String encoded) { this.encoded = encoded; }
+        static OutputMatchSemantics parse(String value)
+        {
+            for (OutputMatchSemantics semantics : values())
+                if (semantics.encoded.equals(value)) return semantics;
+            return EXACT;
+        }
+    }
+
+    public record DynamicOutputPolicy(String source, String identity,
+                                      OutputMatchSemantics planningFallback, String execution)
+    {
+        private static final DynamicOutputPolicy NONE = new DynamicOutputPolicy(
+                "", "", OutputMatchSemantics.EXACT, "");
+
+        static DynamicOutputPolicy parse(JsonObject object)
+        {
+            if (object == null) return NONE;
+            String source = string(object, "source");
+            String identity = string(object, "identity");
+            String execution = string(object, "execution");
+            OutputMatchSemantics fallback = OutputMatchSemantics.parse(
+                    string(object, "planning_fallback"));
+            return "jei_focus".equals(source) && "exact".equals(identity)
+                    && "assemble_selected_inputs".equals(execution)
+                    && fallback == OutputMatchSemantics.SAME_RESOURCE
+                    ? new DynamicOutputPolicy(source, identity, fallback, execution) : NONE;
+        }
+
+        boolean active() { return !source.isBlank(); }
+    }
+
     public record OutputMapping(OutputType type, String id, String amountField)
     {
         static OutputMapping parse(String type, String id, String amountField)
@@ -399,8 +500,10 @@ public final class RecipeIoProfileRegistry
                                  Set<String> inputFields, String whenBooleanField, long factor) {}
 
     public record Profile(Set<String> recipeTypes, Set<String> recipeClasses,
-                          Set<String> recipeClassPrefixes, boolean includeDefaults,
+                          Set<String> recipeClassPrefixes, Set<String> recipeIdPrefixes,
+                          Set<String> resourceNamespaces, boolean includeDefaults,
                           Set<String> inputFields, Set<String> distinctInputFields, Set<String> outputFields,
+                          OutputMatchSemantics outputMatch, DynamicOutputPolicy dynamicOutput,
                           Set<String> representationFields, Set<String> structuralWrapperFields,
                           Set<String> outputWrapperFields,
                           Map<String, InputCountSemantics> inputCountSemantics,
@@ -408,11 +511,12 @@ public final class RecipeIoProfileRegistry
                           List<DirectionRule> directions, List<MultiplierRule> multipliers)
     {
         boolean scoped()
-        { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty(); }
+        { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty()
+                || !recipeIdPrefixes.isEmpty() || !resourceNamespaces.isEmpty(); }
     }
 
     private record ResolvedProfile(List<String> inputFields, Set<String> distinctInputFields,
-                                   List<String> outputFields,
+                                   List<String> outputFields, OutputMatchSemantics outputMatch,
                                    List<String> representationFields, List<String> structuralWrapperFields,
                                    List<String> outputWrapperFields,
                                    Map<String, InputCountSemantics> inputCountSemantics,

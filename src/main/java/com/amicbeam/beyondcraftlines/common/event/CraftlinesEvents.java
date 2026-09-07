@@ -12,6 +12,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.OnDatapackSyncEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
 @EventBusSubscriber(modid = "beyond_craftlines")
 public final class CraftlinesEvents
@@ -23,7 +24,6 @@ public final class CraftlinesEvents
     public static void onServerTick(ServerTickEvent.Post event)
     {
         var server = event.getServer();
-        com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(server);
         com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry.tick(server);
         com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService.tick(server);
     }
@@ -83,20 +83,14 @@ public final class CraftlinesEvents
         var server = event.getPlayerList().getServer();
         if (event.getPlayer() == null)
         {
-            if (recipeAliasServer == server)
-                com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                        .invalidatePersistedServerIndex(server);
             com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
         }
-        if (event.getPlayer() == null || recipeAliasServer != server
-                || com.amicbeam.beyondcraftlines.common.crafting
-                .RecipeFamilyAliasRegistry.aliases().isEmpty())
+        if (event.getPlayer() == null || recipeAliasServer != server)
         {
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
-                    server.getResourceManager());
             com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
-            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
+            com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
         var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();

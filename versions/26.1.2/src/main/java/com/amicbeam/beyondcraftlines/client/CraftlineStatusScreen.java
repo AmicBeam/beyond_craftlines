@@ -53,7 +53,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         CraftlineStatusMenu.InitialOrder initial = menu.initialOrder();
         if (initial != null)
         {
-            orders = List.of(new OrderView(initial.id(), initial.target(), initial.requested(), 0, 0,
+            orders = List.of(new OrderView(initial.id(), initial.target(), initial.targetKey(), initial.requested(), 0, 0,
                     initial.blockingMode(), "manual", "QUEUED", "", 0, List.of()));
             selectedOrder = initial.id();
         }
@@ -111,7 +111,8 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 if (key == null || key.isEmpty()) continue;
                 int existing = -1;
                 for (int at = 0; at < steps.size(); at++)
-                    if (key.isSame(steps.get(at).key())) { existing = at; break; }
+                    if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(key, steps.get(at).key())) { existing = at; break; }
                 if (encoded.getBooleanOr("removed", false))
                 {
                     if (existing >= 0) steps.remove(existing);
@@ -123,8 +124,10 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                     if (existing >= 0) steps.set(existing, step); else steps.add(step);
                 }
             }
+            IStackKey<?> targetKey = decodeKey(value.getCompoundOrEmpty("target_key"));
+            if (targetKey == null && previous != null) targetKey = previous.targetKey();
             cached.put(id, new OrderView(id,
-                    value.getStringOr("target", ""), value.getLongOr("requested", 0L),
+                    value.getStringOr("target", ""), targetKey, value.getLongOr("requested", 0L),
                     value.getIntOr("next", 0), value.getIntOr("total", 0), value.getBooleanOr("blocking_mode", false),
                     value.getStringOr("origin", "manual"), value.getStringOr("status", ""), value.getStringOr("message", ""),
                     value.getLongOr("revision", 0L), List.copyOf(steps)));
@@ -229,9 +232,13 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             Identifier targetId = Identifier.tryParse(order.target());
             ItemStack target = targetId == null ? ItemStack.EMPTY
                     : new ItemStack(BuiltInRegistries.ITEM.getValue(targetId));
-            if (!target.isEmpty()) graphics.item(target, leftPos + 28, y + 8);
+            if (order.targetKey() != null)
+                order.targetKey().getRender().render(graphics, order.targetKey(), leftPos + 28, y + 8);
+            else if (!target.isEmpty()) graphics.item(target, leftPos + 28, y + 8);
             int textX = leftPos + 50;
-            String targetName = target.isEmpty() ? order.target() : target.getHoverName().getString();
+            String targetName = order.targetKey() != null
+                    ? order.targetKey().getRender().getDisplayName(order.targetKey()).getString()
+                    : target.isEmpty() ? order.target() : target.getHoverName().getString();
             String origin = Component.translatable("gui.beyond_craftlines.order_origin." + order.origin()).getString();
             graphics.text(font, font.plainSubstrByWidth("[" + origin + "] " + targetName + " ×" + order.requested(),
                     imageWidth - 180), textX, y + 6, statusColor(order.status()), false);
@@ -354,7 +361,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         OrderStatusPayload.clientReceiver = ignored -> {};
     }
 
-    private record OrderView(UUID id, String target, long requested, int next, int total,
+    private record OrderView(UUID id, String target, IStackKey<?> targetKey, long requested, int next, int total,
                              boolean blockingMode, String origin, String status, String message, long revision,
                              List<StepView> steps)
     {

@@ -1,58 +1,76 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
-import com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint;
-import com.amicbeam.beyondcraftlines.common.crafting.ManualRecipeTypeVisibility;
-import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
-import mezz.jei.api.recipe.IRecipeManager;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeTypeWarmupTracker;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.RecipeHolder;
 
+import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/** Client-only snapshot of the machine relationships JEI actually displays. */
+/** Lightweight JEI metadata plus a target-driven, frame-budgeted virtual recipe index. */
 public final class JeiCatalystIndex
 {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
+    private static final int MAX_LAYOUTS_PER_FRAME = 32;
     private static volatile Map<Item, Set<ResourceLocation>> TYPES_BY_CATALYST = Map.of();
     private static volatile Map<ResourceLocation, Component> TITLES_BY_TYPE = Map.of();
-    private static volatile Map<ResourceLocation, List<RecipeFamilyHint>> HINTS_BY_TYPE = Map.of();
+    private static volatile Map<ResourceLocation, Set<String>> INPUT_GROUPS_BY_TYPE = Map.of();
+    private static volatile Map<ResourceLocation, IRecipeCategory<?>> CATEGORIES_BY_TYPE = Map.of();
+    private static final ArrayDeque<SearchTask> TYPE_QUEUE = new ArrayDeque<>();
+    private static final RecipeTypeWarmupTracker<ResourceLocation> TYPE_STATE = new RecipeTypeWarmupTracker<>();
     private static volatile IJeiRuntime runtime;
 
     private JeiCatalystIndex() {}
 
+    /** Runtime startup only records category metadata. Recipe layouts are materialized on demand. */
     public static void rebuild(IJeiRuntime runtime)
     {
+        Set<ResourceLocation> previousActiveTypes = TYPE_STATE.activeTypes();
         JeiCatalystIndex.runtime = runtime;
+        com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(
+                net.minecraft.client.Minecraft.getInstance().getResourceManager());
+        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
+        TYPE_QUEUE.clear();
+        TYPE_STATE.clear();
         Map<Item, LinkedHashSet<ResourceLocation>> building = new HashMap<>();
         Map<ResourceLocation, Component> titles = new HashMap<>();
-        Map<ResourceLocation, List<RecipeFamilyHint>> hints = new HashMap<>();
+        Map<ResourceLocation, IRecipeCategory<?>> categories = new HashMap<>();
         var manager = runtime.getRecipeManager();
         manager.createRecipeCategoryLookup().includeHidden().get().forEach(category -> {
-            var recipeType = category.getRecipeType();
-            ResourceLocation typeId = recipeType.getUid();
-            titles.put(typeId, category.getTitle());
-            manager.createRecipeCatalystLookup(recipeType).includeHidden().getItemStack()
-                    .filter(stack -> !stack.isEmpty())
-                    .map(ItemStack::getItem)
-                    .forEach(item -> building.computeIfAbsent(item, ignored -> new LinkedHashSet<>()).add(typeId));
-            hints.put(typeId, collectHints(manager, category, typeId));
+            try
+            {
+                var recipeType = category.getRecipeType();
+                ResourceLocation typeId = recipeType.getUid();
+                categories.put(typeId, category);
+                titles.put(typeId, category.getTitle());
+                manager.createRecipeCatalystLookup(recipeType).includeHidden().getItemStack()
+                        .filter(stack -> !stack.isEmpty()).map(ItemStack::getItem)
+                        .forEach(item -> building.computeIfAbsent(item, ignored ->
+                                new LinkedHashSet<>()).add(typeId));
+            }
+            catch (RuntimeException | LinkageError exception)
+            {
+                LOGGER.warn("Unable to index JEI recipe category {}", category.getClass().getName(), exception);
+            }
         });
         Map<Item, Set<ResourceLocation>> frozen = new HashMap<>();
         building.forEach((item, types) -> frozen.put(item, Set.copyOf(types)));
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
-        HINTS_BY_TYPE = Map.copyOf(hints);
+        CATEGORIES_BY_TYPE = Map.copyOf(categories);
+        INPUT_GROUPS_BY_TYPE = Map.of();
+        enqueueRecipeTypes(TYPE_STATE.activate(previousActiveTypes.stream()
+                .filter(CATEGORIES_BY_TYPE::containsKey).toList()));
     }
 
     public static void refresh()
@@ -61,104 +79,214 @@ public final class JeiCatalystIndex
         if (current != null) rebuild(current);
     }
 
+    /** Prewarms each enabled JEI category once for the current runtime generation. */
+    public static void prewarmRecipeTypes(java.util.Collection<String> types)
+    {
+        Set<ResourceLocation> parsed = knownRecipeTypes(types);
+        enqueueRecipeTypes(TYPE_STATE.activate(parsed));
+    }
+
+    public static boolean recipeTypesReady(java.util.Collection<String> types)
+    { return runtime == null || TYPE_STATE.ready(knownRecipeTypes(types)); }
+
+    public static int completedRecipeTypes(java.util.Collection<String> types)
+    { return TYPE_STATE.completedCount(knownRecipeTypes(types)); }
+
+    public static int totalRecipeTypes(java.util.Collection<String> types)
+    { return knownRecipeTypes(types).size(); }
+
+    private static Set<ResourceLocation> knownRecipeTypes(java.util.Collection<String> types)
+    {
+        LinkedHashSet<ResourceLocation> parsed = new LinkedHashSet<>();
+        for (String value : types)
+        {
+            ResourceLocation type = recipeTypeId(value);
+            if (type != null && CATEGORIES_BY_TYPE.containsKey(type)) parsed.add(type);
+        }
+        ResourceLocation crafting = ResourceLocation.fromNamespaceAndPath("minecraft", "crafting");
+        if (CATEGORIES_BY_TYPE.containsKey(crafting)) parsed.add(crafting);
+        return parsed;
+    }
+
+    private static ResourceLocation recipeTypeId(String value)
+    {
+        if (value == null || value.isBlank()) return null;
+        if ("crafting".equals(value)) return ResourceLocation.fromNamespaceAndPath("minecraft", "crafting");
+        ResourceLocation parsed = ResourceLocation.tryParse(value);
+        if (parsed != null) return parsed;
+        return ResourceLocation.tryParse("minecraft:" + value);
+    }
+
+    private static void requestRecipeTypes(java.util.Collection<ResourceLocation> types)
+    { enqueueRecipeTypes(TYPE_STATE.request(types)); }
+
+    private static void enqueueRecipeTypes(java.util.Collection<ResourceLocation> types)
+    {
+        for (ResourceLocation type : types)
+        {
+            IRecipeCategory<?> category = CATEGORIES_BY_TYPE.get(type);
+            if (category == null) TYPE_STATE.complete(type);
+            else TYPE_QUEUE.addLast(new SearchTask(category, type));
+        }
+    }
+
+    /** Ensures the active network's type catalog is ready before opening an order tree. */
+    public static boolean requestRecipesFor(IStackKey<?> output)
+    {
+        if (runtime == null || output == null || output.isEmpty()) return false;
+        Set<ResourceLocation> activeTypes = TYPE_STATE.activeTypes();
+        if (activeTypes.isEmpty())
+        {
+            enqueueRecipeTypes(TYPE_STATE.activate(CATEGORIES_BY_TYPE.keySet()));
+        }
+        else requestRecipeTypes(activeTypes);
+        return true;
+    }
+
+    /** The same per-type warmup also discovers stable input groups. */
+    public static void requestInputGroupsFor(Set<ResourceLocation> types)
+    {
+        enqueueRecipeTypes(TYPE_STATE.activate(types));
+    }
+
+    public static boolean inputGroupsReady(Set<ResourceLocation> types)
+    { return TYPE_STATE.ready(types); }
+
+    /** Runs from the client render path with both a count and a wall-clock budget. */
+    public static void tick(long timeBudgetNanos)
+    {
+        IJeiRuntime current = runtime;
+        if (current == null || TYPE_QUEUE.isEmpty() || timeBudgetNanos < 1) return;
+        int remaining = MAX_LAYOUTS_PER_FRAME;
+        long deadline = System.nanoTime() + timeBudgetNanos;
+        while (remaining > 0 && !TYPE_QUEUE.isEmpty() && System.nanoTime() < deadline)
+        {
+            SearchTask task = TYPE_QUEUE.peekFirst();
+            boolean processed = task.advance(current);
+            if (task.complete())
+            {
+                TYPE_QUEUE.removeFirst();
+                TYPE_STATE.complete(task.recipeType());
+            }
+            if (processed) remaining--;
+        }
+    }
+
+    public static boolean idle() { return TYPE_QUEUE.isEmpty(); }
+
     public static Set<ResourceLocation> recipeTypesFor(ItemStack catalyst)
     {
         if (catalyst.isEmpty()) return Set.of();
-        Item item = catalyst.getItem();
-        Set<ResourceLocation> types = TYPES_BY_CATALYST.get(item);
-        if (types != null) return types;
-
-        // A recipe reload can complete after JEI first publishes its runtime. Rebuild once at the
-        // point of use so machine binding and provisioner scans do not remain stuck with that stale snapshot.
-        refresh();
-        return TYPES_BY_CATALYST.getOrDefault(item, Set.of());
+        LinkedHashSet<ResourceLocation> result = new LinkedHashSet<>(
+                TYPES_BY_CATALYST.getOrDefault(catalyst.getItem(), Set.of()));
+        result.addAll(com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                .recipeTypesFor(catalyst));
+        return Set.copyOf(result);
     }
 
     public static Optional<Component> recipeTypeTitle(ResourceLocation type)
     {
-        return Optional.ofNullable(TITLES_BY_TYPE.get(type));
+        Optional<Component> emi = com.amicbeam.beyondcraftlines.client.integration.emi
+                .EmiOptionalIntegration.recipeTypeTitle(type);
+        return emi.isPresent() ? emi : Optional.ofNullable(TITLES_BY_TYPE.get(type));
     }
 
-    /** All recipe categories currently exposed by JEI, for the provisioner's manual fallback. */
     public static Set<ResourceLocation> recipeTypes()
     {
-        return TITLES_BY_TYPE.keySet();
+        LinkedHashSet<ResourceLocation> result = new LinkedHashSet<>(TITLES_BY_TYPE.keySet());
+        result.addAll(com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
+                .recipeTypes());
+        return Set.copyOf(result);
     }
 
-    /** Uses the synced client recipe manager to mirror the server's representative-hint validation. */
+    public static Map<ResourceLocation, Set<String>> inputGroupsFor(Set<ResourceLocation> types)
+    {
+        Map<ResourceLocation, Set<String>> result = new HashMap<>();
+        types.forEach(type -> result.put(type, INPUT_GROUPS_BY_TYPE.getOrDefault(type, Set.of())));
+        return Map.copyOf(result);
+    }
+
     public static Set<ResourceLocation> recipeTypes(Set<String> loadedFamilies,
                                                     Map<String, Set<String>> aliases,
                                                     boolean debugMappings)
-    {
-        Set<String> allTypes = TITLES_BY_TYPE.keySet().stream().map(ResourceLocation::toString)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        Set<String> visible = ManualRecipeTypeVisibility.visible(
-                allTypes, loadedFamilies, aliases, verifiedHintFamilies(), debugMappings);
-        return visible.stream().map(ResourceLocation::parse)
-                .collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
-
-    public static List<RecipeFamilyHint> hintsFor(Set<ResourceLocation> types)
-    {
-        return types.stream().sorted(java.util.Comparator.comparing(ResourceLocation::toString))
-                .flatMap(type -> HINTS_BY_TYPE.getOrDefault(type, List.of()).stream())
-                .limit(128).toList();
-    }
+    { return recipeTypes(); }
 
     public static void clear()
     {
         runtime = null;
+        com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
+        TYPE_QUEUE.clear();
+        TYPE_STATE.clear();
         TYPES_BY_CATALYST = Map.of();
         TITLES_BY_TYPE = Map.of();
-        HINTS_BY_TYPE = Map.of();
+        INPUT_GROUPS_BY_TYPE = Map.of();
+        CATEGORIES_BY_TYPE = Map.of();
+        com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
     }
 
-    private static <T> List<RecipeFamilyHint> collectHints(IRecipeManager manager,
-                                                            IRecipeCategory<T> category,
-                                                            ResourceLocation typeId)
+    private static void captured(ResourceLocation type, Object displayedRecipe,
+                                 java.util.List<JeiVirtualRecipeLayouts.Captured> captures)
     {
-        Map<String, RecipeFamilyHint> byFamily = new java.util.LinkedHashMap<>();
-        manager.createRecipeLookup(category.getRecipeType()).includeHidden().get().limit(64).forEach(value -> {
-            RecipeHolder<?> holder = null;
-            if (value instanceof RecipeHolder<?> recipeHolder) holder = recipeHolder;
-            else if (value instanceof Recipe<?> recipe)
-            {
-                ResourceLocation id = category.getRegistryName(value);
-                if (id != null) holder = holder(id, recipe);
-            }
-            if (holder == null) return;
+        if (!JeiRecipeExecutionSource.usesServerRecipe(displayedRecipe))
+            captures.forEach(JeiVirtualRecipeLayouts::register);
+        mergeInputGroups(type, captures.stream().flatMap(captured -> captured.inputs().stream()).map(
+                com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload.VirtualInput::inputGroup)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new)));
+    }
+
+    private static void mergeInputGroups(ResourceLocation type, Set<String> discovered)
+    {
+        if (discovered.isEmpty()) return;
+        Map<ResourceLocation, Set<String>> updated = new HashMap<>(INPUT_GROUPS_BY_TYPE);
+        LinkedHashSet<String> groups = new LinkedHashSet<>(updated.getOrDefault(type, Set.of()));
+        if (!groups.addAll(discovered)) return;
+        updated.put(type, Set.copyOf(groups));
+        INPUT_GROUPS_BY_TYPE = Map.copyOf(updated);
+    }
+
+    private static final class SearchTask
+    {
+        private final IRecipeCategory<Object> category;
+        private final ResourceLocation recipeType;
+        private Iterator<Object> recipes;
+        private boolean complete;
+
+        @SuppressWarnings("unchecked")
+        private SearchTask(IRecipeCategory<?> category, ResourceLocation recipeType)
+        { this.category = (IRecipeCategory<Object>) category; this.recipeType = recipeType; }
+
+        private boolean advance(IJeiRuntime runtime)
+        {
+            if (complete) return false;
             try
             {
-                String family = RecipePlanningService.family(holder);
-                if (family == null || family.isBlank()) return;
-                byFamily.putIfAbsent(family, new RecipeFamilyHint(
-                        typeId.toString(), family, holder.id().toString()));
+                if (recipes == null)
+                {
+                    var lookup = runtime.getRecipeManager().createRecipeLookup(category.getRecipeType())
+                            .includeHidden();
+                    recipes = lookup.get().iterator();
+                }
+                if (!recipes.hasNext()) { complete = true; return false; }
+                Object recipe = recipes.next();
+                runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
+                                runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup())
+                        .ifPresent(layout -> {
+                            var values = JeiVirtualRecipeLayouts.captures(category.getRecipeType().getUid(), layout);
+                            if (!values.isEmpty())
+                                JeiCatalystIndex.captured(category.getRecipeType().getUid(), recipe, values);
+                        });
+                if (!recipes.hasNext()) complete = true;
+                return true;
             }
-            catch (RuntimeException ignored)
+            catch (RuntimeException | LinkageError exception)
             {
-                // A malformed third-party JEI recipe must not abort the entire catalyst index.
+                complete = true;
+                LOGGER.warn("Unable to lazily index JEI recipe category {}", category.getClass().getName(), exception);
+                return false;
             }
-        });
-        return List.copyOf(byFamily.values());
-    }
+        }
 
-    private static Map<String, Set<String>> verifiedHintFamilies()
-    {
-        var level = Minecraft.getInstance().level;
-        if (level == null) return Map.of();
-        Map<String, LinkedHashSet<String>> verified = new HashMap<>();
-        HINTS_BY_TYPE.forEach((type, hints) -> hints.forEach(hint -> {
-            ResourceLocation recipeId = ResourceLocation.tryParse(hint.recipeId());
-            if (recipeId == null) return;
-            var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
-            if (holder != null && hint.family().equals(RecipePlanningService.family(holder)))
-                verified.computeIfAbsent(type.toString(), ignored -> new LinkedHashSet<>()).add(hint.family());
-        }));
-        Map<String, Set<String>> frozen = new HashMap<>();
-        verified.forEach((type, families) -> frozen.put(type, Set.copyOf(families)));
-        return Map.copyOf(frozen);
+        private boolean complete() { return complete; }
+        private ResourceLocation recipeType() { return recipeType; }
     }
-
-    private static <R extends Recipe<?>> RecipeHolder<R> holder(ResourceLocation id, R recipe)
-    { return new RecipeHolder<>(id, recipe); }
 }

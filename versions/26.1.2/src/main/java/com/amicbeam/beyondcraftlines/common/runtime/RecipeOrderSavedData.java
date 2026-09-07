@@ -201,7 +201,7 @@ public final class RecipeOrderSavedData extends SavedData
         {
             CompoundTag value = new CompoundTag();
             value.putInt("slot", selection.slot());
-            value.putString("item", selection.item().toString());
+            value.putString("item", selection.selection());
             selections.add(value);
         }
         tag.put("ingredient_selections", selections);
@@ -227,7 +227,7 @@ public final class RecipeOrderSavedData extends SavedData
         {
             CompoundTag value = encodedSelections.getCompoundOrEmpty(i);
             selections.add(new RecipePlan.IngredientSelection(value.getIntOr("slot", -1),
-                    Identifier.parse(value.getStringOr("item", "minecraft:air"))));
+                    value.getStringOr("item", "minecraft:air")));
         }
         IStackKey<?> output = tag.contains("output_key")
                 ? readKey(tag.getCompoundOrEmpty("output_key"), registries)

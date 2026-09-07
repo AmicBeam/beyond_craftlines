@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.common.item;
 
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.data.DeviceType;
+import com.amicbeam.beyondcraftlines.common.data.ProvisionerConnectionSelectionResult;
 import com.amicbeam.beyondcraftlines.common.network.BindMachinePayload;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlocks;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -19,7 +20,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 public final class NetworkLinkerItem extends Item
@@ -60,13 +60,15 @@ public final class NetworkLinkerItem extends Item
             if (!context.getLevel().isClientSide())
             {
                 boolean connectionMode = !context.getPlayer().isShiftKeyDown();
-                boolean selected = connectionMode
-                        ? DeviceBindingRegistry.selectProvisionerConnections(context.getPlayer(), context.getClickedPos())
-                        : DeviceBindingRegistry.selectProvisioner(context.getPlayer(), context.getClickedPos());
-                context.getPlayer().displayClientMessage(Component.translatable(selected
-                        ? connectionMode ? "message.beyond_craftlines.provisioner_connection_mode_selected"
-                        : "message.beyond_craftlines.provisioner_selected"
-                        : "error.beyond_craftlines.provisioner_selection_failed"), false);
+                ProvisionerConnectionSelectionResult connectionResult = connectionMode
+                        ? DeviceBindingRegistry.selectProvisionerConnections(
+                        context.getPlayer(), context.getClickedPos()) : null;
+                boolean recipeScanSelected = !connectionMode
+                        && DeviceBindingRegistry.selectProvisioner(context.getPlayer(), context.getClickedPos());
+                String message = connectionMode ? connectionResult.messageKey()
+                        : recipeScanSelected ? "message.beyond_craftlines.provisioner_selected"
+                        : "error.beyond_craftlines.provisioner_selection_failed";
+                context.getPlayer().displayClientMessage(Component.translatable(message), false);
                 if (context.getPlayer() instanceof net.minecraft.server.level.ServerPlayer serverPlayer)
                     com.amicbeam.beyondcraftlines.common.network.BindingVisualsPayload.sendTo(serverPlayer);
             }
@@ -86,39 +88,25 @@ public final class NetworkLinkerItem extends Item
         }
         if (context.getPlayer().isShiftKeyDown())
         {
-            if (context.getLevel().isClientSide())
-            {
-                ItemStack catalyst = new ItemStack(
-                        context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-                Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
-                PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                        context.getClickedFace(),
-                        com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types), true));
-            }
+            if (context.getLevel().isClientSide()) sendBindRequest(context, true);
             return InteractionResult.SUCCESS;
         }
-        if (context.getLevel().isClientSide())
-        {
-            ItemStack catalyst = new ItemStack(
-                    context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem());
-            Set<ResourceLocation> types = recipeTypes(catalyst, blockId);
-            PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
-                    context.getClickedFace(),
-                    com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.hintsFor(types), false));
-        }
+        if (context.getLevel().isClientSide()) sendBindRequest(context, false);
         return InteractionResult.SUCCESS;
     }
 
-    private static Set<ResourceLocation> recipeTypes(ItemStack catalyst, ResourceLocation blockId)
+    private static void sendBindRequest(UseOnContext context, boolean remove)
     {
-        LinkedHashSet<ResourceLocation> types = new LinkedHashSet<>(
-                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex
-                        .recipeTypesFor(catalyst));
-        // Several JEI integrations (notably Mekanism 1.20.1) use the machine block id as their
-        // category id. Only use that id when JEI has no catalyst categories: adding it alongside
-        // an authoritative category leaks legacy ids such as mekanism:enrichment_chamber on 1.21.1.
-        if (types.isEmpty()) types.add(blockId);
-        return Set.copyOf(types);
+        boolean connectionEditing = com.amicbeam.beyondcraftlines.client.ClientBindingVisuals
+                .isEditingProvisionerConnections();
+        Set<ResourceLocation> types = connectionEditing ? Set.of()
+                : com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.recipeTypesFor(
+                new ItemStack(context.getLevel().getBlockState(context.getClickedPos()).getBlock().asItem()));
+        var inputGroups = connectionEditing ? java.util.List.<String>of()
+                : com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.encode(
+                com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.inputGroupsFor(types));
+        PacketDistributor.sendToServer(BindMachinePayload.of(context.getClickedPos(), types,
+                context.getClickedFace(), inputGroups, remove));
     }
 
     @Override

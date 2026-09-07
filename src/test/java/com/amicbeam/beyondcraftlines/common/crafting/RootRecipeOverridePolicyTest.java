@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 final class RootRecipeOverridePolicyTest
 {
@@ -29,5 +30,14 @@ final class RootRecipeOverridePolicyTest
                 "minecraft:iron_ingot_from_iron_block");
 
         assertEquals("minecraft:iron_ingot_from_iron_block", overrides.get("minecraft:iron_ingot"));
+    }
+
+    @Test void targetOnlyEntryDoesNotPinAnArbitraryRootRecipe()
+    {
+        Map<String, String> overrides = new LinkedHashMap<>();
+
+        RootRecipeOverridePolicy.putInitialFallback(overrides, "minecraft:iron_ingot", null);
+
+        assertFalse(overrides.containsKey("minecraft:iron_ingot"));
     }
 }

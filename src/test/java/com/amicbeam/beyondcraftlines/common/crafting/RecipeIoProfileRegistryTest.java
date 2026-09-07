@@ -5,112 +5,101 @@ import org.junit.jupiter.api.Test;
 
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class RecipeIoProfileRegistryTest
 {
-    @Test
-    void shipsArsNouveauEnchantingApparatusInputs()
+    @Test void shipsSlashBladeDynamicOutputPolicy()
     {
-        var profile = read("ars_nouveau.json");
-        assertEquals(Set.of("ars_nouveau:enchanting_apparatus"), profile.recipeTypes());
-        assertEquals(Set.of("reagent", "pedestalItems"), profile.inputFields());
-        assertEquals(Set.of("result"), profile.outputFields());
+        RecipeIoProfileRegistry.Profile profile = read("slashblade.json");
+
+        assertEquals(Set.of("slashblade:"), profile.recipeIdPrefixes());
+        assertEquals(Set.of("slashblade"), profile.resourceNamespaces());
+        assertTrue(profile.recipeClasses().isEmpty(),
+                "the profile must cover SlashBlade_2 vanilla recipe classes and Resharped alike");
+        assertEquals(RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
+                profile.outputMatch());
+        assertEquals(new RecipeIoProfileRegistry.DynamicOutputPolicy(
+                "jei_focus", "exact", RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
+                "assemble_selected_inputs"), profile.dynamicOutput());
+        assertTrue(RecipeIoProfileRegistry.matchesRecipeId(
+                "slashblade:anvilcrafting/reforge", profile.recipeIdPrefixes()));
+        assertTrue(RecipeIoProfileRegistry.matchesRecipeId(
+                "slashblade:rodai_netherite_smithing", profile.recipeIdPrefixes()));
+        assertFalse(RecipeIoProfileRegistry.matchesRecipeId(
+                "minecraft:diamond_sword", profile.recipeIdPrefixes()));
     }
 
-    @Test
-    void shipsActuallyAdditionsEmpowererStandInputs()
+    @Test void shipsImmersiveEngineeringCokeOvenBatchAndCreosoteMappings()
     {
-        var profile = read("actually_additions.json");
-        assertEquals(Set.of("actuallyadditions:empower"), profile.recipeTypes());
-        assertEquals(Set.of("de.ellpeck.actuallyadditions.mod.crafting.EmpowererRecipe"),
-                profile.recipeClasses());
-        assertEquals(Set.of("getInput", "getStandOne", "getStandTwo", "getStandThree", "getStandFour"),
-                profile.inputFields());
-        assertEquals(Set.of("getOutput"), profile.outputFields());
-    }
+        RecipeIoProfileRegistry.Profile profile = read("immersiveengineering_coke_oven.json");
 
-    @Test
-    void shipsImmersiveEngineeringCokeOvenBatchAndCreosoteMappings()
-    {
-        var profile = read("immersiveengineering_coke_oven.json");
+        assertEquals(Set.of("immersiveengineering:coke_oven"), profile.recipeTypes());
+        assertEquals(Set.of("input"), profile.inputFields());
         assertEquals(RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT,
                 profile.inputCountSemantics().get("input"));
-        assertEquals(java.util.List.of(new RecipeIoProfileRegistry.OutputMapping(
+        assertEquals(Set.of("getMatchingStackList", "getMatchingStacks"),
+                Set.copyOf(profile.representationFields()));
+        assertEquals(List.of(new RecipeIoProfileRegistry.CountedWrapper(
+                        Set.of("getBaseIngredient"), Set.of("getCount"))),
+                profile.countedWrappers());
+        assertEquals(List.of(new RecipeIoProfileRegistry.OutputMapping(
                         RecipeIoProfileRegistry.OutputType.FLUID,
                         "immersiveengineering:creosote", "creosoteOutput")),
                 profile.outputMappings());
     }
 
-    @Test
-    void shipsAllGenericStructuralVocabularyInTheDefaultProfile()
+    @Test void keepsUnconfiguredRecipesComponentExact()
     {
-        var profile = read("defaults.json");
-        assertEquals(true, profile.inputFields().containsAll(Set.of(
-                "getFluidIngredients", "catalyst", "getCatalyst", "activationItem", "getActivationItem",
-                "spirits", "getSpirits")));
-        assertEquals(Set.of("catalyst", "getCatalyst"), profile.distinctInputFields());
-        assertEquals(false, profile.inputFields().stream()
-                .anyMatch(name -> name.toLowerCase(java.util.Locale.ROOT).contains("energy")));
-        assertEquals(Set.of("content", "getContent"), profile.structuralWrapperFields());
-        assertEquals(Set.of("getChemicalStack"), profile.outputWrapperFields());
+        Blade requested = new Blade("slashblade:slashblade", "awakened");
+        Blade declared = new Blade("slashblade:slashblade", "base");
+
+        assertFalse(RecipeIoProfileRegistry.outputMatches(
+                RecipeIoProfileRegistry.OutputMatchSemantics.EXACT,
+                requested, declared, Blade::sameComponents, Blade::sameItem));
+        assertTrue(RecipeIoProfileRegistry.outputMatches(
+                RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
+                requested, declared, Blade::sameComponents, Blade::sameItem));
+        assertFalse(RecipeIoProfileRegistry.outputMatches(
+                RecipeIoProfileRegistry.OutputMatchSemantics.SAME_RESOURCE,
+                requested, new Blade("slashblade:proudsoul", "base"),
+                Blade::sameComponents, Blade::sameItem));
     }
 
-    @Test
-    void shipsMekanismDirectionsAndMultipliersAsData()
-    {
-        var profile = read("mekanism.json");
-        assertEquals(3, profile.directions().size());
-        assertEquals(2, profile.multipliers().size());
-        assertEquals(200, profile.multipliers().get(0).factor());
-        assertEquals("perTickUsage", profile.multipliers().get(0).whenBooleanField());
-    }
-
-    @Test
-    void shipsMekanismSawingMainAndSecondaryOutputs()
-    {
-        var profile = read("mekanism_sawing.json");
-        assertEquals(Set.of("mekanism:sawing"), profile.recipeTypes());
-        assertEquals(Set.of("getMainOutputDefinition", "getSecondaryOutputDefinition"),
-                profile.outputFields());
-    }
-
-    @Test
-    void parsesScopedFieldsRulesAndRejectsInvalidNames()
+    @Test void rejectsIncompleteDynamicOutputDeclarations()
     {
         var profile = RecipeIoProfileRegistry.parse(JsonParser.parseString("""
                 {
-                  "recipe_types": ["example:pressing", "example:compressing"],
-                  "include_defaults": false,
-                  "input_fields": ["input", "activationItem", "invalid-name()"],
-                  "distinct_input_fields": ["input", "notAnInput"],
-                  "output_fields": ["result"],
-                  "input_count_semantics": {
-                    "input": "batch_limit",
-                    "invalid-name()": "batch_limit",
-                    "activationItem": "unknown"
-                  },
-                  "output_mappings": [
-                    {"type": "fluid", "id": "example:oil", "amount_field": "oilAmount"},
-                    {"type": "unknown", "id": "example:bad", "amount_field": "amount"},
-                    {"type": "item", "id": "INVALID", "amount_field": "amount"}
-                  ]
+                  "recipe_id_prefixes": ["example:"],
+                  "dynamic_output": {
+                    "source": "jei_focus",
+                    "planning_fallback": "same_resource"
+                  }
                 }
                 """).getAsJsonObject());
 
-        assertEquals(Set.of("example:pressing", "example:compressing"), profile.recipeTypes());
-        assertFalse(profile.includeDefaults());
-        assertEquals(Set.of("input", "activationItem"), profile.inputFields());
-        assertEquals(Set.of("input"), profile.distinctInputFields());
-        assertEquals(Set.of("result"), profile.outputFields());
-        assertEquals(java.util.Map.of("input", RecipeIoProfileRegistry.InputCountSemantics.BATCH_LIMIT),
-                profile.inputCountSemantics());
-        assertEquals(java.util.List.of(new RecipeIoProfileRegistry.OutputMapping(
-                        RecipeIoProfileRegistry.OutputType.FLUID, "example:oil", "oilAmount")),
-                profile.outputMappings());
+        assertEquals(RecipeIoProfileRegistry.OutputMatchSemantics.EXACT, profile.outputMatch());
+        assertTrue(profile.dynamicOutput().source().isBlank());
+    }
+
+    @Test void resolvesRuntimePolicyByRecipeIdWithoutARecipeClass()
+    {
+        try
+        {
+            RecipeIoProfileRegistry.applyEntriesForTests(List.of(readText("slashblade.json")));
+            assertTrue(RecipeIoProfileRegistry.allowsSameResourceOutput(
+                    "slashblade:anvilcrafting/reforge"));
+            assertFalse(RecipeIoProfileRegistry.allowsSameResourceOutput(
+                    "minecraft:diamond_sword"));
+            assertTrue(RecipeIoProfileRegistry.allowsSameResourceMaterial("slashblade"));
+            assertFalse(RecipeIoProfileRegistry.allowsSameResourceMaterial("minecraft"));
+        }
+        finally { RecipeIoProfileRegistry.applyEntriesForTests(List.of()); }
     }
 
     private static RecipeIoProfileRegistry.Profile read(String name)
@@ -123,5 +112,24 @@ final class RecipeIoProfileRegistryTest
         }
         catch (java.io.IOException exception)
         { throw new java.io.UncheckedIOException(exception); }
+    }
+
+    private static String readText(String name)
+    {
+        try (var stream = RecipeIoProfileRegistryTest.class.getResourceAsStream(
+                "/data/beyond_craftlines/recipe_io_profiles/" + name))
+        {
+            return new String(java.util.Objects.requireNonNull(stream).readAllBytes(),
+                    StandardCharsets.UTF_8);
+        }
+        catch (java.io.IOException exception)
+        { throw new java.io.UncheckedIOException(exception); }
+    }
+
+    private record Blade(String item, String state)
+    {
+        private boolean sameItem(Blade other) { return item.equals(other.item); }
+        private boolean sameComponents(Blade other)
+        { return sameItem(other) && state.equals(other.state); }
     }
 }

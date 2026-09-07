@@ -5,6 +5,7 @@ import com.amicbeam.beyondcraftlines.common.menu.CraftlineStatusMenu;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderJob;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
 import com.wintercogs.beyonddimensions.api.dimensionnet.UnifiedStorage;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.chat.Component;
@@ -49,7 +50,7 @@ public record OpenOrderStatusMenuPayload() implements CustomPacketPayload
         player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                 new CraftlineStatusMenu(id, inventory, networkId, initialOrder == null ? null
                         : new CraftlineStatusMenu.InitialOrder(initialOrder.id(), initialOrder.target().toString(),
-                        initialOrder.requested(), initialOrder.blockingMode())),
+                        initialOrder.targetKey(), initialOrder.requested(), initialOrder.blockingMode())),
                 Component.translatable("menu.beyond_craftlines.status")), buffer -> {
                     buffer.writeVarInt(networkId);
                     buffer.writeBoolean(initialOrder != null);
@@ -57,6 +58,8 @@ public record OpenOrderStatusMenuPayload() implements CustomPacketPayload
                     {
                         buffer.writeUUID(initialOrder.id());
                         buffer.writeUtf(initialOrder.target().toString(), 256);
+                        IStackKey.STREAM_CODEC.encode(
+                                (net.minecraft.network.RegistryFriendlyByteBuf) buffer, initialOrder.targetKey());
                         buffer.writeVarLong(initialOrder.requested());
                         buffer.writeBoolean(initialOrder.blockingMode());
                     }

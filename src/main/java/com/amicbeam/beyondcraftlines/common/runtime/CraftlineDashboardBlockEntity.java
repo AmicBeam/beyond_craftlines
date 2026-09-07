@@ -71,7 +71,8 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
         if (!mayConfigure(player) || nextDesired < 1) return false;
         if (nextTarget == null) nextTarget = ItemStackKey.EMPTY;
         boolean targetChanged = target.isEmpty() != nextTarget.isEmpty()
-                || !target.isEmpty() && !target.isSame(nextTarget);
+                || !target.isEmpty() && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                .exact(target, nextTarget);
         target = nextTarget;
         desiredAmount = nextDesired;
         stockMode = nextStockMode == null ? DashboardStockMode.NETWORK : nextStockMode;
@@ -312,7 +313,8 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
     {
         long total = 0;
         for (var stored : network.getUnifiedStorage().getStorage())
-            if (target.isSame(stored.key()))
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(target, stored.key()))
                 total = total > Long.MAX_VALUE - Math.max(0, stored.amount())
                         ? Long.MAX_VALUE : total + Math.max(0, stored.amount());
         return total;

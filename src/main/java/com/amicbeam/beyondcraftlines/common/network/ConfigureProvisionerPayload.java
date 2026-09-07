@@ -1,7 +1,6 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
-import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import io.netty.buffer.ByteBuf;
@@ -23,7 +22,8 @@ import java.util.HashMap;
 import java.util.Set;
 
 public record ConfigureProvisionerPayload(long position, List<String> selectedTypes,
-                                          List<String> selectedGroups, List<String> recipeHints, int priority)
+                                          List<String> selectedGroups, List<String> availableInputGroups,
+                                          int priority)
         implements CustomPacketPayload
 {
     public static final Type<ConfigureProvisionerPayload> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(
@@ -34,15 +34,14 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             ConfigureProvisionerPayload::selectedTypes,
             ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
             ConfigureProvisionerPayload::selectedGroups,
-            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(768), 128),
-            ConfigureProvisionerPayload::recipeHints,
+            ByteBufCodecs.collection(ArrayList::new, ByteBufCodecs.stringUtf8(384), 512),
+            ConfigureProvisionerPayload::availableInputGroups,
             ByteBufCodecs.VAR_INT, ConfigureProvisionerPayload::priority,
             ConfigureProvisionerPayload::new);
 
     public static ConfigureProvisionerPayload of(BlockPos position, Set<ResourceLocation> selected,
                                                   Map<ResourceLocation, Set<String>> groups,
-                                                  java.util.Collection<com.amicbeam.beyondcraftlines.common.crafting
-                                                          .RecipeFamilyHint> hints,
+                                                  List<String> availableInputGroups,
                                                   int priority)
     {
         return new ConfigureProvisionerPayload(position.asLong(),
@@ -50,8 +49,7 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
                 selected.stream().sorted(java.util.Comparator.comparing(ResourceLocation::toString))
                         .flatMap(type -> groups.getOrDefault(type, Set.of()).stream().sorted()
                                 .map(group -> type + "|" + group)).limit(512).toList(),
-                hints.stream().map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::encode)
-                        .limit(128).toList(), priority);
+                availableInputGroups.stream().limit(512).toList(), priority);
     }
 
     public static void handle(ConfigureProvisionerPayload payload, IPayloadContext context)
@@ -64,29 +62,22 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             LinkedHashSet<ResourceLocation> selected = new LinkedHashSet<>();
             payload.selectedTypes().stream().limit(32).map(ResourceLocation::tryParse)
                     .filter(java.util.Objects::nonNull).forEach(selected::add);
-            var hints = payload.recipeHints().stream().limit(128)
-                    .map(com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint::decode)
-                    .filter(java.util.Objects::nonNull).toList();
-            net.minecraft.server.level.ServerLevel level = player.serverLevel();
-            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                    .verifyAndRemember(level, hints);
-            Set<String> loadedFamilies = com.amicbeam.beyondcraftlines.common.crafting
-                    .RecipePlanningService.loadedFamilies(level);
-            var mapping = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                    .resolve(selected, loadedFamilies);
-            if (!selected.isEmpty() && mapping.jeiTypes().size() != selected.size())
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry
+                    .rememberEncoded(payload.availableInputGroups());
+            boolean manualSelection = menu.allowsManualRecipeSelection();
+            Set<ResourceLocation> mappedAcceptedTypes = menu.isBoundMachineConfiguration()
+                    ? com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                    .directBindable(selected)
+                    : Set.copyOf(selected);
+            Set<ResourceLocation> acceptedTypes = manualSelection ? Set.copyOf(selected) : mappedAcceptedTypes;
+            if (!selected.isEmpty() && acceptedTypes.size() != selected.size())
             {
-                var missing = selected.stream().filter(type -> !mapping.jeiTypes().contains(type))
+                var missing = selected.stream().filter(type -> !acceptedTypes.contains(type))
                         .map(Object::toString).sorted().toList();
-                com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                        .logUnmapped(missing, loadedFamilies);
                 player.displayClientMessage(Component.translatable(
                         "error.beyond_craftlines.recipe_type_mapping_failed", String.join(", ", missing)), false);
-                if (CraftlinesConfig.DEBUG_RECIPE_TYPE_MAPPINGS.get())
-                    showMappingDebug(player, level, hints, missing);
                 return;
             }
-            boolean manualSelection = menu.allowsManualRecipeSelection();
             if (!menu.acceptsRecipeSelection(selected)) return;
             Map<ResourceLocation, Set<String>> selectedGroups = new HashMap<>();
             boolean invalidGroups = false;
@@ -115,34 +106,11 @@ public record ConfigureProvisionerPayload(long position, List<String> selectedTy
             player.displayClientMessage(Component.translatable(message), configured);
             if (configured) BindingVisualsPayload.broadcast(player.serverLevel());
             if (configured && manualSelection)
+            {
                 com.amicbeam.beyondcraftlines.common.block.CraftlineProvisionerBlock
                         .openConfiguration(player, position);
-        });
-    }
-
-    private static void showMappingDebug(ServerPlayer player, net.minecraft.server.level.ServerLevel level,
-                                         List<com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyHint> hints,
-                                         List<String> missing)
-    {
-        var actual = com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry
-                .diagnoseActualFamilies(level, hints, missing);
-        for (String jeiType : missing)
-        {
-            List<String> families = actual.getOrDefault(jeiType, Set.of()).stream().sorted().toList();
-            Component value = families.isEmpty()
-                    ? Component.translatable("message.beyond_craftlines.debug_recipe_type_not_found")
-                    : Component.literal(String.join(", ", families));
-            player.displayClientMessage(Component.translatable(
-                    "message.beyond_craftlines.debug_recipe_type_mapping", jeiType, value), false);
-            if (!families.isEmpty())
-            {
-                String entries = families.stream().map(family -> "\"" + family + "\"")
-                        .collect(java.util.stream.Collectors.joining(","));
-                String json = "{\"jei_type\":\"" + jeiType + "\",\"recipe_types\":[" + entries + "]}";
-                player.displayClientMessage(Component.translatable(
-                        "message.beyond_craftlines.debug_recipe_type_json", json), false);
             }
-        }
+        });
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

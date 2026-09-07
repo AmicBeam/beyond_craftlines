@@ -53,6 +53,13 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
             try { accept(player, menu, payload); }
             catch (RuntimeException exception)
             {
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                        "{} server proposal rejected player={} nonce={} page={}/{} token={} error={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        player.getGameProfile().getName(), payload.nonce(), payload.header().pageIndex(),
+                        payload.header().pageCount(),
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(payload.itemId()),
+                        exception.toString(), exception);
                 ASSEMBLIES.remove(player.getUUID());
                 PacketDistributor.sendToPlayer(player, PlanPreviewPayload.failure(
                         payload.nonce(), payload.itemId(), exception.getMessage()));
@@ -64,12 +71,19 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
     {
         IStackKey<?> target = menu.initialTarget();
         Header header = payload.header();
-        if (!menu.serverRecipeIndexComplete())
-            throw new IllegalStateException("server recipe index is still building");
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} server proposal page player={} nonce={} page={}/{} recipes={} ingredients={} count={} stockRevision={} recipeEpoch={} target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                player.getGameProfile().getName(), payload.nonce(), header.pageIndex(), header.pageCount(),
+                payload.recipeChoices().size(), payload.ingredientChoices().size(), header.count(),
+                header.stockRevision(), header.recipeEpoch(),
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         if (header.count() < 1 || header.pageCount() < 1 || header.pageCount() > MAX_PAGES
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
             throw new IllegalArgumentException("invalid proposal page");
-        if (!menu.targetToken().equals(payload.itemId()) || menu.recipeForResourceOutput(target) == null)
+        // The completed proposal is validated against the authoritative recipe manager on submit.
+        // Avoid a full server recipe scan here, especially for target-only order menus.
+        if (!menu.targetToken().equals(payload.itemId()))
             throw new IllegalArgumentException("target is unavailable");
         UUID playerId = player.getUUID();
         long now = player.serverLevel().getGameTime();
@@ -94,6 +108,11 @@ public record PlanProposalUploadPayload(long nonce, String itemId, Header header
         long expiresAt = now + CACHE_TICKS;
         ValidatedClientPlanCache.put(playerId, new ValidatedClientPlanCache.Entry(payload.nonce(),
                 menu.networkId(), target, header.count(), header.recipeEpoch(), expiresAt, overrides));
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} server proposal cached player={} nonce={} network={} recipes={} ingredients={} expiresAt={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                player.getGameProfile().getName(), payload.nonce(), menu.networkId(),
+                assembly.recipes().size(), assembly.ingredients().size(), expiresAt);
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

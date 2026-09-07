@@ -22,6 +22,8 @@ The Network Linker associates real recipe machines and Craftline Provisioners wi
 
 Recipe types are resolved from JEI catalysts and server recipe types. Beyond Dimensions network components, including its native network furnaces, cannot be bound because Craftlines handles them directly.
 
+This experimental build always uses the JEI-only path and stores the JEI category UID as its runtime family. It does not load RecipeType aliases or category allowlists. JEI input slot names are preserved as provisioner sublabels; numbered generic input slots fold into `ingredients`.
+
 If a recipe exposes several logical material groups, different endpoints may handle different groups. An explicitly selected group is preferred over an unrestricted endpoint; among equal matches, the higher configured priority wins.
 
 ## Teaching a provisioner recipe types
@@ -31,6 +33,8 @@ If a recipe exposes several logical material groups, different endpoints may han
 3. Open the provisioner and enable the recipe types and material groups it should accept.
 
 When only one recipe type is detected, it can be selected automatically. Right-clicking air exits the current linker mode or clears the active selection.
+
+Vanilla brewing stands expose real inventory automation and can be bound directly. One brewing operation consumes up to three potion-slot inputs plus one ingredient and produces three potion outputs; recursive planning treats that as one batch instead of expanding every bottle into another three-bottle operation. Smithing and stonecutting use their authoritative server recipes and, by default, are executed directly against network storage without a workstation; servers can disable this with `crafting.enableSmithingAndStonecuttingRecipeProxy`. Anvils and composters remain provisioner-only targets.
 
 ## Wireless provisioner connections
 

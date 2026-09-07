@@ -8,6 +8,7 @@ import com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver;
 import com.amicbeam.beyondcraftlines.common.crafting.PlanningSnapshotService;
 import com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath;
 import com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting;
+import com.amicbeam.beyondcraftlines.common.crafting.SimulatedWorkstationRecipe;
 import com.amicbeam.beyondcraftlines.common.data.BindingRecord;
 import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
@@ -259,13 +260,7 @@ public final class RecipeOrderService
         net.minecraft.server.level.ServerPlayer player = server.getPlayerList().getPlayer(job.owner());
         if (player == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_owner_online"));
-        IStackKey<?> outputKey = null;
-        for (int step = job.stepCount() - 1; step >= 0; step--)
-            if (job.step(step).output().equals(job.target()))
-            {
-                outputKey = job.step(step).outputKey();
-                break;
-            }
+        IStackKey<?> outputKey = job.targetKey();
         if (!(outputKey instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey itemKey))
             return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
         net.minecraft.world.item.ItemStack template = itemKey.getReadOnlyStack().copyWithCount(1);
@@ -276,25 +271,28 @@ public final class RecipeOrderService
         if (network == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_network"));
         UnifiedStorage storage = network.getUnifiedStorage();
-        KeyAmount taken = storage.extract(outputKey, job.requested(), false, false);
-        if (taken.amount() != job.requested())
-        {
-            if (!taken.isEmpty()) storage.insert(taken.key(), taken.amount(), false);
+        List<KeyAmount> taken = CompletedOutputExtractor.extract(
+                storage, outputKey, job.requested(), candidate -> finalOutputMatches(job, candidate));
+        if (taken.isEmpty())
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_final_output"));
-        }
-        if (!(taken.key() instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey takenItemKey))
+        if (taken.stream().anyMatch(value -> !(value.key() instanceof
+                com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey)))
         {
-            storage.insert(taken.key(), taken.amount(), false);
+            taken.forEach(value -> storage.insert(value.key(), value.amount(), false));
             return job.with(RecipeOrderJob.Status.ERROR, encode("inventory_delivery_unsupported"));
         }
-        long remaining = taken.amount();
-        while (remaining > 0)
+        for (KeyAmount value : taken)
         {
-            int count = (int) Math.min(remaining, takenItemKey.getReadOnlyStack().getMaxStackSize());
-            net.minecraft.world.item.ItemStack stack = takenItemKey.getReadOnlyStack().copyWithCount(count);
-            player.getInventory().add(stack);
-            if (!stack.isEmpty()) throw new IllegalStateException("inventory capacity changed during delivery");
-            remaining -= count;
+            var takenItemKey = (com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey) value.key();
+            long remaining = value.amount();
+            while (remaining > 0)
+            {
+                int count = (int) Math.min(remaining, takenItemKey.getReadOnlyStack().getMaxStackSize());
+                net.minecraft.world.item.ItemStack stack = takenItemKey.getReadOnlyStack().copyWithCount(count);
+                player.getInventory().add(stack);
+                if (!stack.isEmpty()) throw new IllegalStateException("inventory capacity changed during delivery");
+                remaining -= count;
+            }
         }
         return job.with(RecipeOrderJob.Status.COMPLETE, "");
     }
@@ -345,13 +343,24 @@ public final class RecipeOrderService
                 if (execution.complete() || attemptedSteps.contains(step)
                         || !working.dependenciesComplete(step)) continue;
                 if ((pass == 0) != (execution.externalWait() != null)) continue;
-                if (pass == 1 && inFlightOutputs.stream().anyMatch(execution.step().outputKey()::isSame))
+                if (pass == 1 && inFlightOutputs.stream().anyMatch(output ->
+                        com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                .exact(execution.step().outputKey(), output)))
                     continue;
                 attempted = true;
                 attemptedSteps.add(step);
+                RecipeOrderJob.ExternalWait previousWait = execution.externalWait();
                 working = executeStep(server, working.activate(step), index).deactivate();
                 if (working.status() == RecipeOrderJob.Status.ERROR) return working;
-                if (working.executions().get(step).externalWait() != null)
+                RecipeOrderJob.ExternalWait currentWait = working.executions().get(step).externalWait();
+                if (previousWait != null && currentWait == null)
+                {
+                    previousWait.occupiedMachines().forEach(machine -> index.releaseMachine(
+                            new MachineKey(machine.dimension(), machine.position())));
+                    inFlightOutputs.removeIf(output -> com.amicbeam.beyondcraftlines.common.crafting
+                            .StackKeyMatch.exact(execution.step().outputKey(), output));
+                }
+                if (currentWait != null)
                     inFlightOutputs.add(working.executions().get(step).step().outputKey());
             }
         }
@@ -372,6 +381,16 @@ public final class RecipeOrderService
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
         if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
         RecipePlan.Step step = job.step(job.nextStep());
+        if (com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
+                .isProxyFamily(step.family()) && com.amicbeam.beyondcraftlines.common.crafting
+                .VanillaProvisionerRecipeTypes.isNetworkExecutable(step.family(),
+                        CraftlinesConfig.ENABLE_SMITHING_AND_STONECUTTING_RECIPE_PROXY.get()))
+        {
+            long gameTime = server.overworld().getGameTime();
+            if (!VirtualCraftingThrottle.ready(gameTime, job.nextCraftingTick()))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("virtual_crafting_interval"));
+            return executeWorkstationRecipe(server.overworld(), network, job, step, gameTime);
+        }
         boolean nativeFurnaceFamily = NATIVE_FURNACE_FAMILIES.contains(step.family());
         if (nativeFurnaceFamily)
         {
@@ -521,6 +540,7 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("input_group_unassigned", group));
             routes.put(group, selected);
         }
+        preferCohesiveDirectMachine(server, routes, batchInputs);
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
         InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
@@ -629,7 +649,9 @@ public final class RecipeOrderService
         for (RecipePlan.Material material : requested)
         {
             GroupedStock stock = available.stream().filter(value ->
-                    value.inputGroup().equals(material.inputGroup()) && value.key().isSame(material.key()))
+                    value.inputGroup().equals(material.inputGroup())
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(value.key(), material.key()))
                     .findFirst().orElse(null);
             if (stock == null)
             {
@@ -660,12 +682,28 @@ public final class RecipeOrderService
     {
         UnifiedStorage storage = network.getUnifiedStorage();
         SimulatedCrafting.Attempt attempt = SimulatedCrafting.craftBatch(
-                level, storage, step.recipe(), step.output(), step.crafts(), step.ingredientSelections(),
+                level, storage, step.recipe(), step.output(), step.crafts(),
+                runtimeIngredientSelections(job, step),
                 job.reserved(), job.nextStep() + 1 < job.stepCount(),
                 PlanningSnapshotService.capture(job.networkId()), step.inputs());
         if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
         int interval = CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get();
         long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime, interval);
+        RecipeOrderJob updated = addReserved(consumeReserved(job, attempt.consumedReserved()),
+                attempt.producedReserved());
+        return updated.completeCrafts(attempt.crafts(), nextTick);
+    }
+
+    private static RecipeOrderJob executeWorkstationRecipe(ServerLevel level, DimensionsNet network,
+                                                            RecipeOrderJob job, RecipePlan.Step step,
+                                                            long gameTime)
+    {
+        SimulatedWorkstationRecipe.Attempt attempt = SimulatedWorkstationRecipe.craftOne(
+                level, network.getUnifiedStorage(), step, job.reserved(),
+                job.nextStep() + 1 < job.stepCount());
+        if (!attempt.success()) return job.with(RecipeOrderJob.Status.PAUSED, attempt.reason());
+        long nextTick = VirtualCraftingThrottle.nextAllowedTick(gameTime,
+                CraftlinesConfig.VIRTUAL_CRAFTING_NODE_INTERVAL_TICKS.get());
         RecipeOrderJob updated = addReserved(consumeReserved(job, attempt.consumedReserved()),
                 attempt.producedReserved());
         return updated.completeCrafts(attempt.crafts(), nextTick);
@@ -685,7 +723,8 @@ public final class RecipeOrderService
         long baseline = BoundMachineAutomation.countExtractable(
                 machine.level(), binding.position(), step.outputKey());
         for (KeyAmount output : recipeOutputs(machine.level(), step))
-            if (!step.outputKey().isSame(output.key()) && BoundMachineAutomation.countExtractable(
+            if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(step.outputKey(), output.key()) && BoundMachineAutomation.countExtractable(
                     machine.level(), binding.position(), output.key()) > 0)
                 return job.with(RecipeOrderJob.Status.PAUSED,
                         encode("bound_machine_byproducts_clear"));
@@ -772,6 +811,10 @@ public final class RecipeOrderService
                     working, step, wait.remainingInputs());
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
+            if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
+                    server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
+                dispatch = dispatchableInputsAcross(
+                        server, directLocations, wait.remainingInputs(), selection.chunks());
             if (!dispatch.isEmpty())
             {
                 // Extract every network-backed chunk before touching the machine. A stock change can
@@ -928,7 +971,8 @@ public final class RecipeOrderService
     {
         for (KeyAmount expected : recipeOutputs(level, step))
         {
-            if (primaryOutput.isSame(expected.key())) continue;
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(primaryOutput, expected.key())) continue;
             long visible = BoundMachineAutomation.countExtractable(
                     level, machinePosition, expected.key());
             if (visible <= 0) continue;
@@ -947,8 +991,8 @@ public final class RecipeOrderService
 
     private static List<KeyAmount> recipeOutputs(ServerLevel level, RecipePlan.Step step)
     {
-        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, step.recipe())).orElse(null);
+        var holder = com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
+                .find(step.recipe()).orElse(null);
         return holder == null ? List.of() : RecipeOutputResolver.outputs(holder.value(), level);
     }
 
@@ -1118,7 +1162,8 @@ public final class RecipeOrderService
         long amount = 0;
         for (PlanningSnapshotService.ComponentEntry value :
                 PlanningSnapshotService.capture(networkId).componentEntries())
-            if (key.isSame(value.key())) amount = SaturatingLongMath.add(amount, value.amount());
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(key, value.key())) amount = SaturatingLongMath.add(amount, value.amount());
         return amount;
     }
 
@@ -1161,7 +1206,8 @@ public final class RecipeOrderService
                 PlanningSnapshotService.capture(networkId).componentEntries())
         {
             if (remaining <= 0) break;
-            if (!outputKey.isSame(value.key())) continue;
+            if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(outputKey, value.key())) continue;
             long delta = Math.max(0, value.amount() - original.getOrDefault(value.key(), 0L));
             if (delta <= 0) continue;
             KeyAmount taken = storage.extract(value.key(), Math.min(remaining, delta), false, false);
@@ -1180,7 +1226,8 @@ public final class RecipeOrderService
     private static List<RecipePlan.ReservedMaterial> outputBaseline(int networkId, IStackKey<?> outputKey)
     {
         return PlanningSnapshotService.capture(networkId).componentEntries().stream()
-                .filter(value -> outputKey.isSame(value.key()))
+                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(outputKey, value.key()))
                 .map(value -> new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList();
     }
 
@@ -1280,8 +1327,8 @@ public final class RecipeOrderService
         {
             Ingredient ingredient = ingredient(level, step, material.ingredientSlot());
             long needed = material.amount();
-            needed = selectFrom(reserved, material.key(), ingredient, material.inputGroup(), needed, true, chunks);
-            needed = selectFrom(network, material.key(), ingredient, material.inputGroup(), needed, false, chunks);
+            needed = selectFrom(reserved, job, material, ingredient, needed, true, chunks);
+            needed = selectFrom(network, job, material, ingredient, needed, false, chunks);
             if (needed > 0) return null;
         }
         List<RecipePlan.ReservedMaterial> consumed = chunks.stream().filter(InputChunk::fromReserved)
@@ -1310,7 +1357,8 @@ public final class RecipeOrderService
         {
             long offered = 0;
             for (InputChunk chunk : result)
-                if (material.key().isSame(chunk.key()))
+                if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), chunk.key()))
                     offered = SaturatingLongMath.add(offered, chunk.amount());
             // A full input tank/slot containing this same resource already satisfies this kind
             // for the current machine cycle. Keep its outstanding order amount for later rounds,
@@ -1328,7 +1376,7 @@ public final class RecipeOrderService
     {
         List<RoutedInputChunk> result = new ArrayList<>();
         List<InputChunk> deferredByResourceConflict = new ArrayList<>();
-        Map<MachineKey, PlannedInput> planned = new java.util.HashMap<>();
+        Map<InputGroupRouteLogic.ResourceChannel<MachineKey>, PlannedInput> planned = new java.util.HashMap<>();
         for (InputChunk chunk : selected)
         {
             long remaining = chunk.amount();
@@ -1338,8 +1386,10 @@ public final class RecipeOrderService
                 ServerLevel level = server.getLevel(machine.dimension());
                 if (level == null) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
-                PlannedInput previous = planned.get(key);
-                if (previous != null && !previous.key().isSame(chunk.key()))
+                var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
+                PlannedInput previous = planned.get(channel);
+                if (previous != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(previous.key(), chunk.key()))
                 {
                     deferredByResourceConflict.add(chunk);
                     continue;
@@ -1351,7 +1401,7 @@ public final class RecipeOrderService
                 if (offered <= 0) continue;
                 result.add(new RoutedInputChunk(machine, new InputChunk(
                         chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup())));
-                planned.put(key, new PlannedInput(chunk.key(),
+                planned.put(channel, new PlannedInput(chunk.key(),
                         SaturatingLongMath.add(alreadyPlanned, offered)));
                 remaining -= offered;
                 if (remaining <= 0) break;
@@ -1361,7 +1411,8 @@ public final class RecipeOrderService
         {
             long offered = result.stream().map(RoutedInputChunk::chunk)
                     .filter(chunk -> material.inputGroup().equals(chunk.inputGroup())
-                            && material.key().isSame(chunk.key()))
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()))
                     .mapToLong(InputChunk::amount).reduce(0, SaturatingLongMath::add);
             long present = 0;
             if (offered <= 0) for (RecipeOrderJob.MachineLocation machine : machines)
@@ -1372,7 +1423,9 @@ public final class RecipeOrderService
                         level, machine.position(), material.key()));
             }
             boolean deferred = deferredByResourceConflict.stream().anyMatch(chunk ->
-                    material.inputGroup().equals(chunk.inputGroup()) && material.key().isSame(chunk.key()));
+                    material.inputGroup().equals(chunk.inputGroup())
+                            && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(material.key(), chunk.key()));
             if (!InputGroupRouteLogic.canContinuePartialRound(offered, present, deferred)) return List.of();
         }
         return List.copyOf(result);
@@ -1396,7 +1449,9 @@ public final class RecipeOrderService
         List<RecipePlan.Material> remaining = new ArrayList<>();
         for (RecipePlan.Material material : requested)
         {
-            KeyAmount stock = available.stream().filter(value -> material.key().isSame(value.key()))
+            KeyAmount stock = available.stream().filter(value ->
+                            com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                    .exact(material.key(), value.key()))
                     .findFirst().orElse(null);
             if (stock == null)
             {
@@ -1429,7 +1484,8 @@ public final class RecipeOrderService
             for (int i = 0; i < delivered.size() && left > 0; i++)
             {
                 if (!material.inputGroup().equals(delivered.get(i).inputGroup())
-                        || !material.key().isSame(delivered.get(i).key())) continue;
+                        || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(material.key(), delivered.get(i).key())) continue;
                 long used = Math.min(left, unused.get(i));
                 left -= used;
                 unused.set(i, unused.get(i) - used);
@@ -1440,36 +1496,140 @@ public final class RecipeOrderService
         return List.copyOf(remaining);
     }
 
+    private static void preferCohesiveDirectMachine(
+            MinecraftServer server, java.util.LinkedHashMap<String, List<GroupEndpoint>> routes,
+            List<RecipePlan.Material> requested)
+    {
+        List<List<MachineKey>> routeKeys = routes.values().stream().map(endpoints -> endpoints.stream()
+                .filter(endpoint -> endpoint.machine() != null).map(GroupEndpoint::key).toList()).toList();
+        for (MachineKey common : InputGroupRouteLogic.commonEndpoints(routeKeys))
+        {
+            boolean acceptsAll = requested.stream().allMatch(material -> {
+                GroupEndpoint endpoint = routes.getOrDefault(material.inputGroup(), List.of()).stream()
+                        .filter(value -> value.machine() != null && value.key().equals(common)).findFirst().orElse(null);
+                if (endpoint == null) return false;
+                ServerLevel level = server.getLevel(common.dimension());
+                return level != null && (BoundMachineAutomation.insertCapacity(
+                        level, common.position(), material.key(), material.amount()) >= material.amount()
+                        || BoundMachineAutomation.countPresent(
+                        level, common.position(), material.key()) >= material.amount());
+            });
+            if (!acceptsAll) continue;
+            routes.replaceAll((group, endpoints) -> endpoints.stream()
+                    .filter(endpoint -> endpoint.machine() == null || endpoint.key().equals(common)).toList());
+            return;
+        }
+    }
+
+    /** Returns stale same-channel inputs that prevent a bound machine from starting the next recipe step. */
+    private static boolean returnIncompatibleMachineInputs(
+            MinecraftServer server, UnifiedStorage storage,
+            List<RecipeOrderJob.MachineLocation> machines, List<RecipePlan.Material> requested)
+    {
+        boolean moved = false;
+        Set<MachineKey> visited = new java.util.HashSet<>();
+        for (RecipeOrderJob.MachineLocation machine : machines)
+        {
+            MachineKey machineKey = new MachineKey(machine.dimension(), machine.position());
+            if (!visited.add(machineKey)) continue;
+            ServerLevel level = server.getLevel(machine.dimension());
+            if (level == null) continue;
+            for (KeyAmount present : BoundMachineAutomation.visibleCapabilityStacks(
+                    level, machine.position()))
+            {
+                boolean sameChannel = requested.stream().anyMatch(material ->
+                        material.key().getTypeId().equals(present.key().getTypeId()));
+                boolean stillRequested = requested.stream().anyMatch(material ->
+                        com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                .exact(material.key(), present.key()));
+                if (!sameChannel || stillRequested) continue;
+                KeyAmount simulatedRemainder = storage.insert(present.key(), present.amount(), true);
+                long transferable = present.amount() - simulatedRemainder.amount();
+                if (transferable <= 0) continue;
+                for (KeyAmount extracted : BoundMachineAutomation.extractStacks(
+                        level, machine.position(), present.key(), transferable))
+                {
+                    KeyAmount remainder = storage.insert(extracted.key(), extracted.amount(), false);
+                    long accepted = extracted.amount() - remainder.amount();
+                    if (accepted > 0) moved = true;
+                    if (!remainder.isEmpty()) BoundMachineAutomation.insert(
+                            level, machine.position(), remainder.key(), remainder.amount());
+                }
+            }
+        }
+        return moved;
+    }
+
     private static long selectFrom(java.util.LinkedHashMap<com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?>, Long> available,
-                                   com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> requested,
-                                   Ingredient ingredient, String inputGroup, long needed,
+                                   RecipeOrderJob job, RecipePlan.Material material,
+                                   Ingredient ingredient, long needed,
                                    boolean reserved, List<InputChunk> selected)
     {
         if (needed <= 0) return 0;
         for (var entry : available.entrySet())
         {
-            if (entry.getValue() <= 0 || !requested.isSame(entry.getKey())) continue;
+            if (entry.getValue() <= 0 || !materialMatches(job, material, entry.getKey())) continue;
             if (ingredient != null && (!(entry.getKey() instanceof ItemStackKey itemKey)
                     || !ingredient.test(itemKey.getReadOnlyStack()))) continue;
             long amount = Math.min(entry.getValue(), needed);
             entry.setValue(entry.getValue() - amount);
-            selected.add(new InputChunk(entry.getKey(), amount, reserved, inputGroup));
+            selected.add(new InputChunk(entry.getKey(), amount, reserved, material.inputGroup()));
             needed -= amount;
             if (needed == 0) break;
         }
         return needed;
     }
 
+    private static boolean materialMatches(RecipeOrderJob job, RecipePlan.Material material,
+                                           IStackKey<?> candidate)
+    {
+        if (DynamicOutputRuntimeMatch.matches(material.key(), candidate, job.steps())) return true;
+        return dynamicMaterial(job, material)
+                && (material.key().isSame(candidate) || candidate.isSame(material.key()));
+    }
+
+    private static RecipePlan.Step dynamicProducer(RecipeOrderJob job, RecipePlan.Material material)
+    {
+        for (RecipePlan.Step step : job.steps())
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(material.key(), step.outputKey())
+                    && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                    .allowsSameResourceOutput(step.recipe().toString())) return step;
+        return null;
+    }
+
+    private static boolean dynamicMaterial(RecipeOrderJob job, RecipePlan.Material material)
+    {
+        if (dynamicProducer(job, material) != null) return true;
+        return material.item() != null
+                && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                .allowsSameResourceMaterial(material.item().getNamespace());
+    }
+
+    private static List<RecipePlan.IngredientSelection> runtimeIngredientSelections(
+            RecipeOrderJob job, RecipePlan.Step step)
+    {
+        List<RecipePlan.IngredientSelection> result = new ArrayList<>();
+        for (RecipePlan.IngredientSelection selection : step.ingredientSelections())
+        {
+            RecipePlan.Material material = step.inputs().stream()
+                    .filter(value -> value.ingredientSlot() == selection.slot()).findFirst().orElse(null);
+            if (material != null && material.item() != null && dynamicMaterial(job, material))
+                result.add(new RecipePlan.IngredientSelection(selection.slot(),
+                        com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey
+                                .legacy(material.item())));
+            else result.add(selection);
+        }
+        return List.copyOf(result);
+    }
+
+    private static boolean finalOutputMatches(RecipeOrderJob job, IStackKey<?> candidate)
+    { return DynamicOutputRuntimeMatch.matches(job.targetKey(), candidate, job.steps()); }
+
     private static Ingredient ingredient(ServerLevel level, RecipePlan.Step step, int slot)
     {
         if (slot < 0) return null;
-        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, step.recipe())).orElse(null);
-        if (holder == null) return null;
-        var ingredients = com.amicbeam.beyondcraftlines.common.crafting.RecipeIngredientResolver
-                .ingredients(holder.value());
-        if (slot >= ingredients.size()) return null;
-        return ingredients.get(slot);
+        return null;
     }
 
     private record InputChunk(com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> key,

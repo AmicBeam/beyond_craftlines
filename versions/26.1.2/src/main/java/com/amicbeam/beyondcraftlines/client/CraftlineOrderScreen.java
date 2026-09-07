@@ -52,6 +52,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 {
     private static final AtomicInteger PLANNER_THREAD_ID = new AtomicInteger();
     private static final ScheduledThreadPoolExecutor PLANNING_EXECUTOR = planningExecutor();
+    private static final ScheduledThreadPoolExecutor OPTIMIZATION_EXECUTOR=planningExecutor();
     private static final int PANEL = 0xFFF0F0F0;
     private static final int PANEL_EDGE = 0xFF555B62;
     private static final int PANEL_SHADOW = 0xFF202A36;
@@ -99,13 +100,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int ingredientPickerY;
     private final Map<Identifier, Identifier> recipeOverrides = new LinkedHashMap<>();
     private final Map<String, Identifier> resourceRecipeOverrides = new LinkedHashMap<>();
-    private final Map<IngredientSlotKey, Identifier> ingredientOverrides = new LinkedHashMap<>();
+    private final Map<IngredientSlotKey, String> ingredientOverrides = new LinkedHashMap<>();
     private final Map<Identifier, Identifier> automaticRecipes = new LinkedHashMap<>();
     private final Map<String, Identifier> automaticResourceRecipes = new LinkedHashMap<>();
-    private final Map<IngredientSlotKey, Identifier> automaticIngredients = new LinkedHashMap<>();
+    private final Map<IngredientSlotKey, String> automaticIngredients = new LinkedHashMap<>();
     private final Map<Identifier, Identifier> defaultRecipes = new LinkedHashMap<>();
     private final Map<String, Identifier> defaultResourceRecipes = new LinkedHashMap<>();
-    private final Map<IngredientSlotKey, Identifier> defaultIngredients = new LinkedHashMap<>();
+    private final Map<IngredientSlotKey, String> defaultIngredients = new LinkedHashMap<>();
     private long previewNonce;
     private int previewDelay;
     private int previewDelayTicks = 1;
@@ -117,8 +118,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int materialScroll;
     private boolean materialSummaryReady;
     private boolean materialSummaryMissing;
+    private boolean materialSummaryTheoretical;
     private int snapshotNextPage;
-    private final Map<Identifier, Long> planningStock = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> planningResources = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> missingMaterials = new LinkedHashMap<>();
     private final Map<IStackKey<?>, Long> extractionMaterials = new LinkedHashMap<>();
@@ -128,10 +129,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private final Map<IStackKey<?>, NodeMetric> pendingNodeMetrics = new LinkedHashMap<>();
     private final Set<Identifier> collapsedNodes = new HashSet<>();
     private ClientRecipePlanner.Catalog planningCatalog;
-    private ClientRecipePlanner.CatalogBuilder planningCatalogBuilder;
+    private ClientPlanningCatalogWarmup.Handle planningCatalogBuilder;
+    private long planningCatalogRevision = -1;
+    private long planningCatalogBuildRevision = -1;
     private long proposalStockRevision;
     private long proposalRecipeEpoch;
     private boolean proposalReady;
+    private com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.SEARCHING;
+    private boolean submitWhenReady;
     private boolean planningSnapshotValid;
     private long planningSnapshotCapturedAt;
     private long planningSnapshotRevision;
@@ -139,10 +144,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private int planningMaxDepth;
     private int planningMaxNodes;
     private Future<?> planningTask;
+    private Future<?> optimizationTask;
     private long planningGeneration;
     private boolean initialized;
     private boolean preferencesLoaded;
-    private boolean waitingForServerRecipeIndex;
+    private boolean terminalMenuError;
     private String loadingStatus = "";
 
     public CraftlineOrderScreen(CraftlineOrderMenu menu, Inventory inventory, Component title)
@@ -158,6 +164,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         String retainedAmount = amount == null ? Long.toString(menu.dashboardConfiguration()
                 ? menu.initialDashboardDesired() : 1) : amount.getValue();
         super.init();
+        terminalMenuError=!menu.initialError().isBlank();if(terminalMenuError)previewError=localizedPlanningError(menu.initialError());
 
         int rightX = rightPanelLeft() + 10;
         int rightWidth = rightPanelWidth() - 20;
@@ -199,21 +206,31 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ignored -> { if (menu.dashboardConfiguration()) saveDashboardRecipe(); else submit(); })
                 .bounds(rightX + actionWidth + 4, topPos + 139,
                         rightWidth - actionWidth - 4, 18).build());
-        orderButton.active = proposalReady;
+        orderButton.active = canQueueOrder();
         updateBlockingButton();
         updateOutputDestinationButton();
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
+        if(terminalMenuError){enterTerminalMenuError(menu.initialError());return;}
+        JeiCatalystIndex.prewarmRecipeTypes(menu.availableFamilies());
+        ClientPlanningCatalogWarmup.request(menu.availableFamilies());
         if (!initialized)
         {
             initialized = true;
-            if (menu.recipeIndexComplete()) finishRecipeIndex();
+            if (!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
+                loadingStatus = jeiTypeIndexingText();
+            else if (menu.recipeIndexComplete()) finishRecipeIndex();
             else loadingStatus = recipeLookupIndexingText();
         }
     }
 
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
+    private boolean canQueueOrder()
+    {
+        return !terminalMenuError&&planningCatalog != null
+                && (!menu.dashboardConfiguration() || proposalReady);
+    }
     private int rightPanelLeft() { return leftPos + imageWidth - rightPanelWidth(); }
     private int treeLeft() { return leftPos + 10; }
     private int treeRight() { return rightPanelLeft() - 6; }
@@ -231,31 +248,36 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override protected void containerTick()
     {
         super.containerTick();
-        if (!menu.recipeIndexComplete())
+        if(terminalMenuError){loadingStatus="";if(orderButton!=null)orderButton.active=false;return;}
+        boolean jeiTypesReady = JeiCatalystIndex.recipeTypesReady(menu.availableFamilies());
+        if (!jeiTypesReady)
         {
-            menu.advanceRecipeIndex(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
-            loadingStatus = recipeLookupIndexingText();
-            if (menu.recipeIndexComplete()) finishRecipeIndex();
+            loadingStatus = jeiTypeIndexingText();
+            return;
+        }
+        if (!preferencesLoaded && menu.recipeIndexComplete()) finishRecipeIndex();
+        if (preferencesLoaded && planningCatalog == null && planningCatalogBuilder == null)
+            beginPlanningCatalogCapture();
+        long virtualRevision = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.revision();
+        if (planningCatalog != null && planningCatalogRevision != virtualRevision)
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                    "{} client planning catalog stale capturedRevision={} currentRevision={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    planningCatalogRevision, virtualRevision);
+            ClientPlanningCatalogWarmup.invalidate();
+            beginPlanningCatalogCapture();
         }
         if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            planningCatalogBuilder.advance(CraftlinesConfig.RECIPE_INDEX_MAX_PER_TICK.get(), Long.MAX_VALUE);
             if (planningCatalogBuilder.complete())
             {
-                planningCatalog = planningCatalogBuilder.catalog();
-                waitForServerRecipeIndexOrPlan();
+                planningCatalog=planningCatalogBuilder.catalog();
+                planningCatalogRevision = planningCatalogBuildRevision;
+                finishPlanningCatalogPreparation();
             }
-            else loadingStatus = indexingRecipesText();
-        }
-        if (planningCatalog != null && waitingForServerRecipeIndex)
-        {
-            if (menu.serverRecipeIndexComplete())
-            {
-                waitingForServerRecipeIndex = false;
-                loadingStatus = "";
-                markPreviewDirty();
-            }
-            else loadingStatus = serverRecipeIndexingText();
+            else loadingStatus=indexingRecipesText();
         }
         if (++refreshTicks >= 40)
         {
@@ -272,11 +294,22 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         preferencesLoaded = true;
         loadClientPreferences();
         selectInitialTarget();
-        planningCatalogBuilder = ClientRecipePlanner.beginCapture(minecraft.level, menu.recipes());
+        beginPlanningCatalogCapture();
+    }
+
+    private void beginPlanningCatalogCapture()
+    {
+        cancelPlanningTask();
+        planningCatalog = null;
+        planningCatalogBuildRevision = com.amicbeam.beyondcraftlines.common.crafting
+                .VirtualProvisionerRecipeRegistry.revision();
+        ClientPlanningCatalogWarmup.request(menu.availableFamilies());
+        planningCatalogBuilder=ClientPlanningCatalogWarmup.handle();
         if (planningCatalogBuilder.complete())
         {
-            planningCatalog = planningCatalogBuilder.catalog();
-            waitForServerRecipeIndexOrPlan();
+            planningCatalog=planningCatalogBuilder.catalog();
+            planningCatalogRevision = planningCatalogBuildRevision;
+            finishPlanningCatalogPreparation();
         }
         else loadingStatus = indexingRecipesText();
     }
@@ -284,10 +317,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void selectInitialTarget()
     {
         if (minecraft.level == null) return;
-        selected = menu.initialRecipe() == null ? menu.recipeForResourceOutput(menu.initialTarget())
-                : menu.recipes().stream().filter(holder ->
-                        holder.id().identifier().equals(menu.initialRecipe())).filter(holder ->
-                        menu.recipeProduces(holder.id().identifier(), menu.targetToken())).findFirst().orElse(null);
+        selected = menu.initialRecipe() != null && menu.initialRecipeHolder() != null && menu.recipeProduces(
+                        menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
         if (selected != null)
         {
             if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
@@ -295,15 +326,33 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             else if (!menu.initialRecipePinned())
                 selected = selectedResourceRecipe(menu.initialTarget(), selected);
         }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client screen initial target={} initialRecipe={} pinned={} selected={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
+                menu.initialRecipe(), menu.initialRecipePinned(),
+                selected == null ? "null" : selected.id().identifier());
         rebuildTree();
         requestNetworkAmount();
     }
 
+    private void enterTerminalMenuError(String error)
+    {
+        terminalMenuError=true;previewDirty=false;
+        submitWhenReady=false;proposalReady=false;selected=null;cancelPlanningTask();loadingStatus="";
+        previewError=localizedPlanningError(error);planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.RUNTIME_UNAVAILABLE;
+        clearDisplayMetrics();if(orderButton!=null)orderButton.active=false;rebuildTree(false);
+    }
+
     private String indexingRecipesText()
     {
+        int completed=planningCatalogBuilder==null?0:planningCatalogBuilder.completedRecipes();
+        int total=planningCatalogBuilder==null?0:planningCatalogBuilder.totalRecipes();
         return Component.translatable("gui.beyond_craftlines.capturing_recipes",
-                planningCatalogBuilder.completedRecipes(), planningCatalogBuilder.totalRecipes()).getString();
+                completed,total).getString();
     }
+
+    private String planningText(){return Component.translatable(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get()?"gui.beyond_craftlines.planning_tree":"gui.beyond_craftlines.validating_tree").getString();}
 
     private String recipeLookupIndexingText()
     {
@@ -311,26 +360,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 menu.indexedRecipeCandidates(), menu.totalRecipeCandidates()).getString();
     }
 
-    private String serverRecipeIndexingText()
-    {
-        return Component.translatable("gui.beyond_craftlines.indexing_server_recipes",
-                menu.indexedServerRecipeCandidates(), menu.totalServerRecipeCandidates()).getString();
-    }
+    private String jeiTypeIndexingText()
+    { return Component.translatable("gui.beyond_craftlines.indexing_jei_types").getString(); }
 
-    private void waitForServerRecipeIndexOrPlan()
+    private void finishPlanningCatalogPreparation()
     {
-        waitingForServerRecipeIndex = !menu.serverRecipeIndexComplete();
-        if (waitingForServerRecipeIndex) loadingStatus = serverRecipeIndexingText();
-        else
-        {
-            loadingStatus = "";
-            markPreviewDirty();
-        }
+        loadingStatus="";markPreviewDirty();
     }
 
     private void requestNetworkAmount()
     {
-        if (selected == null || minecraft.level == null) return;
+        if (minecraft.level == null) return;
         String target = menu.targetToken();
         if (!target.equals(networkAmountTarget)) networkAmount = -1;
         networkAmountTarget = target;
@@ -382,16 +422,28 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void submit()
     {
-        if (selected == null || minecraft.level == null || !proposalReady) return;
+        if (minecraft.level == null) return;
+        if (!proposalReady)
+        {
+            submitWhenReady = true;
+            if (orderButton != null) orderButton.active = false;
+            return;
+        }
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client submit nonce={} count={} stockRevision={} recipeEpoch={} target={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                previewNonce, amountValue(), proposalStockRevision, proposalRecipeEpoch,
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()));
         ClientPacketDistributor.sendToServer(new SubmitOrderPayload(
                 menu.targetToken(), amountValue(), blockingMode,
                 outputDestination.id(), previewNonce, proposalStockRevision, proposalRecipeEpoch));
+        submitWhenReady = false;
         markPreviewDirty();
     }
 
     private void saveDashboardRecipe()
     {
-        if (selected == null || minecraft.level == null || !proposalReady
+        if (minecraft.level == null || !proposalReady
                 || menu.dashboardPosition() == null) return;
         ClientPacketDistributor.sendToServer(new SaveDashboardRecipePayload(menu.dashboardPosition(),
                 amountValue(), dashboardStockMode.id(), previewNonce, proposalRecipeEpoch, blockingMode));
@@ -445,12 +497,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int x = rightPanelLeft() + 10;
         int width = rightPanelWidth() - 20;
-        if (selected == null)
-        {
-            graphics.centeredText(font, Component.translatable("gui.beyond_craftlines.no_selection"),
-                    x + width / 2, topPos + 48, 0x777777);
-            return;
-        }
         IStackKey<?> target = menu.initialTarget();
         target.getRender().render(graphics, target, x, topPos + 18);
         String name = font.plainSubstrByWidth(target.getRender().getDisplayName(target).getString(), width - 22);
@@ -488,6 +534,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         int y = topPos + 176;
         graphics.text(font, Component.translatable(materialSummaryMissing
                         ? "gui.beyond_craftlines.material_summary_missing"
+                        : materialSummaryTheoretical ? "gui.beyond_craftlines.summary_total"
                         : "gui.beyond_craftlines.summary_extraction"),
                 x, topPos + 157, materialSummaryMissing ? 0xB23A48 : 0x465564, false);
         if (!materialSummaryReady)
@@ -535,9 +582,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             tooltip.add(materialSummaryMissing
                     ? Component.translatable("gui.beyond_craftlines.material_missing_amount", hovered.getValue())
                     .withStyle(ChatFormatting.RED)
-                    : Component.translatable("gui.beyond_craftlines.material_amounts",
-                    hovered.getValue(), available).withStyle(available >= hovered.getValue()
-                    ? ChatFormatting.GREEN : ChatFormatting.RED));
+                    : Component.translatable(materialSummaryTheoretical
+                                    ? "gui.beyond_craftlines.material_total_amount"
+                                    : "gui.beyond_craftlines.material_amounts",
+                            hovered.getValue(), available).withStyle(available >= hovered.getValue()
+                            ? ChatFormatting.GREEN : ChatFormatting.RED));
             graphics.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
         }
     }
@@ -588,6 +637,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         treeLeft() + 5, treeBottom() - 24, BD_CYAN, false);
                 renderLoadingProgress(graphics);
             }
+            if (!previewError.isBlank())
+                graphics.text(font, font.plainSubstrByWidth(
+                                previewError, treeRight() - treeLeft() - 10),
+                        treeLeft() + 5, treeBottom() - (loadingStatus.isBlank() ? 24 : 36),
+                        0xFFFF6677, true);
             return;
         }
         List<GraphNode> nodes = treeNodes;
@@ -650,20 +704,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int current;
         int total;
-        if (!menu.recipeIndexComplete())
+        if(!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
+        {
+            current=JeiCatalystIndex.completedRecipeTypes(menu.availableFamilies());
+            total=JeiCatalystIndex.totalRecipeTypes(menu.availableFamilies());
+        }
+        else if (!menu.recipeIndexComplete())
         {
             current = menu.indexedRecipeCandidates();
             total = menu.totalRecipeCandidates();
         }
         else if (planningCatalog == null && planningCatalogBuilder != null)
         {
-            current = planningCatalogBuilder.completedRecipes();
-            total = planningCatalogBuilder.totalRecipes();
-        }
-        else if (waitingForServerRecipeIndex)
-        {
-            current = menu.indexedServerRecipeCandidates();
-            total = menu.totalServerRecipeCandidates();
+            current=planningCatalogBuilder.completedRecipes();
+            total=planningCatalogBuilder.totalRecipes();
         }
         else return;
         int left = treeLeft() + 5;
@@ -677,7 +731,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         List<Component> lines = node.key instanceof ItemStackKey
                 ? new ArrayList<>(Screen.getTooltipFromItem(minecraft, node.stack))
-                : new ArrayList<>(node.key.getRender().getTooltipLines(node.key, resourceAvailable(node.key),
+                : new ArrayList<>(node.key.getRender().getTooltipLines(node.key,
+                resourceAvailable(node.key,node.durabilityInput),
                 net.minecraft.world.item.Item.TooltipContext.of(minecraft.level), minecraft.player,
                 minecraft.options.advancedItemTooltips
                         ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL));
@@ -696,7 +751,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 "tooltip.beyond_craftlines.node_produced", node.produced, node.crafts)
                 .withStyle(ChatFormatting.GRAY));
         lines.add(Component.translatable("tooltip.beyond_craftlines.node_network",
-                resourceAvailable(node.key)).withStyle(ChatFormatting.BLUE));
+                resourceAvailable(node.key,node.durabilityInput)).withStyle(ChatFormatting.BLUE));
         if (node.partiallySatisfied) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.stock_partially_satisfied", node.stockUsed,
                 node.needed - node.stockUsed).withStyle(node.recipe == null
@@ -747,7 +802,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         return com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                 .outputs(recipe.value(), minecraft.level).stream()
-                .filter(value -> output.isSame(value.key())).findFirst()
+                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(output, value.key())).findFirst()
                 .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1));
     }
 
@@ -756,21 +812,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void rebuildTree(boolean requestPreview)
     {
-        if (selected == null || minecraft.level == null)
+        if (minecraft.level == null)
         {
             treeRoot = null;
             treeNodes = List.of();
             return;
         }
-        RecipeHolder<?> rootRecipe = selected;
         IStackKey<?> rootKey = menu.initialTarget();
+        Identifier automaticRoot = automaticResourceRecipes.get(
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(rootKey));
+        RecipeHolder<?> rootRecipe = selected == null
+                ? automaticRoot == null ? null : menu.recipe(automaticRoot)
+                : selectedResourceRecipe(rootKey, selected);
         ItemStack rootStack = rootKey instanceof ItemStackKey itemKey
                 ? itemKey.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY;
         Identifier rootItem = rootKey instanceof ItemStackKey itemKey
                 ? BuiltInRegistries.ITEM.getKey(itemKey.getSource()) : null;
-        if (rootItem != null) rootRecipe = selectedRecipe(rootItem, selected);
         treeRoot = buildTree(rootKey, rootStack, rootItem, rootRecipe,
-                null, -1, 0, amountValue(), false, false,
+                null, -1, 0, amountValue(), false, false, false,
                 new HashSet<>(), new TreeStock(planningResources));
         if (CraftlinesConfig.COLLAPSE_DUPLICATE_TREE_RESOURCES.get())
             applyDuplicateTreeReferences(treeRoot, true);
@@ -826,7 +885,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new IngredientSlotKey(node.parentRecipe, slot))))
             graphics.fill(x + 22, y + 22, x + 26, y + 26, 0xFFB78CFF);
         if (!node.reusableInput) node.key.getRender().renderAmount(graphics, node.needed, iconX, iconY);
-        if (node.ingredientChoices.size() > 1) renderCandidateBadge(graphics, x + 2, y + 2);
+        if(node.ingredientChoices.size()>1||node.fluidContainerAlternative)renderCandidateBadge(graphics,x+2,y+2);
     }
 
     private static void renderCandidateBadge(GuiGraphicsExtractor graphics, int x, int y)
@@ -845,25 +904,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private GraphNode buildTree(ItemStack stack, RecipeHolder<?> recipe, Identifier parentRecipe,
                                 int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
-                                boolean selfIncrementInput, Set<String> expanding, TreeStock stock)
+                                boolean durabilityInput,boolean selfIncrementInput,
+                                Set<IStackKey<?>> expanding, TreeStock stock)
     {
         Identifier itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         ItemStackKey resourceKey = new ItemStackKey(stack.copyWithCount(1));
         return buildTree(resourceKey, stack.copyWithCount(1), itemId, recipe,
                 parentRecipe, parentSlot, depth, fallbackNeeded, reusableInput,
-                selfIncrementInput, expanding, stock);
+                durabilityInput,selfIncrementInput, expanding, stock);
     }
 
     private GraphNode buildTree(IStackKey<?> resourceKey, ItemStack stack, Identifier itemId,
                                 RecipeHolder<?> recipe, Identifier parentRecipe,
                                 int parentSlot, int depth, long fallbackNeeded, boolean reusableInput,
-                                boolean selfIncrementInput,
-                                Set<String> expanding,
+                                boolean durabilityInput,boolean selfIncrementInput,
+                                Set<IStackKey<?>> expanding,
                                 TreeStock stock)
     {
-        String expansionKey = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                .sortKey(resourceKey);
-        boolean cyclic = !selfIncrementInput && expanding.contains(expansionKey);
+        boolean cyclic = !selfIncrementInput && expanding.contains(resourceKey);
         // A repeated ancestor is only a visual cycle marker. It is not another material demand and
         // must not consume stock. Every non-cyclic occurrence keeps its local demand; repeated
         // resources are aggregated only after the complete tree has been built.
@@ -875,13 +933,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         // demand when another branch produces an equivalent intermediate; treating that as the
         // node's available stock incorrectly expands a fully stocked node as partially crafted.
         long stockUsed = cyclic || depth <= 0 || effectiveNeeded == 0
-                ? 0 : stock.consume(resourceKey, effectiveNeeded);
+                ? 0 : stock.consume(resourceKey,effectiveNeeded,durabilityInput);
         long unresolved = effectiveNeeded - stockUsed;
         boolean stockSatisfied = depth > 0 && unresolved == 0;
         GraphNode node = new GraphNode(resourceKey, stack.copyWithCount(1), itemId,
                 stockSatisfied || selfIncrementInput ? null : recipe, parentRecipe, parentSlot, depth, needed,
                 0, 0);
         node.reusableInput = reusableInput;
+        node.durabilityInput=durabilityInput;
         node.selfIncrement = selfIncrementInput;
         node.collapsed = itemId != null && depth > 0 && collapsedNodes.contains(itemId);
         node.stockSatisfied = stockSatisfied;
@@ -895,7 +954,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (selfIncrementInput) return node;
         if (node.stockSatisfied) return node;
         if (recipe == null) return node;
-        expanding.add(expansionKey);
+        expanding.add(resourceKey);
         List<SelectedTreeInput> selectedInputs = new ArrayList<>();
         List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.IngredientSelection> selections =
                 new ArrayList<>();
@@ -908,31 +967,39 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             selectedInputs.add(new SelectedTreeInput(currentSlot, ingredient, selectedResource));
             if (selectedResource.key() instanceof ItemStackKey itemKey)
                 selections.add(new com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.IngredientSelection(
-                        currentSlot, BuiltInRegistries.ITEM.getKey(itemKey.getSource())));
+                        currentSlot, com.amicbeam.beyondcraftlines.common.crafting
+                        .IngredientSelectionKey.exact(itemKey)));
         }
-        boolean[] reusable = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
-                .reusableIngredientSlots(recipe, minecraft.level, selections);
+        var inputUses=com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
+                .inputUses(recipe,minecraft.level,selections);
         var fluidProxies = com.amicbeam.beyondcraftlines.common.crafting.SimulatedCrafting
                 .bucketFluidInputs(recipe, minecraft.level, selections);
         for (int i = 0; i < selectedInputs.size(); i++)
         {
             SelectedTreeInput selectedInput = selectedInputs.get(i);
             var proxy = fluidProxies.get(selectedInput.slot());
-            if (proxy != null) selectedInputs.set(i, new SelectedTreeInput(
+            String choice=selectedIngredientChoice(recipe.id().identifier(),selectedInput.slot());
+            if(proxy!=null&&(choice==null||com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.isProxy(choice)))selectedInputs.set(i,new SelectedTreeInput(
                     selectedInput.slot(), selectedInput.ingredient(), proxy));
         }
         long outputPerCraft = com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                 .outputs(recipe.value(), minecraft.level).stream()
-                .filter(output -> resourceKey.isSame(output.key())).mapToLong(output -> output.amount())
+                .filter(output -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(resourceKey, output.key())).mapToLong(output -> output.amount())
                 .findFirst().orElse(1);
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
         for (SelectedTreeInput selectedInput : selectedInputs)
-            if (resourceKey.isSame(selectedInput.resource().key()))
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(resourceKey, selectedInput.resource().key()))
             {
+                var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                        recipe.value(), selectedInput.slot(),
+                        selectedInput.slot()<inputUses.length?inputUses[selectedInput.slot()]
+                                :com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED);
                 seedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                         seedPerCraft, selectedInput.resource().amount());
-                if (!(selectedInput.slot() < reusable.length && reusable[selectedInput.slot()]))
+                if (!use.sharedReusable())
                     consumedSeedPerCraft = com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.add(
                             consumedSeedPerCraft, selectedInput.resource().amount());
             }
@@ -949,22 +1016,27 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             var ingredient = selectedInput.ingredient();
             var selectedResource = selectedInput.resource();
             IStackKey<?> inputKey = selectedResource.key();
-            boolean reusableSlot = currentSlot < reusable.length && reusable[currentSlot];
-            boolean selfInput = shape.selfIncrement() && resourceKey.isSame(inputKey);
-            long totalAmount = selfInput ? selectedResource.amount() : reusableSlot
-                    ? selectedResource.amount()
-                    : com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath.multiply(
-                            selectedResource.amount(), recipeCrafts);
+            var use = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.forRecipeSlot(
+                    recipe.value(),currentSlot,currentSlot<inputUses.length?inputUses[currentSlot]
+                            :com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED);
+            boolean reusableSlot = use.sharedReusable();
+            boolean durabilitySlot=use.kind()==com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.Kind.DURABILITY;
+            boolean selfInput = shape.selfIncrement() && com.amicbeam.beyondcraftlines.common.crafting
+                    .StackKeyMatch.exact(resourceKey, inputKey);
+            long totalAmount = selfInput ? selectedResource.amount()
+                    : use.requiredAmount(recipeCrafts,inputKey,selectedResource.amount(),planningResources);
             TreeInput merged = inputKey instanceof ItemStackKey ? inputs.stream()
-                    .filter(input -> input.key.isSame(inputKey))
+                    .filter(input -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(input.key,inputKey)&&input.reusableOnly==reusableSlot
+                            &&input.durabilityOnly==durabilitySlot)
                     .findFirst().orElse(null)
                     : null;
             if (merged != null)
             {
-                merged.add(currentSlot, totalAmount, ingredient, reusableSlot);
+                merged.add(currentSlot,totalAmount,ingredient);
                 continue;
             }
-            inputs.add(new TreeInput(inputKey, totalAmount, currentSlot, ingredient, reusableSlot, selfInput));
+            inputs.add(new TreeInput(inputKey,totalAmount,currentSlot,ingredient,reusableSlot,durabilitySlot,selfInput));
         }
         for (TreeInput inputGroup : inputs)
         {
@@ -976,9 +1048,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ItemStack input = itemKey.getReadOnlyStack().copyWithCount(
                         (int) Math.min(Integer.MAX_VALUE, inputGroup.amount));
                 Identifier inputId = BuiltInRegistries.ITEM.getKey(input.getItem());
-                RecipeHolder<?> childRecipe = selectedRecipe(inputId, menu.recipeForOutput(inputId));
+                RecipeHolder<?> childRecipe = selectedResourceRecipe(
+                        inputKey, menu.recipeForResourceOutput(inputKey));
                 child = buildTree(input, childRecipe, recipe.id().identifier(), firstSlot.slot(), depth + 1,
-                        inputGroup.amount, inputGroup.reusableOnly, inputGroup.selfIncrement, expanding, stock);
+                        inputGroup.amount,inputGroup.reusableOnly,inputGroup.durabilityOnly,
+                        inputGroup.selfIncrement,expanding,stock);
             }
             else
             {
@@ -986,9 +1060,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         inputKey, menu.recipeForResourceOutput(inputKey));
                 child = buildTree(inputKey, ItemStack.EMPTY, null, childRecipe,
                         recipe.id().identifier(), firstSlot.slot(), depth + 1, inputGroup.amount,
-                        inputGroup.reusableOnly, inputGroup.selfIncrement, expanding, stock);
+                        inputGroup.reusableOnly,inputGroup.durabilityOnly,inputGroup.selfIncrement,expanding,stock);
             }
             child.setIngredientChoices(firstSlot.ingredient());
+            child.fluidContainerAlternative|=fluidProxies.containsKey(firstSlot.slot());
             for (int i = 1; i < inputGroup.slots.size(); i++)
             {
                 TreeInputSlot slot = inputGroup.slots.get(i);
@@ -997,7 +1072,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (child.cyclic) node.cycleBlocked = true;
             node.children.add(child);
         }
-        expanding.remove(expansionKey);
+        expanding.remove(resourceKey);
         return node;
     }
 
@@ -1005,15 +1080,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             Identifier recipe, int slot,
             com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
     {
+        String selectedId=selectedIngredientChoice(recipe,slot);
+        if(com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.isProxy(selectedId)){
+            var fluid=ingredient.candidates().stream().filter(candidate->candidate.key() instanceof
+                    com.wintercogs.beyonddimensions.api.storage.key.impl.FluidStackKey).findFirst().orElse(null);
+            if(fluid!=null)return fluid;Identifier container=com.amicbeam.beyondcraftlines.common.crafting.FluidContainerChoice.itemOrNull(selectedId);selectedId=container==null?selectedId:container.toString();}
+        if(selectedId!=null)for(var candidate:ingredient.candidates())if(com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.matches(selectedId,candidate.key()))return candidate;
         if (ingredient.hasOnlyItemCandidates())
         {
-            Identifier selectedId = ingredientOverrides.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId == null) selectedId = automaticIngredients.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId == null) selectedId = defaultIngredients.get(new IngredientSlotKey(recipe, slot));
-            if (selectedId != null)
-                for (var candidate : ingredient.candidates())
-                    if (candidate.key() instanceof ItemStackKey itemKey
-                            && BuiltInRegistries.ITEM.getKey(itemKey.getSource()).equals(selectedId)) return candidate;
             return ingredient.candidates().getFirst();
         }
         return ingredient.candidates().stream().sorted(java.util.Comparator
@@ -1023,11 +1097,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         .sortKey(value.key()))).findFirst().orElseThrow();
     }
 
+    private String selectedIngredientChoice(Identifier recipe,int slot){String selected=ingredientOverrides.get(new IngredientSlotKey(recipe,slot));
+        if(selected==null)selected=automaticIngredients.get(new IngredientSlotKey(recipe,slot));if(selected==null)selected=defaultIngredients.get(new IngredientSlotKey(recipe,slot));return selected;}
+
     private long resourceAvailable(IStackKey<?> requested)
+    {return resourceAvailable(requested,false);}
+
+    private long resourceAvailable(IStackKey<?> requested,boolean durabilityInput)
     {
         long result = 0;
         for (var entry : planningResources.entrySet())
-            if (requested.isSame(entry.getKey()))
+            if(durabilityInput?com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse
+                    .matchesDurabilityVariant(requested,entry.getKey())
+                    :com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(requested,entry.getKey()))
             {
                 long amount = Math.max(0, entry.getValue());
                 result = result > Long.MAX_VALUE - amount ? Long.MAX_VALUE : result + amount;
@@ -1040,7 +1122,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NodeMetric exact = nodeMetrics.get(requested);
         if (exact != null) return exact;
         for (var entry : nodeMetrics.entrySet())
-            if (requested.isSame(entry.getKey())) return entry.getValue();
+            if (com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(
+                    requested, entry.getKey())) return entry.getValue();
         return null;
     }
 
@@ -1060,13 +1143,28 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private RecipeHolder<?> selectedResourceRecipe(IStackKey<?> output, RecipeHolder<?> fallback)
     {
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(output);
-        if (candidates.isEmpty()) return fallback;
-        String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(output);
-        Identifier selectedId = resourceRecipeOverrides.get(token);
-        if (selectedId == null) selectedId = automaticResourceRecipes.get(token);
+        String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(output);
+        Identifier manualId = resourceRecipeOverrides.get(token);
+        Identifier automaticId = automaticResourceRecipes.get(token);
+        Identifier selectedId = manualId;
+        if (selectedId == null) selectedId = automaticId;
         if (selectedId == null) selectedId = defaultResourceRecipes.get(token);
         if (selectedId != null)
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().identifier().equals(selectedId)) return candidate;
+        if (manualId == null && automaticId != null)
+        {
+            RecipeHolder<?> planned = menu.recipe(automaticId);
+            if (planned != null) return planned;
+        }
+        NodeMetric metric = nodeMetric(output);
+        Identifier plannedId = metric == null ? null : metric.recipe();
+        if (manualId == null && plannedId != null && menu.recipeProduces(plannedId,
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(output)))
+        {
+            RecipeHolder<?> planned = menu.recipe(plannedId);
+            if (planned != null) return planned;
+        }
+        if (candidates.isEmpty()) return fallback;
         return fallback != null && candidates.stream().anyMatch(candidate -> candidate.id().identifier().equals(fallback.id().identifier()))
                 ? fallback : candidates.getFirst();
     }
@@ -1118,11 +1216,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         List<GraphNode> all = new ArrayList<>();
         collectExpandedNodes(root, all);
-        Map<String, List<GraphNode>> groups = new LinkedHashMap<>();
+        Map<IStackKey<?>, List<GraphNode>> groups = new LinkedHashMap<>();
         for (GraphNode node : all)
             if (!node.selfIncrement)
             groups.computeIfAbsent(displayIdentity(node.key), ignored -> new ArrayList<>()).add(node);
-        Map<String, GraphNode> canonical = new LinkedHashMap<>();
+        Map<IStackKey<?>, GraphNode> canonical = new LinkedHashMap<>();
         for (var entry : groups.entrySet())
         {
             GraphNode selected = entry.getValue().stream()
@@ -1150,7 +1248,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             List<GraphNode> visible = new ArrayList<>();
             collectVisibleNodes(root, visible);
             Set<GraphNode> visibleSet = new HashSet<>(visible);
-            Map<String, GraphNode> visibleByIdentity = new LinkedHashMap<>();
+            Map<IStackKey<?>, GraphNode> visibleByIdentity = new LinkedHashMap<>();
             for (GraphNode node : visible)
                 visibleByIdentity.putIfAbsent(displayIdentity(node.key), node);
             for (var entry : canonical.entrySet())
@@ -1169,6 +1267,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static void mergeDisplayedTotals(GraphNode target, GraphNode source)
     {
+        target.fluidContainerAlternative|=source.fluidContainerAlternative;
         boolean reusable = target.reusableInput && source.reusableInput;
         target.reusableInput = reusable;
         if (reusable)
@@ -1219,20 +1318,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             for (GraphNode child : node.children) collectVisibleNodes(child, nodes);
     }
 
-    private static String displayIdentity(IStackKey<?> key)
-    { return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(key); }
+    private static IStackKey<?> displayIdentity(IStackKey<?> key) { return key; }
 
     private boolean openIngredientPicker(GraphNode node)
     {
         List<ItemStack> candidates = ingredientCandidates(node);
-        if (candidates.size() < 2) return false;
+        if(candidates.size()<2&&!node.fluidContainerAlternative)return false;
         recipePickerNode = null;
         recipePickerRecipes = List.of();
         ingredientPickerNode = node;
         ingredientPickerItems = candidates;
         int selectedIndex = 0;
         for (int i = 0; i < candidates.size(); i++)
-            if (BuiltInRegistries.ITEM.getKey(candidates.get(i).getItem()).equals(node.itemId))
+            if(com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(new ItemStackKey(candidates.get(i)),node.key))
             { selectedIndex = i; break; }
         ingredientPickerPage = selectedIndex / PICKER_PAGE_SIZE;
         positionPicker(node);
@@ -1243,7 +1341,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         if (node.stockSatisfied) return false;
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(node.key);
-        if (candidates.size() < 2) return false;
+        if (candidates.isEmpty() || node.recipe != null && candidates.size() < 2) return false;
         ingredientPickerNode = null;
         ingredientPickerItems = List.of();
         recipePickerNode = node;
@@ -1268,13 +1366,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private List<ItemStack> ingredientCandidates(GraphNode node)
     {
         return node.ingredientChoices.entrySet().stream().sorted(java.util.Comparator
-                .<Map.Entry<Identifier, ItemStack>>comparingLong(entry ->
-                        planningStock.getOrDefault(entry.getKey(), 0L)).reversed()
+                .<Map.Entry<String, ItemStack>>comparingLong(entry -> resourceAvailable(new ItemStackKey(entry.getValue()))).reversed()
                 .thenComparing(entry -> entry.getKey().toString()))
                 .map(Map.Entry::getValue).toList();
     }
 
-    private void applyIngredientChoice(GraphNode node, Identifier selectedItem)
+    private void applyIngredientChoice(GraphNode node, String selectedItem)
     {
         if (node.parentRecipe == null) return;
         for (int slot : node.parentSlots)
@@ -1291,7 +1388,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void applyRecipeChoice(GraphNode node, RecipeHolder<?> recipe)
     {
-        String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(node.key);
+        if (node.depth == 0) selected = recipe;
+        String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key);
         resourceRecipeOverrides.put(token, recipe.id().identifier());
         if (node.itemId != null) recipeOverrides.put(node.itemId, recipe.id().identifier());
         boolean saved = ClientPlannerPreferences.setRecipe(token, recipe.id().identifier());
@@ -1317,7 +1415,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (recipePickerNode != null)
         {
             String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                    .sortKey(recipePickerNode.key);
+                    .resolutionKey(recipePickerNode.key);
             return defaultResourceRecipes.containsKey(token)
                     || recipePickerNode.itemId != null && defaultRecipes.containsKey(recipePickerNode.itemId);
         }
@@ -1344,7 +1442,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (recipePickerNode != null)
         {
             String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
-                    .sortKey(recipePickerNode.key);
+                    .resolutionKey(recipePickerNode.key);
             saved = ClientPlannerPreferences.clearRecipe(token, recipePickerNode.itemId);
             if (saved)
             {
@@ -1401,7 +1499,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 ItemStack selectedStack = ingredientPickerItems.get(index);
                 applyIngredientChoice(ingredientPickerNode,
-                        BuiltInRegistries.ITEM.getKey(selectedStack.getItem()));
+                        com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.exact(new ItemStackKey(selectedStack)));
             }
             return true;
         }
@@ -1530,7 +1628,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new RecipePreviewTooltip(inputs,
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
                                 .outputs(recipe.value(), minecraft.level).stream()
-                                .filter(value -> output.isSame(value.key())).findFirst()
+                                .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                        .exact(output, value.key())).findFirst()
                         .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))),
                 output instanceof ItemStackKey itemKey ? itemKey.getReadOnlyStack() : ItemStack.EMPTY,
                 mouseX, mouseY);
@@ -1538,9 +1637,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private static Component localizedRecipeType(RecipeHolder<?> recipe)
     {
-        Identifier type = BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
+        String family = com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.family(recipe);
+        Identifier type = recipe.value().getType() == null ? Identifier.tryParse(family)
+                : BuiltInRegistries.RECIPE_TYPE.getKey(recipe.value().getType());
         if (type == null) return Component.translatable("tooltip.beyond_craftlines.recipe_type",
-                recipe.value().getType().toString()).withStyle(ChatFormatting.GRAY);
+                family == null ? "unknown" : family).withStyle(ChatFormatting.GRAY);
         return JeiCatalystIndex.recipeTypeTitle(type)
                 .<Component>map(title -> Component.translatable("tooltip.beyond_craftlines.recipe_type_localized",
                         type, title).withStyle(ChatFormatting.GRAY))
@@ -1565,12 +1666,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             GraphNode node = nodeAt(mouseX, mouseY);
             if (node != null)
             {
+                if (overCandidateBadge(node, mouseX, mouseY) && openIngredientPicker(node)) return true;
                 if (node.jumpTarget != null)
                 {
                     centerTreeOn(node.jumpTarget);
                     return true;
                 }
-                if (overCandidateBadge(node, mouseX, mouseY) && openIngredientPicker(node)) return true;
                 if (com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                         .showRecipesFor(node.key)) return true;
             }
@@ -1621,7 +1722,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private boolean overCandidateBadge(GraphNode node, double mouseX, double mouseY)
     {
-        if (node.ingredientChoices.size() < 2) return false;
+        if(node.ingredientChoices.size()<2&&!node.fluidContainerAlternative)return false;
         int x = nodeX(node) + 2;
         int y = nodeY(node) + 2;
         return mouseX >= x && mouseX < x + 8 && mouseY >= y && mouseY < y + 8;
@@ -1658,9 +1759,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             int slot;
             try { slot = Integer.parseInt(entry.getKey().substring(separator + 1)); }
             catch (NumberFormatException ignored) { continue; }
-            Identifier item = entry.getValue();
+            String item = entry.getValue();
             RecipeHolder<?> recipe = recipeId == null ? null : menu.recipe(recipeId);
-            if (recipe == null || item == null || slot < 0) continue;
+            if (recipe == null || item == null || item.isBlank() || slot < 0) continue;
             // Candidate membership is checked lazily by selectedResource while that one tree node expands.
             defaultIngredients.put(new IngredientSlotKey(recipeId, slot), item);
         }
@@ -1681,15 +1782,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         previewDelayTicks = Math.max(1, delayTicks);
         amountOnlyPreviewChange = amountOnly;
         previewNonce++;
+        submitWhenReady = false;
         proposalReady = false;
+        planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.SEARCHING;
         clearDisplayMetrics();
-        if (orderButton != null) orderButton.active = false;
+        if (orderButton != null) orderButton.active = canQueueOrder();
     }
 
     private void clearDisplayMetrics()
     {
         materialSummaryReady = false;
         materialSummaryMissing = false;
+        materialSummaryTheoretical = false;
         missingMaterials.clear();
         extractionMaterials.clear();
         nodeMetrics.clear();
@@ -1706,7 +1810,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void showMissingMaterials(Map<IStackKey<?>, Long> missing)
     {
         clearDisplayMetrics();
-        missing.entrySet().stream().sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+        com.amicbeam.beyondcraftlines.common.crafting.MissingMaterialDisplay
+                .excludingFinalOutput(missing, menu.initialTarget()).entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
                 .forEach(entry -> missingMaterials.put(entry.getKey(), entry.getValue()));
         materialSummaryMissing = true;
@@ -1717,13 +1823,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         previewDirty = false;
         previewDelay = 0;
-        if (selected == null || minecraft.level == null) return;
-        if (!menu.serverRecipeIndexComplete())
-        {
-            waitingForServerRecipeIndex = true;
-            loadingStatus = serverRecipeIndexingText();
-            return;
-        }
+        if (minecraft.level == null) return;
         IStackKey<?> target = menu.initialTarget();
         long nonce = previewNonce;
         boolean preferAutomaticChoices = amountOnlyPreviewChange;
@@ -1735,7 +1835,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ? minecraft.level.getGameTime() - planningSnapshotCapturedAt : Long.MAX_VALUE;
         if (planningSnapshotValid && (preferAutomaticChoices || snapshotAge <= 20))
         {
-            loadingStatus = Component.translatable("gui.beyond_craftlines.planning_tree").getString();
+            loadingStatus=planningText();
             startClientPlanning(nonce, target, amountValue(), planningSnapshotRevision, planningRecipeEpoch,
                     planningMaxDepth, planningMaxNodes, Map.copyOf(planningResources),
                     genericRecipeOverrides(), Map.copyOf(ingredientOverrides), preferAutomaticChoices,
@@ -1744,7 +1844,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
         planningSnapshotValid = false;
-        planningStock.clear();
         planningResources.clear();
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
         ClientPacketDistributor.sendToServer(new RequestPlanningSnapshotPayload(nonce, menu.targetToken()));
@@ -1752,12 +1851,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void receivePlanningSnapshot(PlanningSnapshotPayload snapshot)
     {
-        if (selected == null || snapshot.nonce() != previewNonce
+        if (snapshot.nonce() != previewNonce
                 || !snapshot.itemId().equals(menu.targetToken())) return;
         var header = snapshot.header();
         if (!header.status().success())
         {
-            planningStock.clear();
             planningResources.clear();
             planningSnapshotValid = false;
             snapshotNextPage = 0;
@@ -1768,7 +1866,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (header.pageCount() < 1 || header.pageIndex() != snapshotNextPage
                 || header.pageIndex() < 0 || header.pageIndex() >= header.pageCount())
         {
-            planningStock.clear();
             planningResources.clear();
             planningSnapshotValid = false;
             snapshotNextPage = 0;
@@ -1778,15 +1875,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         if (header.pageIndex() == 0)
         {
-            planningStock.clear();
             planningResources.clear();
         }
         for (PlanningSnapshotPayload.Entry entry : snapshot.entries())
         {
             if (entry.key() == null || entry.key().isEmpty() || entry.amount() < 1) continue;
             planningResources.merge(entry.key(), entry.amount(), Long::sum);
-            if (entry.key() instanceof ItemStackKey itemKey)
-                planningStock.merge(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), entry.amount(), Long::sum);
         }
         snapshotNextPage++;
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot_pages",
@@ -1812,7 +1906,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                      long stockRevision, long recipeEpoch, int maxDepth, int maxNodes,
                                      Map<IStackKey<?>, Long> stock,
                                      Map<String, Identifier> manualRecipes,
-                                     Map<IngredientSlotKey, Identifier> manualIngredients,
+                                     Map<IngredientSlotKey, String> manualIngredients,
                                      boolean preferAutomaticChoices, boolean refreshSnapshotIfMissing)
     {
         LinkedHashMap<String, Identifier> preferredRecipes = new LinkedHashMap<>(defaultResourceRecipes);
@@ -1823,7 +1917,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             automaticRecipes.forEach((output, recipe) -> preferredRecipes.put(itemToken(output), recipe));
         }
         preferredRecipes.putAll(manualRecipes);
-        Map<ClientRecipePlanner.IngredientKey, Identifier> preferredIngredients = new LinkedHashMap<>();
+        Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients = new LinkedHashMap<>();
         defaultIngredients.forEach((key, value) -> preferredIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         if (preferAutomaticChoices) automaticIngredients.forEach((key, value) -> preferredIngredients.put(
@@ -1833,29 +1927,42 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         LinkedHashMap<String, Identifier> defaultRecipesOnly = new LinkedHashMap<>(defaultResourceRecipes);
         defaultRecipes.forEach((output, recipe) -> defaultRecipesOnly.put(itemToken(output), recipe));
         defaultRecipesOnly.putAll(manualRecipes);
-        Map<ClientRecipePlanner.IngredientKey, Identifier> defaultIngredientsOnly = new LinkedHashMap<>();
+        Map<ClientRecipePlanner.IngredientKey, String> defaultIngredientsOnly = new LinkedHashMap<>();
         defaultIngredients.forEach((key, value) -> defaultIngredientsOnly.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         manualIngredients.forEach((key, value) -> defaultIngredientsOnly.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
-        Map<ClientRecipePlanner.IngredientKey, Identifier> forcedIngredients = new LinkedHashMap<>();
+        Map<ClientRecipePlanner.IngredientKey, String> forcedIngredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        Map<String, Identifier> fixedTreeRecipes = visibleTreeRecipes();
+        Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = visibleTreeIngredients();
+        preferredRecipes.putAll(fixedTreeRecipes);
+        preferredRecipes.putAll(manualRecipes);
+        preferredIngredients.putAll(fixedTreeIngredients);
+        manualIngredients.forEach((key, value) -> preferredIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client plan visible-tree choices recipes={} ingredients={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                fixedTreeRecipes.size(), fixedTreeIngredients.size());
         boolean hasDefaults = !defaultResourceRecipes.isEmpty() || !defaultRecipes.isEmpty()
                 || !defaultIngredients.isEmpty();
         boolean hasAutomaticChoices = preferAutomaticChoices && (!automaticResourceRecipes.isEmpty()
                 || !automaticRecipes.isEmpty() || !automaticIngredients.isEmpty());
         cancelPlanningTask();
-        loadingStatus = Component.translatable("gui.beyond_craftlines.planning_tree").getString();
+        loadingStatus=planningText();
         long generation = planningGeneration;
         planningTask = PLANNING_EXECUTOR.submit(() -> {
             ClientRecipePlanner.Proposal proposal = null;
             RuntimeException failure = null;
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
+            boolean optimalSearch=false;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
                     stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS); }
+                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,optimalSearch); }
             catch (RuntimeException exception) { failure = exception; }
+            boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
             if (!refreshSnapshotIfMissing && hasAutomaticChoices && fallbackSearchNanos > 0
                     && (proposal == null || !proposal.craftable()))
@@ -1864,7 +1971,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 {
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos,optimalSearch);
+                    searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
                         proposal = fallback;
@@ -1881,7 +1989,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 {
                     ClientRecipePlanner.Proposal fallback = ClientRecipePlanner.plan(planningCatalog,
                             stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
-                            fallbackSearchNanos);
+                            fallbackSearchNanos,optimalSearch);
+                    searchExhausted |= fallback.searchExhausted();
                     if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
                     {
                         proposal = fallback;
@@ -1890,15 +1999,37 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 }
                 catch (RuntimeException ignored) {}
             }
+            if (!refreshSnapshotIfMissing && proposal != null && !proposal.craftable()
+                    && searchExhausted&&(fallbackSearchNanos=searchDeadline-System.nanoTime())>0)
+            {
+                try
+                {
+                    // Candidate optimization is bounded, but the already-visible tree must still be
+                    // validated deterministically. This preserves a craftable current choice instead
+                    // of replacing it with the incomplete branch that happened to hit the budget.
+                    proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
+                            fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes,
+                            fallbackSearchNanos,false);
+                    failure = null;
+                }
+                catch (RuntimeException exception) { failure = exception; }
+            }
             ClientRecipePlanner.Proposal completed = proposal;
             RuntimeException completedFailure = failure;
             minecraft.execute(() -> {
                     if (generation != planningGeneration) return;
                     planningTask = null;
-                    if (nonce != previewNonce || selected == null || !target.isSame(menu.initialTarget())) return;
+                    if (nonce != previewNonce
+                            || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                            .exact(target, menu.initialTarget())) return;
                     loadingStatus = "";
                     if (completedFailure != null)
                     {
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                                "{} client plan failed nonce={} target={} error={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                nonce, com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target),
+                                completedFailure.toString(), completedFailure);
                         if (completedFailure instanceof CancellationException
                                 || "client planning cancelled".equals(completedFailure.getMessage())) return;
                         if (refreshSnapshotIfMissing)
@@ -1906,6 +2037,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
                             return;
                         }
+                        submitWhenReady = false;
+                        planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.RUNTIME_UNAVAILABLE;
+                        if (orderButton != null) orderButton.active = false;
                         previewError = localizedPlanningError(completedFailure.getMessage());
                         return;
                     }
@@ -1921,36 +2055,83 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             new IngredientSlotKey(key.recipe(), key.slot()), value));
                     if (!completed.craftable())
                     {
+                        planningOutcome=completed.outcome();
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
+                                "{} client plan missing nonce={} recipes={} ingredients={} missing={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                nonce, completed.recipes().size(), completed.ingredients().size(),
+                                completed.missing().size());
                         if (refreshSnapshotIfMissing)
                         {
                             refreshSnapshotAfterFastAmountPlan(nonce, preferAutomaticChoices);
                             return;
                         }
+                        submitWhenReady = false;
+                        if (orderButton != null) orderButton.active = false;
                         showMissingMaterials(completed.missing());
-                        previewError = formatMissing(completed.missing());
+                        previewError=planningOutcomeMessage(planningOutcome,completed.missing());
                         rebuildTree(false);
                         return;
                     }
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                            "{} client plan ready nonce={} recipes={} ingredients={} extraction={} target={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            nonce, completed.recipes().size(), completed.ingredients().size(),
+                            completed.extraction().size(),
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+                    completed.recipes().forEach((key, recipe) ->
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                                    "{} client plan recipe key={} recipe={}",
+                                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.token(key), recipe));
                     uploadProposal(nonce, target, count, stockRevision, recipeEpoch, completed);
                     clearDisplayMetrics();
-                    completed.extraction().entrySet().stream().filter(entry -> !target.isSame(entry.getKey()))
+                    completed.extraction().entrySet().stream().filter(entry -> !com.amicbeam.beyondcraftlines
+                                    .common.crafting.StackKeyMatch.exact(target, entry.getKey()))
                             .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
                                     com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
                             .forEach(entry -> extractionMaterials.put(entry.getKey(), entry.getValue()));
                     materialSummaryReady = true;
                     proposalReady = true;
+                    planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.READY;
                     previewError = "";
                     if (orderButton != null) orderButton.active = true;
                     rebuildTree(false);
+                    boolean submitWasQueued=submitWhenReady;
+                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation,nonce,target,count,stockRevision,recipeEpoch,maxDepth,maxNodes,stock,preferredRecipes,preferredIngredients);
                 });
         });
+    }
+
+    private void startOptimalPlanning(long generation,long nonce,IStackKey<?> target,long count,long stockRevision,long recipeEpoch,int maxDepth,int maxNodes,Map<IStackKey<?>,Long> stock,Map<String,Identifier> preferredRecipes,Map<ClientRecipePlanner.IngredientKey,String> preferredIngredients)
+    {
+        optimizationTask=OPTIMIZATION_EXECUTOR.submit(()->{ClientRecipePlanner.Proposal improved;try{improved=ClientRecipePlanner.plan(planningCatalog,stock,target,count,preferredRecipes,preferredIngredients,maxDepth,maxNodes,ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,true);}catch(RuntimeException ignored){minecraft.execute(()->{if(generation==planningGeneration)optimizationTask=null;});return;}minecraft.execute(()->{if(generation!=planningGeneration||nonce!=previewNonce)return;optimizationTask=null;if(!improved.craftable())return;automaticRecipes.clear();automaticResourceRecipes.clear();improved.recipes().forEach((output,recipe)->{automaticResourceRecipes.put(output,recipe);Identifier item=itemOutputForToken(output);if(item!=null)automaticRecipes.put(item,recipe);});automaticIngredients.clear();improved.ingredients().forEach((key,value)->automaticIngredients.put(new IngredientSlotKey(key.recipe(),key.slot()),value));uploadProposal(nonce,target,count,stockRevision,recipeEpoch,improved);rebuildTree(false);com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info("{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,nonce,improved.recipes().size(),improved.ingredients().size(),com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));});});
+    }
+
+    private Map<String, Identifier> visibleTreeRecipes()
+    {
+        LinkedHashMap<String, Identifier> result = new LinkedHashMap<>();
+        for (GraphNode node : treeNodes)
+            if (node.recipe != null)
+                result.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .resolutionKey(node.key), node.recipe.id().identifier());
+        return Map.copyOf(result);
+    }
+
+    private Map<ClientRecipePlanner.IngredientKey, String> visibleTreeIngredients()
+    {
+        LinkedHashMap<ClientRecipePlanner.IngredientKey, String> result = new LinkedHashMap<>();
+        for (GraphNode node : treeNodes)
+            if (node.parentRecipe != null && node.itemId != null)
+                for (int slot : node.parentSlots)
+                    result.put(new ClientRecipePlanner.IngredientKey(node.parentRecipe, slot),com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.exact(node.key));
+        return Map.copyOf(result);
     }
 
     private void refreshSnapshotAfterFastAmountPlan(long nonce, boolean preferAutomaticChoices)
     {
         planningSnapshotValid = false;
         requestedSnapshotPrefersAutomaticChoices = preferAutomaticChoices;
-        planningStock.clear();
         planningResources.clear();
         loadingStatus = Component.translatable("gui.beyond_craftlines.loading_snapshot").getString();
         ClientPacketDistributor.sendToServer(new RequestPlanningSnapshotPayload(nonce, menu.targetToken()));
@@ -1973,6 +2154,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (missing.size() > 6) details += "…";
         return Component.translatable("gui.beyond_craftlines.missing", details).getString();
     }
+    private String planningOutcomeMessage(com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome outcome,Map<IStackKey<?>,Long> missing)
+    {return switch(outcome){case NO_RECIPE->Component.translatable("error.beyond_craftlines.planning_no_recipe").getString();case CYCLE->Component.translatable("error.beyond_craftlines.planning_cycle_only").getString();case BUDGET_EXHAUSTED->Component.translatable("error.beyond_craftlines.planning_budget_exhausted").getString();default->formatMissing(missing);};}
 
     private void cancelPlanningTask()
     {
@@ -1980,7 +2163,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Future<?> task = planningTask;
         planningTask = null;
         if (task != null) task.cancel(true);
+        Future<?> optimization=optimizationTask;
+        optimizationTask=null;
+        if(optimization!=null)optimization.cancel(true);
         PLANNING_EXECUTOR.purge();
+        OPTIMIZATION_EXECUTOR.purge();
     }
 
     private static ScheduledThreadPoolExecutor planningExecutor()
@@ -1999,15 +2186,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void uploadProposal(long nonce, IStackKey<?> target, long count, long stockRevision,
                                 long recipeEpoch, ClientRecipePlanner.Proposal proposal)
     {
+        java.util.Set<Identifier> selectedVirtualRecipes = java.util.Set.copyOf(proposal.recipes().values());
+        var virtualPages = com.amicbeam.beyondcraftlines.common.network.VirtualRecipeUploadPayload
+                .pages(nonce, selectedVirtualRecipes);
+        if (virtualPages.size() > 64)
+        {
+            previewError = localizedPlanningMessage("error.beyond_craftlines.planning_upload_limit");
+            return;
+        }
+        virtualPages.forEach(page -> ClientPacketDistributor.sendToServer(page));
         List<SubmitOrderPayload.RecipeChoice> recipes = proposal.recipes().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> new SubmitOrderPayload.RecipeChoice(
                         entry.getKey(), entry.getValue().toString())).toList();
         List<SubmitOrderPayload.IngredientChoice> ingredients = proposal.ingredients().entrySet().stream()
-                .sorted(java.util.Comparator.comparing((Map.Entry<ClientRecipePlanner.IngredientKey, Identifier> entry)
+                .sorted(java.util.Comparator.comparing((Map.Entry<ClientRecipePlanner.IngredientKey, String> entry)
                                 -> entry.getKey().recipe().toString()).thenComparingInt(entry -> entry.getKey().slot()))
                 .map(entry -> new SubmitOrderPayload.IngredientChoice(entry.getKey().recipe().toString(),
-                        entry.getKey().slot(), entry.getValue().toString())).toList();
+                        entry.getKey().slot(), entry.getValue())).toList();
         int pageCount = Math.max(1, Math.max((recipes.size() + 255) / 256, (ingredients.size() + 255) / 256));
         if (pageCount > 64)
         {
@@ -2029,17 +2225,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private void receivePlanPreview(PlanPreviewPayload preview)
     {
-        if (selected == null || preview.nonce() != previewNonce || !preview.itemId().equals(menu.targetToken()))
+        if (preview.nonce() != previewNonce || !preview.itemId().equals(menu.targetToken()))
             return;
         if (!preview.success())
         {
-            if ("server recipe index is still building".equals(preview.error()))
-            {
-                waitingForServerRecipeIndex = true;
-                loadingStatus = serverRecipeIndexingText();
-                previewError = "";
-                return;
-            }
             loadingStatus = "";
             clearPendingPreviewMetrics();
             proposalReady = false;
@@ -2051,7 +2240,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             previewNextPage = 0;
             previewError = localizedPlanningError(preview.error());
             rebuildTree(false);
-            if ("stale".equals(preview.failureKind()))
+            planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.byId(preview.failureKind());
+            if(planningOutcome==com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.STALE)
             {
                 planningSnapshotValid = false;
                 markPreviewDirty();
@@ -2092,16 +2282,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         for (SubmitOrderPayload.IngredientChoice choice : preview.ingredientChoices())
         {
             Identifier recipe = Identifier.tryParse(choice.recipe());
-            Identifier item = Identifier.tryParse(choice.item());
-            if (recipe != null && item != null && choice.slot() >= 0)
-                automaticIngredients.put(new IngredientSlotKey(recipe, choice.slot()), item);
+            if(recipe!=null&&choice.item()!=null&&!choice.item().isBlank()&&choice.slot()>=0)
+                automaticIngredients.put(new IngredientSlotKey(recipe,choice.slot()),choice.item());
         }
         for (PlanPreviewPayload.DisplayEntry entry : preview.displayEntries())
         {
             if (entry.key() == null || entry.amount() < 1) continue;
             switch (entry.kind())
             {
-                case "M" -> pendingMissingMaterials.put(entry.key(), entry.amount());
+                case "M" -> {
+                    if (!com.amicbeam.beyondcraftlines.common.crafting.MissingMaterialDisplay
+                            .isFinalOutput(menu.initialTarget(), entry.key()))
+                        pendingMissingMaterials.put(entry.key(), entry.amount());
+                }
                 case "E" -> pendingExtractionMaterials.put(entry.key(), entry.amount());
                 case "N" -> pendingNodeMetrics.put(entry.key(), new NodeMetric(Identifier.tryParse(entry.recipe()),
                         entry.amount(), entry.produced(), entry.crafts()));
@@ -2119,11 +2312,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             extractionMaterials.putAll(pendingExtractionMaterials);
             nodeMetrics.putAll(pendingNodeMetrics);
             clearPendingPreviewMetrics();
-            boolean missing = "missing".equals(preview.failureKind()) || !missingMaterials.isEmpty();
-            proposalReady = !missing;
+            planningOutcome=com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.byId(preview.failureKind());
+            boolean missing=!planningOutcome.craftable()||!missingMaterials.isEmpty();
+            proposalReady=planningOutcome.craftable()&&missingMaterials.isEmpty();
             materialSummaryReady = true;
             materialSummaryMissing = missing;
-            previewError = missing ? formatMissing(missingMaterials) : "";
+            previewError=missing?planningOutcomeMessage(planningOutcome,missingMaterials):"";
             if (orderButton != null) orderButton.active = !missing;
             rebuildTree(false);
         }
@@ -2131,6 +2325,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private String localizedPlanningError(String error)
     {
+        var translated=com.amicbeam.beyondcraftlines.common.network.OrderMenuError.decode(error);
+        if(translated!=null)return Component.translatable(translated.translationKey(),translated.arguments().toArray()).getString();
         if (error == null || error.isBlank())
             return localizedPlanningMessage("error.beyond_craftlines.planning_failed");
         if (error.equals("client planning node budget exhausted"))
@@ -2255,7 +2451,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         private RecipeHolder<?> recipe;
         private final Identifier parentRecipe;
         private final List<Integer> parentSlots = new ArrayList<>();
-        private final LinkedHashMap<Identifier, ItemStack> ingredientChoices = new LinkedHashMap<>();
+        private final LinkedHashMap<String, ItemStack> ingredientChoices = new LinkedHashMap<>();
         private final int depth;
         private final List<GraphNode> children = new ArrayList<>();
         private boolean cyclic;
@@ -2264,6 +2460,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         private boolean stockSatisfied;
         private boolean partiallySatisfied;
         private boolean reusableInput;
+        private boolean durabilityInput;
+        private boolean fluidContainerAlternative;
         private boolean selfIncrement;
         private long stockUsed;
         private GraphNode jumpTarget;
@@ -2292,10 +2490,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
         {
             ingredientChoices.clear();
-            if (!ingredient.hasOnlyItemCandidates()) return;
             for (var candidate : ingredient.candidates())
                 if (candidate.key() instanceof ItemStackKey itemKey)
-                    ingredientChoices.putIfAbsent(BuiltInRegistries.ITEM.getKey(itemKey.getSource()),
+                    ingredientChoices.putIfAbsent(com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.exact(itemKey),
                             itemKey.getReadOnlyStack().copyWithCount((int) Math.min(
                                     Integer.MAX_VALUE, candidate.amount())));
         }
@@ -2304,11 +2501,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
         {
             parentSlots.add(slot);
-            Set<Identifier> allowed = new HashSet<>();
-            if (!ingredient.hasOnlyItemCandidates()) return;
+            Set<String> allowed = new HashSet<>();
             for (var candidate : ingredient.candidates())
                 if (candidate.key() instanceof ItemStackKey itemKey)
-                    allowed.add(BuiltInRegistries.ITEM.getKey(itemKey.getSource()));
+                    allowed.add(com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.exact(itemKey));
             ingredientChoices.keySet().removeIf(item -> !allowed.contains(item));
         }
     }
@@ -2318,27 +2514,27 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         private final IStackKey<?> key;
         private long amount;
         private boolean reusableOnly;
+        private final boolean durabilityOnly;
         private boolean selfIncrement;
         private final List<TreeInputSlot> slots = new ArrayList<>();
 
         private TreeInput(IStackKey<?> key, long amount, int slot,
                           com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient,
-                          boolean reusable, boolean selfIncrement)
+                          boolean reusable,boolean durability, boolean selfIncrement)
         {
             this.key = key;
             this.amount = Math.max(1, amount);
             this.reusableOnly = reusable;
+            this.durabilityOnly=durability;
             this.selfIncrement = selfIncrement;
             slots.add(new TreeInputSlot(slot, ingredient));
         }
 
         private void add(int slot, long added,
-                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient,
-                         boolean reusable)
+                         com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.ResourceIngredient ingredient)
         {
             long positive = Math.max(1, added);
             amount = amount > Long.MAX_VALUE - positive ? Long.MAX_VALUE : amount + positive;
-            reusableOnly &= reusable;
             slots.add(new TreeInputSlot(slot, ingredient));
         }
     }
@@ -2366,7 +2562,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             long positive = Math.max(1, amount);
             for (var entry : reusableRequirements.entrySet())
             {
-                if (!requested.isSame(entry.getKey())) continue;
+                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(requested, entry.getKey())) continue;
                 long previous = entry.getValue();
                 if (positive <= previous) return 0;
                 entry.setValue(positive);
@@ -2376,14 +2573,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return positive;
         }
 
-        private long consume(IStackKey<?> requested, long amount)
+        private long consume(IStackKey<?> requested,long amount,boolean durabilityInput)
         {
             long left = Math.max(0, amount);
             long consumed = 0;
             for (var entry : remaining.entrySet())
             {
                 if (left == 0) break;
-                if (!requested.isSame(entry.getKey())) continue;
+                boolean matches=durabilityInput?com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse
+                        .matchesDurabilityVariant(requested,entry.getKey())
+                        :com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(requested,entry.getKey());
+                if(!matches)continue;
                 long take = Math.min(left, entry.getValue());
                 if (take == 0) continue;
                 entry.setValue(entry.getValue() - take);

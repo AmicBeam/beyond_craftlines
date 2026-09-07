@@ -10,6 +10,7 @@ import com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRegistry;
 import com.amicbeam.beyondcraftlines.common.runtime.RecipeOrderService;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.OnDatapackSyncEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.level.ChunkEvent;
@@ -25,7 +26,6 @@ public final class CraftlinesEvents {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
-            com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu.tickServerRecipeIndex(event.getServer());
             NativeFurnaceRegistry.tick(event.getServer());
             RecipeOrderService.tick(event.getServer());
         }
@@ -72,27 +72,21 @@ public final class CraftlinesEvents {
     @SubscribeEvent public static void onDatapackSync(OnDatapackSyncEvent event) {
         var server = event.getPlayerList().getServer();
         if (event.getPlayer() == null) {
-            if (recipeAliasServer == server)
-                com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu
-                        .invalidatePersistedServerIndex(server);
             RecipePlanningService.clearRecipeCache();
         }
-        if (event.getPlayer() == null || recipeAliasServer != server
-                || com.amicbeam.beyondcraftlines.common.crafting
-                .RecipeFamilyAliasRegistry.aliases().isEmpty()) {
-            com.amicbeam.beyondcraftlines.common.crafting.RecipeFamilyAliasRegistry.reload(
-                    server.getResourceManager());
+        if (event.getPlayer() == null || recipeAliasServer != server) {
             com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.reload(
                     server.getResourceManager());
-            com.amicbeam.beyondcraftlines.common.crafting.JeiRecipeFamilyRegistry.clearVerifiedHints();
+            com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
+            com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupRegistry.clear();
             recipeAliasServer = server;
         }
         var profiles = com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.snapshot();
         if (event.getPlayer() != null)
-            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                    .sendToPlayer(event.getPlayer(), profiles);
+            com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork.sendToPlayer(
+                    event.getPlayer(), profiles);
         else server.getPlayerList().getPlayers().forEach(player ->
-                com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork
-                        .sendToPlayer(player, profiles));
+                com.amicbeam.beyondcraftlines.common.network.CraftlinesNetwork.sendToPlayer(
+                        player, profiles));
     }
 }

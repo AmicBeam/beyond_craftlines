@@ -1,0 +1,23 @@
+{
+  "jei_type": "malum:spirit_infusion",
+  "recipe_classes": [
+    "com.sammy.malum.common.recipe.SpiritInfusionRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "spirits",
+      "members": ["spirits"],
+      "cardinality": "collection"
+    },
+    {
+      "group": "extra_items",
+      "members": ["extraInputs", "extraItems"],
+      "cardinality": "collection"
+    },
+    {
+      "group": "input",
+      "members": ["input"],
+      "cardinality": "single"
+    }
+  ]
+}

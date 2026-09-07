@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.BiConsumer;
+import java.util.function.ToLongFunction;
 
 /** Mutable deterministic stock allocator whose keys may carry identity beyond their coarse item group. */
 final class MatchingStock<K, G>
@@ -59,6 +60,21 @@ final class MatchingStock<K, G>
             if (entry.getValue().total() > 0 && accepts.test(entry.getKey()))
                 result = SaturatingLongMath.add(result, entry.getValue().total());
         return result;
+    }
+
+    long itemsForCapacity(G group,Predicate<K> accepts,long requiredUnits,
+                          ToLongFunction<K> capacityPerItem,long fallbackCapacity)
+    {
+        if(requiredUnits<=0)return 0;long remaining=requiredUnits,items=0;Map<K,Amount> amounts=groups.get(group);
+        if(amounts!=null)for(var entry:amounts.entrySet()){
+            if(!accepts.test(entry.getKey())||entry.getValue().total()<=0)continue;
+            long capacity=Math.max(1,capacityPerItem.applyAsLong(entry.getKey()));
+            long needed=remaining/capacity+(remaining%capacity==0?0:1);
+            long used=Math.min(entry.getValue().total(),needed);items=SaturatingLongMath.add(items,used);
+            long covered=SaturatingLongMath.multiply(used,capacity);if(covered>=remaining)return items;remaining-=covered;
+        }
+        long capacity=Math.max(1,fallbackCapacity);long created=remaining/capacity+(remaining%capacity==0?0:1);
+        return SaturatingLongMath.add(items,created);
     }
 
     void clear(G group)

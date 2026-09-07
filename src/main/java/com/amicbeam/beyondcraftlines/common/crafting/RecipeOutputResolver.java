@@ -19,6 +19,8 @@ public final class RecipeOutputResolver
     public static List<KeyAmount> outputs(Recipe<?> recipe,
                                           net.minecraft.core.HolderLookup.Provider registries)
     {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null) return List.of(new KeyAmount(virtual.output(), virtual.outputAmount()));
         LinkedHashMap<IStackKey<?>, KeyAmount> result = new LinkedHashMap<>();
         ItemStack item = recipe.getResultItem(registries);
         if (!item.isEmpty()) add(result, new KeyAmount(new ItemStackKey(item.copyWithCount(1)), item.getCount()));
@@ -27,6 +29,16 @@ public final class RecipeOutputResolver
         for (RecipeIoProfileRegistry.OutputMapping mapping : RecipeIoProfileRegistry.outputMappings(recipe))
             add(result, MappedRecipeOutput.resolve(recipe, mapping));
         return List.copyOf(result.values());
+    }
+
+    /** Tests a parent ingredient against a recipe output without invoking remapped virtual recipe methods. */
+    public static boolean matchesIngredient(Recipe<?> recipe, Ingredient ingredient,
+                                            net.minecraft.core.HolderLookup.Provider registries)
+    {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        Object output = virtual == null ? null : virtual.output().getReadOnlyStack();
+        return VirtualRecipeOutputMatch.matches(virtual != null, output, ItemStack.class, ingredient::test,
+                () -> ingredient.test(recipe.getResultItem(registries)));
     }
 
     private static void addOutput(Recipe<?> recipe, LinkedHashMap<IStackKey<?>, KeyAmount> result, Object output)

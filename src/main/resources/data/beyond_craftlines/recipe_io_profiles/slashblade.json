@@ -1,0 +1,14 @@
+{
+  "recipe_id_prefixes": [
+    "slashblade:"
+  ],
+  "resource_namespaces": [
+    "slashblade"
+  ],
+  "dynamic_output": {
+    "source": "jei_focus",
+    "identity": "exact",
+    "planning_fallback": "same_resource",
+    "execution": "assemble_selected_inputs"
+  }
+}

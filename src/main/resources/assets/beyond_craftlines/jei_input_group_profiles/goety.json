@@ -1,0 +1,15 @@
+{
+  "jei_type": "goety:ritual",
+  "input_sections": [
+    {
+      "group": "activation_item",
+      "members": ["getActivationItem", "activationItem"],
+      "cardinality": "single"
+    },
+    {
+      "group": "offerings",
+      "members": ["getIngredients", "ingredients"],
+      "cardinality": "collection"
+    }
+  ]
+}

@@ -14,6 +14,10 @@ public final class ProvisionerInputGroupSelection
     public static Set<String> accepted(Set<String> available, Set<String> selected)
     { return available.size() <= 1 || selected.isEmpty() ? Set.of(ALL) : Set.copyOf(selected); }
 
+    /** Treats legacy persisted empty sets like the GUI's empty-selection wildcard. */
+    public static Set<String> normalizeStored(Set<String> accepted)
+    { return accepted.isEmpty() ? Set.of(ALL) : Set.copyOf(accepted); }
+
     /** Restricted endpoints win; endpoints with no subgroup selection remain a wildcard fallback. */
     public static int routingPriority(Set<String> accepted, String requested)
     {

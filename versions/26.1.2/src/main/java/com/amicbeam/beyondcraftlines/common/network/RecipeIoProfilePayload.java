@@ -26,7 +26,13 @@ public record RecipeIoProfilePayload(List<String> entries) implements CustomPack
     { return new RecipeIoProfilePayload(RecipeIoProfileRegistry.encodedEntries()); }
 
     public static void handle(RecipeIoProfilePayload payload, IPayloadContext context)
-    { context.enqueueWork(() -> RecipeIoProfileRegistry.applySyncedEntries(payload.entries())); }
+    {
+        context.enqueueWork(() -> {
+            RecipeIoProfileRegistry.applySyncedEntries(payload.entries());
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
+            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
+        });
+    }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
 }

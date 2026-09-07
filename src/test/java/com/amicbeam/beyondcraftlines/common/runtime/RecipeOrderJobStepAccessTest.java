@@ -101,7 +101,7 @@ final class RecipeOrderJobStepAccessTest
                     return switch (method.getName())
                     {
                         case "isEmpty" -> false;
-                        case "isSame" -> proxy == args[0];
+                        case "isSame", "isSameTypeSameComponents" -> proxy == args[0];
                         case "hashCode" -> System.identityHashCode(proxy);
                         case "equals" -> proxy == args[0];
                         case "toString" -> name;

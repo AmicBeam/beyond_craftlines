@@ -8,6 +8,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.Recipe;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -24,11 +27,14 @@ public final class RecipeResourceResolver
     public static final String VANILLA_INPUT_GROUP = "ingredients";
     private static final Map<Recipe<?>, List<ResourceIngredient>> CACHE =
             Collections.synchronizedMap(new java.util.WeakHashMap<>());
+    private static final int MAX_RESOLUTION_KEYS = 4_096;
+    private static final BoundedIdentityCache<IStackKey<?>, String> RESOLUTION_KEYS =
+            new BoundedIdentityCache<>(MAX_RESOLUTION_KEYS);
 
     private RecipeResourceResolver() {}
 
     public static List<ResourceIngredient> ingredients(Recipe<?> recipe)
-    { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolve); }
+    { return CACHE.computeIfAbsent(recipe, RecipeResourceResolver::resolveSafely); }
 
     public static Set<String> inputGroups(Recipe<?> recipe)
     {
@@ -38,10 +44,11 @@ public final class RecipeResourceResolver
 
     public static List<ResourceIngredient> ingredientsForOutput(Recipe<?> recipe, IStackKey<?> output)
     {
+        if (VirtualProvisionerRecipeRegistry.descriptor(recipe) != null) return ingredients(recipe);
         List<String> inputMethods = directionalInputMethodsForStackType(recipe, output);
         if (inputMethods.isEmpty()) inputMethods = directionalInputMethods(recipe,
                 raw -> matchesOutputDirection(output, raw));
-        return inputMethods.isEmpty() ? ingredients(recipe) : resolve(recipe, inputMethods, false);
+        return inputMethods.isEmpty() ? ingredients(recipe) : resolveSafely(recipe, inputMethods, false);
     }
 
     private static List<String> directionalInputMethodsForStackType(Recipe<?> recipe, IStackKey<?> output)
@@ -78,7 +85,13 @@ public final class RecipeResourceResolver
         return List.copyOf(result);
     }
 
-    public static void clearCache() { CACHE.clear(); }
+    public static void clearCache()
+    {
+        CACHE.clear();
+        clearResolutionKeyCache();
+    }
+
+    public static void clearResolutionKeyCache() { RESOLUTION_KEYS.clear(); }
 
     public static KeyAmount fromStack(Object stack)
     {
@@ -98,8 +111,73 @@ public final class RecipeResourceResolver
     public static String sortKey(IStackKey<?> key)
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
+    /** Component-aware identity used only for concrete recipe choices, never coarse discovery. */
+    public static String resolutionKey(IStackKey<?> key)
+    { return RESOLUTION_KEYS.computeIfAbsent(key, RecipeResourceResolver::encodeResolutionKey); }
+
+    static String uncachedResolutionKey(IStackKey<?> key)
+    { return encodeResolutionKey(key); }
+
+    private static String encodeResolutionKey(IStackKey<?> key)
+    {
+        String serialized;
+        try
+        {
+            serialized = key.serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())
+                    .toString();
+        }
+        catch (LinkageError | RuntimeException ignored)
+        { serialized = key.getSource() + "|" + key.hashCode(); }
+        return identityKey(key.getTypeId().toString(), key.getModId(), key.getSource(), serialized);
+    }
+
+    static String identityKey(String type, String mod, Object source, String serialized)
+    { return type + "|" + mod + "|" + source + "|" + sha256(serialized); }
+
+    private static String sha256(String value)
+    {
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        }
+        catch (NoSuchAlgorithmException impossible)
+        { throw new IllegalStateException("SHA-256 is unavailable", impossible); }
+    }
+
     private static List<ResourceIngredient> resolve(Recipe<?> recipe)
-    { return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true); }
+    {
+        var virtual = VirtualProvisionerRecipeRegistry.descriptor(recipe);
+        if (virtual != null)
+        {
+            List<ResourceIngredient> result = new ArrayList<>();
+            for (int slot = 0; slot < virtual.inputs().size(); slot++)
+            {
+                var input = virtual.inputs().get(slot);
+                result.add(new ResourceIngredient(slot, input.candidates(), null, input.inputGroup()));
+            }
+            return List.copyOf(result);
+        }
+        return resolve(recipe, RecipeIoProfileRegistry.inputMembers(recipe), true);
+    }
+
+    private static List<ResourceIngredient> resolveSafely(Recipe<?> recipe)
+    {
+        try
+        { return resolve(recipe); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
+    }
+
+    private static List<ResourceIngredient> resolveSafely(Recipe<?> recipe, List<String> inputMethods,
+                                                          boolean includeVanillaIngredients)
+    {
+        try
+        { return resolve(recipe, inputMethods, includeVanillaIngredients); }
+        catch (LinkageError | RuntimeException ignored)
+        { return List.of(); }
+    }
 
     private static List<ResourceIngredient> resolve(Recipe<?> recipe, List<String> inputMethods,
                                                     boolean includeVanillaIngredients)
@@ -107,7 +185,7 @@ public final class RecipeResourceResolver
         List<ResourceIngredient> result = new ArrayList<>();
         int slot = 0;
         if (includeVanillaIngredients)
-            for (Ingredient ingredient : recipe.getIngredients())
+            for (Ingredient ingredient : RecipeIngredientResolver.vanillaIngredients(recipe))
             {
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (ItemStack stack : ingredient.getItems())

@@ -1,4 +1,0 @@
-{
-  "recipe_type": "mekanism:sawing",
-  "output_fields": ["getMainOutputDefinition", "getSecondaryOutputDefinition"]
-}

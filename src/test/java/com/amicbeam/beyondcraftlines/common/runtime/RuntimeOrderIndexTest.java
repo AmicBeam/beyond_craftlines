@@ -70,6 +70,19 @@ final class RuntimeOrderIndexTest
     }
 
     @Test
+    void completedExternalStepReleasesMachineForDependentStepInSameTick()
+    {
+        RuntimeOrderIndex<Integer, String> index = new RuntimeOrderIndex<>();
+        index.occupyMachine("infuser-ready");
+        index.occupyMachine("infuser-blocked");
+
+        index.releaseMachine("infuser-ready");
+
+        assertFalse(index.isMachineOccupied("infuser-ready"));
+        assertTrue(index.isMachineOccupied("infuser-blocked"));
+    }
+
+    @Test
     void networkAndMachineIndexesDoNotInterfere()
     {
         RuntimeOrderIndex<Integer, String> index = new RuntimeOrderIndex<>();

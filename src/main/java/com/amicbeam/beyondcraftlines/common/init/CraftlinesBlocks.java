@@ -17,7 +17,7 @@ public final class CraftlinesBlocks
                     .strength(1.5f).requiresCorrectToolForDrops()));
     public static final DeferredBlock<Block> CRAFTLINE_DASHBOARD = BLOCKS.register("craftline_dashboard",
             () -> new CraftlineDashboardBlock(BlockBehaviour.Properties.of()
-                    .strength(1.0f).requiresCorrectToolForDrops().noOcclusion()));
+                    .strength(1.0f).requiresCorrectToolForDrops().noOcclusion().forceSolidOn()));
 
     public static void register(IEventBus bus) { BLOCKS.register(bus); }
     private CraftlinesBlocks() {}

@@ -13,4 +13,4 @@ This guide covers the crafting tree and the tools used to connect its orders to 
 
 <SubPages icons={true} />
 
-With GuideME installed, hold **G** while hovering the <ItemLink id="network_linker" /> or <ItemLink id="craftline_provisioner" /> to open its page directly.
+With GuideME installed, hold **G** while hovering the <ItemLink id="network_linker" />, <ItemLink id="craftline_provisioner" />, or <ItemLink id="craftline_dashboard" /> to open its page directly.

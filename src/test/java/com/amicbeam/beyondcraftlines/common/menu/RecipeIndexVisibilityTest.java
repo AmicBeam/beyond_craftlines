@@ -12,9 +12,26 @@ final class RecipeIndexVisibilityTest
     @Test
     void sharedIndexStillFiltersEachNetworksFamilies()
     {
-        Set<String> available = Set.of("example:crusher");
+        Set<String> available = Set.of("example:crusher", "minecraft:smithing", "minecraft:stonecutting");
         assertTrue(RecipeIndexVisibility.includes("crafting", available));
+        assertTrue(RecipeIndexVisibility.includes("minecraft:smithing", available));
+        assertTrue(RecipeIndexVisibility.includes("minecraft:stonecutting", available));
         assertTrue(RecipeIndexVisibility.includes("example:crusher", available));
         assertFalse(RecipeIndexVisibility.includes("example:unbound_machine", available));
+    }
+
+    @Test
+    void planningCatalogKeepsBoundJeiVirtualRecipesWithoutAdmittingNativeMachineRecipes()
+    {
+        Set<String> available = Set.of("mekanism:crushing");
+
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe(
+                "mekanism:crushing", true, available));
+        assertFalse(RecipeIndexVisibility.includesPlanningRecipe(
+                "mekanism:crushing", false, available));
+        assertFalse(RecipeIndexVisibility.includesPlanningRecipe(
+                "create:mixing", true, available));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe(
+                "crafting", false, available));
     }
 }

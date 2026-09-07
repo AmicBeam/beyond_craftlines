@@ -1,9 +1,9 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import com.amicbeam.beyondcraftlines.compat.protocol.RegistryFriendlyByteBuf;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
-import net.minecraft.network.FriendlyByteBuf;
 import com.amicbeam.beyondcraftlines.compat.protocol.IPayloadContext;
 import com.amicbeam.beyondcraftlines.compat.protocol.StreamCodec;
 import net.minecraft.resources.ResourceLocation;
@@ -17,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "20";
+    private static final String PROTOCOL = "25";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -36,6 +36,8 @@ public final class CraftlinesNetwork {
         server(RequestPlannerPreferencesPayload.class, RequestPlannerPreferencesPayload.STREAM_CODEC, RequestPlannerPreferencesPayload::handle);
         server(SavePlannerPreferencePayload.class, SavePlannerPreferencePayload.STREAM_CODEC, SavePlannerPreferencePayload::handle);
         server(PlanProposalUploadPayload.class, PlanProposalUploadPayload.STREAM_CODEC, PlanProposalUploadPayload::handle);
+        server(VirtualRecipeUploadPayload.class, VirtualRecipeUploadPayload.STREAM_CODEC,
+                VirtualRecipeUploadPayload::handle);
         server(RequestOrderStatusPayload.class, RequestOrderStatusPayload.STREAM_CODEC, RequestOrderStatusPayload::handle);
         server(RequestNetworkAmountPayload.class, RequestNetworkAmountPayload.STREAM_CODEC, RequestNetworkAmountPayload::handle);
         server(CancelOrderPayload.class, CancelOrderPayload.STREAM_CODEC, CancelOrderPayload::handle);
@@ -99,8 +101,8 @@ public final class CraftlinesNetwork {
                                     BiConsumer<T, IPayloadContext> handler, NetworkDirection direction) {
         StreamCodec raw = codec;
         CHANNEL.registerMessage(discriminator++, type,
-                (payload, buffer) -> raw.encode(buffer, payload),
-                buffer -> (T) raw.decode(buffer),
+                (payload, buffer) -> raw.encode(new RegistryFriendlyByteBuf(buffer), payload),
+                buffer -> (T) raw.decode(new RegistryFriendlyByteBuf(buffer)),
                 (payload, context) -> handle(payload, context, handler), java.util.Optional.of(direction));
     }
 

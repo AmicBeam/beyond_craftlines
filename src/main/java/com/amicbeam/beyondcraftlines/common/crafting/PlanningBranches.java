@@ -13,7 +13,7 @@ final class PlanningBranches
     static boolean ingredientsRequireBranches(List<? extends List<?>> options)
     { return options.stream().anyMatch(option -> option.size() > 1); }
 
-    /** Always validates the current candidate, but never starts another after the search budget expires. */
-    static boolean shouldTryCandidate(boolean hasCurrentCandidate, ClientPlanningBudget budget)
-    { return !hasCurrentCandidate || budget.canOptimize(); }
+    /** Always permits the first preferred candidate; alternatives require an active optimization budget. */
+    static boolean shouldTryCandidate(boolean hasTriedCandidate, ClientPlanningBudget budget)
+    { return hasTriedCandidate ? budget.canOptimize() : budget.canSearch(); }
 }

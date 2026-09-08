@@ -95,6 +95,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('storage.getNet()', 'com.amicbeam.beyondcraftlines.compat.BeyondDimensionsCompat.networkFor(player, storage)')
             .replace('DimensionsNet.getPrimaryNetFromPlayer(player)', 'DimensionsNet.getNetFromPlayer(player)')
             .replace('net.minecraftforge.fml.common.EventBusSubscriber', 'net.minecraftforge.fml.common.Mod.EventBusSubscriber')
+            // BD overrides Screen.init: accept both the development and Forge runtime names.
+            .replace('@Inject(method = "init",', '@Inject(method = {"init", "m_7856_"},')
             .replace('@Inject(method = "render",', '@Inject(method = "m_88315_",')
             .replace('@Inject(method = "mouseClicked", at = @At("HEAD")',
                     '@Inject(method = "m_6375_", at = @At("HEAD")')

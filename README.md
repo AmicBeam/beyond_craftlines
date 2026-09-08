@@ -33,7 +33,7 @@
 除非明确限定版本，功能说明和开发改动均适用于以上三个版本。
 
 - `mod_id`: `beyond_craftlines`
-- 必需依赖：Beyond Dimensions、JEI
+- 必需依赖：Beyond Dimensions 0.7.30 或更高版本、JEI（以上三个 Minecraft 版本均适用）
 - 可选依赖：GuideME；EMI（Minecraft 1.20.1 Forge 与 1.21.1 NeoForge）。EMI 上游尚无 Minecraft 26.1.2 构件，该版本保持显式 no-op，不能宣称 EMI 运行支持。
 
 本模组只负责下单系统：JEI 配方页入口、EMI 风格递归配方树、AE2/RS 风格订单确认、BD 网络扣料与合成、原版及第三方机器配方类型绑定、订单持久化/状态/取消，以及可配置配方类型的合成链供给器。

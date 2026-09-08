@@ -33,7 +33,7 @@ Version 0.5.2 preserves JEI focus links and multiple outputs, credits guaranteed
 Unless explicitly scoped to one version, feature descriptions and development changes apply to all three versions above.
 
 - `mod_id`: `beyond_craftlines`
-- Required dependencies: Beyond Dimensions and JEI
+- Required dependencies: Beyond Dimensions 0.7.30 or newer and JEI (for all three Minecraft versions above)
 - Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. EMI currently has no 26.1.2 artifact, so that build intentionally provides a no-op bridge rather than claiming runtime support.
 
 This mod is focused exclusively on the ordering system: a JEI recipe-page entry point, an EMI-style recursive recipe tree, AE2/RS-style order confirmation, BD network resource extraction and crafting, vanilla and third-party machine recipe-type bindings, persistent order status and cancellation, and configurable Craftline Provisioners.

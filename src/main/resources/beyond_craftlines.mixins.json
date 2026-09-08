@@ -4,6 +4,7 @@
   "package": "com.amicbeam.beyondcraftlines.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
+    "bd.DimensionsNetGuiMixin",
     "emi.BoMPreferenceMixin",
     "emi.EmiRecipeScreenMixin",
     "jei.RecipeLayoutRelationsMixin"

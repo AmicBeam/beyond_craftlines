@@ -26,7 +26,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="beyonddimensions"
 mandatory=true
-versionRange="[0.7.27,)"
+versionRange="[0.7.30,)"
 ordering="AFTER"
 side="BOTH"
 

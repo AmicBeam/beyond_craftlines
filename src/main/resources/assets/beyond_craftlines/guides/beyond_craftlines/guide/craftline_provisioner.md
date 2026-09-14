@@ -63,3 +63,7 @@ A single device may have both a supply face and an extraction face. By default, 
 - Use **stored output plus pipes** when an external transport system should distribute inputs.
 - Use **wireless supply** when the provisioner should choose among several remote targets itself.
 - Add **request-time extraction** when the same provisioner should collect results from those devices only for requests it is serving.
+
+## Even Split
+
+The supply-mode button also offers **Even Split**. Each resource in each batch is divided among available supply targets. Remainders always favor earlier bindings, with no saved cursor. Capacity-limited shares are redistributed to other accepting targets; undeliverable resources stay in the provisioner. This splits outgoing amounts, not target inventories or complete recipe sets.

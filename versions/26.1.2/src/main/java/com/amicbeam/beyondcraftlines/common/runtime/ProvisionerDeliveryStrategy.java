@@ -4,7 +4,8 @@ public enum ProvisionerDeliveryStrategy
 {
     ROUND_ROBIN("gui.beyond_craftlines.provisioner.delivery.round_robin"),
     NEAREST_FIRST("gui.beyond_craftlines.provisioner.delivery.nearest"),
-    FARTHEST_FIRST("gui.beyond_craftlines.provisioner.delivery.farthest");
+    FARTHEST_FIRST("gui.beyond_craftlines.provisioner.delivery.farthest"),
+    EVEN_SPLIT("gui.beyond_craftlines.provisioner.delivery.even_split");
 
     private final String translationKey;
 

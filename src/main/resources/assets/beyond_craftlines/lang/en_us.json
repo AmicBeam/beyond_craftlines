@@ -56,6 +56,7 @@
   "gui.beyond_craftlines.provisioner.delivery.round_robin": "Round Robin",
   "gui.beyond_craftlines.provisioner.delivery.nearest": "Nearest First",
   "gui.beyond_craftlines.provisioner.delivery.farthest": "Farthest First",
+  "gui.beyond_craftlines.provisioner.delivery.even_split": "Even Split",
   "gui.beyond_craftlines.provisioner.group.item": "Items",
   "gui.beyond_craftlines.provisioner.group.fluid": "Fluids",
   "gui.beyond_craftlines.provisioner.group.chemical": "Chemicals",

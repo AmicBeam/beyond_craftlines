@@ -92,7 +92,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('player.registryAccess()', '')
             .replace('new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME', 'RecipeOrderSavedData::load, RecipeOrderSavedData::new, NAME')
             .replace('new Factory<>(BindingSavedData::new, BindingSavedData::load), NAME', 'BindingSavedData::load, BindingSavedData::new, NAME')
-            .replace('storage.getNet()', 'com.amicbeam.beyondcraftlines.compat.BeyondDimensionsCompat.networkFor(player, storage)')
+            // BD 0.7.30 exposes UnifiedStorage.getNet() on Forge too. Keep the open menu's
+            // network, which can differ from the player's primary network after sharing a save.
             .replace('DimensionsNet.getPrimaryNetFromPlayer(player)', 'DimensionsNet.getNetFromPlayer(player)')
             .replace('net.minecraftforge.fml.common.EventBusSubscriber', 'net.minecraftforge.fml.common.Mod.EventBusSubscriber')
             // BD overrides Screen.init: accept both the development and Forge runtime names.

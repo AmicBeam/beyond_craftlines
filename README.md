@@ -80,6 +80,8 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 ## 设计文档
 
+转交存档或加入共享网络后，从 BD 网络界面进入合成链时，订单、合成状态和监控面板状态使用当前打开的网络；从 JEI 直接进入时使用玩家主网络。授予管理员权限不会自动切换主网络，原供给器和机器仍需绑定到下单的网络。该规则适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge 和 26.1.2 / NeoForge。
+
 当前功能、架构、执行语义、配置与兼容边界统一记录在 [`docs/DESIGN.md`](docs/DESIGN.md)。旧的分散设计稿已经移除，文档只描述当前源码实际实现的内容。
 
 供给器配方确认 GUI 的人工验收步骤见 [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md)，其中使用 Create 工作盆同时对应搅拌和压块配方类型作为案例。

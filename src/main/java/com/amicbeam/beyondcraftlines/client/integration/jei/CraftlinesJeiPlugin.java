@@ -62,7 +62,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             {
                 ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
-                ResourceLocation craftingRecipe = serverCraftingRecipeId(recipeLayoutDrawable);
+                ResourceLocation craftingRecipe = serverRecipeId(recipeLayoutDrawable);
                 if (craftingRecipe != null)
                 {
                     var output = findOutput(recipeLayoutDrawable);
@@ -94,6 +94,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         JeiNetworkAvailabilityPayload.clientReceiver = payload -> {
             networkAvailability = payload.available()
                     ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
+            // Availability polls describe the player's network. An open tree already
+            // owns its menu's recipe scope, which may belong to a different network.
+            if (Minecraft.getInstance().screen instanceof
+                    com.amicbeam.beyondcraftlines.client.CraftlineOrderScreen) return;
             JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
             if (payload.available())
                 com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
@@ -300,7 +304,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             boolean exact = com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                     .exact(target, captured.output().key());
             if (exactOnly != exact) continue;
-            ResourceLocation serverRecipe = serverCraftingRecipeId(layout);
+            ResourceLocation serverRecipe = serverRecipeId(layout);
             if (serverRecipe != null)
             {
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -329,6 +333,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
     {
+        com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.refreshMetadata();
         long started = System.nanoTime();
         long deadline = System.nanoTime() + CLIENT_FRAME_BUDGET_NANOS;
         JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
@@ -406,8 +411,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         return intrinsic != null ? intrinsic : layout.getRecipeCategory().getRegistryName(layout.getRecipe());
     }
 
-    /** Real crafting recipes must keep their server id so SimulatedCrafting can execute them. */
-    private static <T> @Nullable ResourceLocation serverCraftingRecipeId(IRecipeLayoutDrawable<T> layout)
+    /** Native crafting, cooking, and workstation recipes keep their authoritative server id. */
+    private static <T> @Nullable ResourceLocation serverRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayed = layout.getRecipe();
         return JeiRecipeExecutionSource.usesServerRecipe(displayed)

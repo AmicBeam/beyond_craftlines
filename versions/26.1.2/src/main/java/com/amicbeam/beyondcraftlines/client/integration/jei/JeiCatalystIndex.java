@@ -93,6 +93,17 @@ public final class JeiCatalystIndex
         if (current != null) rebuild(current);
     }
 
+    /** Unchanged recipe-viewer metadata must not discard completed recipe layouts. */
+    public static void refreshIfCategoriesChanged()
+    {
+        IJeiRuntime current = runtime;
+        if (current == null) return;
+        var categories = current.getRecipeManager().createRecipeCategoryLookup()
+                .includeHidden().get().collect(java.util.stream.Collectors.toMap(
+                        category -> category.getRecipeType().getUid(), category -> category));
+        if (!categories.equals(CATEGORIES_BY_TYPE)) rebuild(current);
+    }
+
     public static void prewarmRecipeTypes(java.util.Collection<String> types)
     {
         Set<Identifier> parsed = knownRecipeTypes(types);

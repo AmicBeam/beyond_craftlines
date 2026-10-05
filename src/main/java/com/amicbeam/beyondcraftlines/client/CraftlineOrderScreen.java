@@ -2066,7 +2066,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             stock, target, count, defaultRecipesOnly, defaultIngredientsOnly, maxDepth, maxNodes,
                             fallbackSearchNanos, optimalSearch);
                     searchExhausted |= fallback.searchExhausted();
-                    if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
+                    if (proposal == null || com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome
+                            .prefersAlternative(proposal.outcome(), missingAmount(proposal.missing()),
+                                    fallback.outcome(), missingAmount(fallback.missing())))
                     {
                         proposal = fallback;
                         failure = null;
@@ -2075,7 +2077,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 catch (RuntimeException ignored) {}
                 fallbackSearchNanos = searchDeadline - System.nanoTime();
             }
-            if (!refreshSnapshotIfMissing && hasDefaults && fallbackSearchNanos > 0
+            // Automatically rendered choices are hints, not user pins. Retry without them
+            // when the initial tree picked a compression/decompression loop.
+            if (!refreshSnapshotIfMissing && (hasDefaults || !fixedTreeRecipes.isEmpty()
+                    || !fixedTreeIngredients.isEmpty()) && fallbackSearchNanos > 0
                     && (proposal == null || !proposal.craftable()))
             {
                 try
@@ -2084,7 +2089,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                             stock, target, count, manualRecipes, forcedIngredients, maxDepth, maxNodes,
                             fallbackSearchNanos, optimalSearch);
                     searchExhausted |= fallback.searchExhausted();
-                    if (proposal == null || missingAmount(fallback.missing()) <= missingAmount(proposal.missing()))
+                    if (proposal == null || com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome
+                            .prefersAlternative(proposal.outcome(), missingAmount(proposal.missing()),
+                                    fallback.outcome(), missingAmount(fallback.missing())))
                     {
                         proposal = fallback;
                         failure = null;

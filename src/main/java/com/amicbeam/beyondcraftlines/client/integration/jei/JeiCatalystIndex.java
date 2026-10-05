@@ -81,6 +81,17 @@ public final class JeiCatalystIndex
         if (current != null) rebuild(current);
     }
 
+    /** EMI publishes multiple managers while baking; unchanged JEI categories need no reindex. */
+    public static void refreshIfCategoriesChanged()
+    {
+        IJeiRuntime current = runtime;
+        if (current == null) return;
+        var categories = current.getRecipeManager().createRecipeCategoryLookup()
+                .includeHidden().get().collect(java.util.stream.Collectors.toMap(
+                        category -> category.getRecipeType().getUid(), category -> category));
+        if (!categories.equals(CATEGORIES_BY_TYPE)) rebuild(current);
+    }
+
     /** Prewarms each enabled JEI category once for the current runtime generation. */
     public static void prewarmRecipeTypes(java.util.Collection<String> types)
     {

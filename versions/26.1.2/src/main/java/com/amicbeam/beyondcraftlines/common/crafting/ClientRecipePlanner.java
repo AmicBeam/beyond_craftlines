@@ -98,7 +98,7 @@ public final class ClientRecipePlanner
         boolean exhausted = budget.exhausted();
         return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock,
                 exhausted, PlanningOutcome.completed(!state.missing.isEmpty(),
-                state.rootNoRecipe, state.cyclic, exhausted));
+                state.rootNoRecipe, state.cyclicDependencies > 0, exhausted));
     }
 
     private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
@@ -158,11 +158,10 @@ public final class ClientRecipePlanner
             }
             State best = null;
             Recipe bestRecipe = null;
-            State cyclicFallback=null;boolean triedCandidate=false;
+            State cyclicFallback=null;boolean foundViableCandidate = false;
             for (Recipe recipe : candidates)
             {
-                if(!PlanningBranches.shouldTryCandidate(triedCandidate,budget))break;
-                triedCandidate=true;
+                if(!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget))break;
                 State branch = state.copy();
                 Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
@@ -173,7 +172,12 @@ public final class ClientRecipePlanner
                     return attempted;
                 }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
                 branch=evaluated.state();
-                if(evaluated.cyclic()){if(cyclicFallback==null)cyclicFallback=branch;continue;}
+                if (evaluated.cyclic() || branch.cyclicDependencies > state.cyclicDependencies)
+                {
+                    if (cyclicFallback == null) cyclicFallback = branch;
+                    continue;
+                }
+                foundViableCandidate |= branch.missing.equals(state.missing);
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -229,15 +233,16 @@ public final class ClientRecipePlanner
 
         State best = null;
         String bestKey = null;
-        boolean triedCandidate=false;
+        boolean foundViableCandidate = false;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if(!PlanningBranches.shouldTryCandidate(triedCandidate,budget))break;
-            triedCandidate=true;
+            if(!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget))break;
             State branch = state.copy();
             try{if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
                     manualIngredients, depth, maxDepth, budget, variant)) continue;}
-            catch(PlanningCycleBranch.Cycle ignored){continue;}
+            catch (PlanningCycleBranch.Cycle ignored) { continue; }
+            if (branch.cyclicDependencies > state.cyclicDependencies) continue;
+            foundViableCandidate |= branch.missing.equals(state.missing);
             String key = variant.stream().map(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             if (best == null || compare(branch, recipe, best, recipe) < 0
@@ -356,7 +361,7 @@ public final class ClientRecipePlanner
     private static State rejectCyclicCandidate(State baseline, IStackKey<?> resource, long remainder)
     {
         State rejected = baseline.copy();
-        rejected.cyclic = true;
+        rejected.cyclicDependencies++;
         rejected.missing.merge(resource, remainder, SaturatingLongMath::add);
         return rejected;
     }
@@ -548,7 +553,7 @@ public final class ClientRecipePlanner
         private Map<String, Identifier> recipes;
         private Map<IngredientKey, String> ingredients;
         private boolean rootNoRecipe;
-        private boolean cyclic;
+        private int cyclicDependencies;
         private State(MatchingStock<IStackKey<?>, Identifier> stock,
                       Map<IStackKey<?>, Long> missing,
                       Map<IStackKey<?>, Long> reusableRequirements,
@@ -562,12 +567,12 @@ public final class ClientRecipePlanner
         { State result = new State(stock.copy(), new LinkedHashMap<>(missing),
                 new LinkedHashMap<>(reusableRequirements), new LinkedHashMap<>(usedStock), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients));
-            result.rootNoRecipe = rootNoRecipe; result.cyclic = cyclic; return result; }
+            result.rootNoRecipe = rootNoRecipe; result.cyclicDependencies = cyclicDependencies; return result; }
         private void replaceWith(State state)
         { stock = state.stock; missing = state.missing; reusableRequirements = state.reusableRequirements;
             usedStock = state.usedStock;
             steps = state.steps; recipes = state.recipes; ingredients = state.ingredients;
-            rootNoRecipe = state.rootNoRecipe; cyclic = state.cyclic; }
+            rootNoRecipe = state.rootNoRecipe; cyclicDependencies = state.cyclicDependencies; }
     }
 
     private static Identifier itemId(IStackKey<?> key)

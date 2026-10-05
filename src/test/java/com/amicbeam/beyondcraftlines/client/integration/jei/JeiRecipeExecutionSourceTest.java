@@ -13,7 +13,10 @@ final class JeiRecipeExecutionSourceTest
         assertTrue(JeiRecipeExecutionSource.usesServerRecipe("crafting"));
         assertTrue(JeiRecipeExecutionSource.usesServerRecipe("minecraft:smithing"));
         assertTrue(JeiRecipeExecutionSource.usesServerRecipe("minecraft:stonecutting"));
-        assertFalse(JeiRecipeExecutionSource.usesServerRecipe("smelting"));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("smelting"));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("blasting"));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("smoking"));
+        assertFalse(JeiRecipeExecutionSource.usesServerRecipe("mekanism:crushing"));
         assertFalse(JeiRecipeExecutionSource.usesServerRecipe("minecraft:crafting"));
     }
 }

@@ -19,6 +19,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
     exclude 'com/amicbeam/beyondcraftlines/common/event/CraftlinesEvents.java'
     exclude 'com/amicbeam/beyondcraftlines/common/block/CraftlineProvisionerBlock.java'
     exclude 'com/amicbeam/beyondcraftlines/client/integration/jade/CraftlinesJadePlugin.java'
+    exclude 'com/amicbeam/beyondcraftlines/client/BindingVisualBuffers.java'
     exclude 'com/amicbeam/beyondcraftlines/common/network/CraftlinesNetwork.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/CraftlineProvisionerBlockEntity.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceRegistry.java'

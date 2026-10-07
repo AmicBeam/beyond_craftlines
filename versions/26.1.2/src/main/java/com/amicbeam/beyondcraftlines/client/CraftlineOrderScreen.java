@@ -746,20 +746,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             current=JeiCatalystIndex.completedRecipeTypes(menu.availableFamilies());
             total=JeiCatalystIndex.totalRecipeTypes(menu.availableFamilies());
         }
-        else if (!menu.recipeIndexComplete())
+        else if (!menu.recipeIndexComplete() || planningCatalog == null && planningCatalogBuilder != null)
         {
-            current = menu.indexedRecipeCandidates();
-            total = menu.totalRecipeCandidates();
-        }
-        else if (planningCatalog == null && planningCatalogBuilder != null)
-        {
-            current=planningCatalogBuilder.completedRecipes();
-            total=planningCatalogBuilder.totalRecipes();
+            var progress = ClientPlanningCatalogWarmup.handle();
+            current = progress.progressCompleted();
+            total = progress.progressTotal();
         }
         else return;
         int left = treeLeft() + 5;
         int right = treeRight() - 5;
-        int filled = total <= 0 ? right - left : (int) ((long) (right - left) * current / total);
+        int width = Math.max(0, right - left);
+        int filled = total <= 0 ? 0 : (int) Math.max(0L, Math.min(width, (long) width * current / total));
         graphics.fill(left, treeBottom() - 34, right, treeBottom() - 30, 0xFF172638);
         graphics.fill(left, treeBottom() - 34, left + filled, treeBottom() - 30, BD_CYAN);
     }

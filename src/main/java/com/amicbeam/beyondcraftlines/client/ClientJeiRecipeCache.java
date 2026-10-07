@@ -55,7 +55,7 @@ public final class ClientJeiRecipeCache
             if (now >= nextProgress)
             {
                 LOGGER.info("{} client JEI cache progress stage=read recipes={}/{}", PREFIX,
-                        load.restoredRecipes, load.totalRecipes);
+                        load.processedRecipes, load.totalRecipes);
                 nextProgress = now + 5_000_000_000L;
             }
             return null;
@@ -66,6 +66,8 @@ public final class ClientJeiRecipeCache
         return load.result;
     }
 
+    public static synchronized int completedRecipes() { return load == null ? 0 : load.processedRecipes; }
+    public static synchronized int totalRecipes() { return load == null ? 0 : load.totalRecipes; }
     public static synchronized boolean loading() { return load != null && !load.finished; }
 
     public static synchronized void reset()
@@ -222,6 +224,7 @@ public final class ClientJeiRecipeCache
         volatile boolean failed;
         volatile boolean cancelled;
         volatile int restoredRecipes;
+        volatile int processedRecipes;
         volatile int totalRecipes;
         Future<?> future;
         private final Map<IStackKey<?>, IStackKey<?>> keys = new HashMap<>();
@@ -304,6 +307,7 @@ public final class ClientJeiRecipeCache
                             { cancelled = true; return; }
                             restoredRecipes++;
                         }
+                        processedRecipes = i + 1;
                     }
                     if (cancelled) return;
                     if (input.read() != -1) throw new IOException("trailing JEI cache data");

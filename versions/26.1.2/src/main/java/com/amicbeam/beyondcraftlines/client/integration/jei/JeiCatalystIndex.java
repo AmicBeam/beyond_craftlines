@@ -44,6 +44,9 @@ public final class JeiCatalystIndex
     private static boolean sourcesStarted;
     private static boolean persistentReady;
     private static long sourceStartedNanos;
+    private static long scannedSourceRecipes;
+    private static long nextSourceMetricsNanos;
+    private static long nextLayoutMetricsNanos;
     private static boolean recipesDirty;
 
     private JeiCatalystIndex() {}
@@ -232,6 +235,7 @@ public final class JeiCatalystIndex
             }
             if (processed) remaining--;
         }
+        logLayoutProgress();
         if (TYPE_QUEUE.isEmpty() && recipesDirty)
         {
             recipesDirty = false;
@@ -246,6 +250,27 @@ public final class JeiCatalystIndex
         categorySources = new HashMap<>();
         sourcesStarted = false;
         persistentReady = false;
+        scannedSourceRecipes = 0L;
+        nextSourceMetricsNanos = 0L;
+        nextLayoutMetricsNanos = 0L;
+    }
+
+    public static boolean checkingRecipeSources()
+    { return !persistentReady && (!sourcesStarted || !SOURCE_QUEUE.isEmpty()); }
+    public static long scannedSourceRecipes() { return scannedSourceRecipes; }
+    public static int completedSourceTypes()
+    { return sourcesStarted ? CATEGORIES_BY_TYPE.size() - SOURCE_QUEUE.size() : 0; }
+    public static int totalSourceTypes() { return CATEGORIES_BY_TYPE.size(); }
+
+    private static void logLayoutProgress()
+    {
+        long now = System.nanoTime();
+        if (TYPE_QUEUE.isEmpty() || now < nextLayoutMetricsNanos) return;
+        nextLayoutMetricsNanos = now + 5_000_000_000L;
+        SearchTask task = TYPE_QUEUE.peekFirst();
+        LOGGER.info("{} client JEI materialization progress pendingTypes={} currentType={} recipesInType={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                TYPE_QUEUE.size(), task.recipeType(), task.recipeOrdinal);
     }
 
     /** Cheap source enumeration runs on the render thread; no drawable is created here. */
@@ -272,7 +297,19 @@ public final class JeiCatalystIndex
                 if (!source.failed) categorySources.put(source.type.toString(), java.util.List.copyOf(source.tokens));
             }
         }
-        if (!SOURCE_QUEUE.isEmpty()) return false;
+        if (!SOURCE_QUEUE.isEmpty())
+        {
+            long now = System.nanoTime();
+            if (now >= nextSourceMetricsNanos)
+            {
+                nextSourceMetricsNanos = now + 5_000_000_000L;
+                LOGGER.info("{} client JEI source scan progress categories={}/{} scannedRecipes={} currentType={} elapsedMs={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        completedSourceTypes(), totalSourceTypes(), scannedSourceRecipes,
+                        SOURCE_QUEUE.peekFirst().type, (now - sourceStartedNanos) / 1_000_000L);
+            }
+            return false;
+        }
         com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.Restored restored =
                 com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.prepare(categorySources);
         if (restored == null) return false;
@@ -322,14 +359,19 @@ public final class JeiCatalystIndex
                         .includeHidden().get().iterator();
                 if (!recipes.hasNext()) { complete = true; return; }
                 Object recipe = recipes.next();
+                scannedSourceRecipes++;
                 rememberServerRecipe(category, recipe);
                 Object id = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
                         ? holder.id().identifier() : category.getIdentifier(recipe);
-                String sourceClass = java.lang.reflect.Proxy.isProxyClass(recipe.getClass())
-                        ? java.util.Arrays.stream(recipe.getClass().getInterfaces()).map(Class::getName)
-                                .sorted().collect(java.util.stream.Collectors.joining(","))
-                        : recipe.getClass().getName();
-                tokens.add(id == null ? "class:" + sourceClass : "id:" + id);
+                if (id != null) tokens.add("id:" + id);
+                else
+                {
+                    String sourceClass = java.lang.reflect.Proxy.isProxyClass(recipe.getClass())
+                            ? java.util.Arrays.stream(recipe.getClass().getInterfaces()).map(Class::getName)
+                                    .sorted().collect(java.util.stream.Collectors.joining(","))
+                            : recipe.getClass().getName();
+                    tokens.add("class:" + sourceClass);
+                }
             }
             catch (RuntimeException | LinkageError exception)
             {

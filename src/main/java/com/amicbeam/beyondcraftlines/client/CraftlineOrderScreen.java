@@ -417,11 +417,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     { return indexingRecipesText(); }
 
     private String jeiTypeIndexingText()
-    { return Component.translatable(ClientJeiRecipeCache.loading()
-            ? "gui.beyond_craftlines.loading_jei_cache"
-            : CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get()
-                    ? "gui.beyond_craftlines.indexing_all_jei_types"
-                    : "gui.beyond_craftlines.indexing_jei_types").getString(); }
+    {
+        if (JeiCatalystIndex.checkingRecipeSources())
+            return Component.translatable("gui.beyond_craftlines.checking_jei_sources",
+                    JeiCatalystIndex.scannedSourceRecipes()).getString();
+        if (ClientJeiRecipeCache.loading())
+            return Component.translatable("gui.beyond_craftlines.loading_jei_cache",
+                    ClientJeiRecipeCache.completedRecipes(), ClientJeiRecipeCache.totalRecipes()).getString();
+        return Component.translatable(CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get()
+                ? "gui.beyond_craftlines.indexing_all_jei_types"
+                : "gui.beyond_craftlines.indexing_jei_types").getString();
+    }
 
     private void finishPlanningCatalogPreparation()
     {
@@ -795,8 +801,21 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         int total;
         if (!JeiCatalystIndex.recipeTypesReady(menu.availableFamilies()))
         {
-            current = JeiCatalystIndex.completedRecipeTypes(menu.availableFamilies());
-            total = JeiCatalystIndex.totalRecipeTypes(menu.availableFamilies());
+            if (JeiCatalystIndex.checkingRecipeSources())
+            {
+                current = JeiCatalystIndex.completedSourceTypes();
+                total = JeiCatalystIndex.totalSourceTypes();
+            }
+            else if (ClientJeiRecipeCache.loading())
+            {
+                current = ClientJeiRecipeCache.completedRecipes();
+                total = ClientJeiRecipeCache.totalRecipes();
+            }
+            else
+            {
+                current = JeiCatalystIndex.completedRecipeTypes(menu.availableFamilies());
+                total = JeiCatalystIndex.totalRecipeTypes(menu.availableFamilies());
+            }
         }
         else if (!menu.recipeIndexComplete() || planningCatalog == null && planningCatalogBuilder != null)
         {

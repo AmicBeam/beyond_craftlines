@@ -251,6 +251,8 @@
 4. 使用含概率输入、概率输出、多项输出或非空流体输入／输出的同家族测试配方，确认此兜底不接纳；没有原生声明的任意模组类型仍不被放行。
 5. `/craftlines reload` 后重新捕获并保存，再进入世界时复用目录；声明通过现有 IO profile 同步，客户端和服务端采用相同规则。
 
+6. 仅使用 JEI 时，确认 ATM 之星的两种真实祭坛方案各出现一次，没有原生 ID 与虚拟 ID 的两套重复候选；JEI 配方页下单按钮保持原生配方 ID。切回 JEI＋EMI 后仍为同一候选集合；未声明原生兜底的其它机器仍使用既有 JEI 描述。
+
 上游依据：[MI 原生配方公开字段与原版输入输出 API](https://github.com/AztechMC/Modern-Industrialization/blob/1.21.x/src/main/java/aztech/modern_industrialization/machines/recipe/MachineRecipe.java)。
 
 ## 7. 取消已启用类型

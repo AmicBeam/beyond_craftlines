@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class JeiRecipeExecutionSourceTest
 {
+    @Test void declaredNativeMachineUsesOneServerIdentityInBothViewerModes()
+    {
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("modern_industrialization:star_altar", true));
+        assertFalse(JeiRecipeExecutionSource.usesServerRecipe("modern_industrialization:star_altar", false));
+        assertFalse(JeiRecipeExecutionSource.usesServerRecipe("mekanism:crushing", false));
+        assertTrue(JeiRecipeExecutionSource.usesServerRecipe("smelting", false));
+    }
+
     @Test
     void keepsNetworkExecutedRecipesOnTheirServerIdentity()
     {

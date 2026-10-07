@@ -175,9 +175,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
                                     .forLevel(player.level()).stream()
                                     .filter(holder -> holder.id().identifier().equals(requestedRecipe))
-                                    .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
-                                            .VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
-                                                    RecipePlanningService.family(holder))),
+                                    .filter(holder -> RecipePlanningService.isNativeExecutable(holder)),
                             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
                                     .find(requestedRecipe).stream()).limit(1).toList();
             var recipe = candidates.stream()

@@ -342,6 +342,7 @@ public final class ClientPlanningCatalogWarmup
         private final java.util.ArrayList<RecipeHolder<?>> holders = new java.util.ArrayList<>();
         private final java.util.ArrayList<String> holderIds = new java.util.ArrayList<>();
         private volatile int scanned;
+        private int nativeFallbacks;
         private volatile boolean complete;
 
         private RecipeSnapshotBuilder(Level level, Set<String> availableFamilies)
@@ -387,10 +388,17 @@ public final class ClientPlanningCatalogWarmup
                 scanned++;
                 family = RecipePlanningService.family(holder);
                 boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
+                boolean nativeFallback = !virtual && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                        .allowsNativeFallback(holder.value());
                 if (RecipePlanningService.supported(holder)
-                        && RecipeIndexVisibility.includesPlanningRecipe(
-                                family, virtual, availableFamilies))
+                        && RecipeIndexVisibility.includesPlanningRecipe(family, virtual, nativeFallback, availableFamilies))
+                {
                     selected.putIfAbsent(holder.id().toString(), holder);
+                    if (nativeFallback && nativeFallbacks++ < 16)
+                        LOGGER.info("{} client native fallback indexed recipe={} family={} recipeClass={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                holder.id(), family, holder.value().getClass().getName());
+                }
             }
             finally
             {

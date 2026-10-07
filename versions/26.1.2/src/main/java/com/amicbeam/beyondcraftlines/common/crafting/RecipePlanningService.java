@@ -159,8 +159,7 @@ public final class RecipePlanningService
             {
                 RecipeHolder<?> holder = RecipeCatalog.forLevel(level).stream()
                         .filter(candidate -> candidate.id().identifier().equals(id))
-                        .filter(candidate -> VanillaProvisionerRecipeTypes
-                                .isPotentialNetworkExecutable(family(candidate)))
+                        .filter(candidate -> isNativeExecutable(candidate))
                         .findFirst().orElseGet(() -> VirtualProvisionerRecipeRegistry.find(id).orElse(null));
                 if (holder != null) selected.add(holder);
             }
@@ -600,6 +599,13 @@ public final class RecipePlanningService
             usedStock = selected.usedStock;
             reusableRequirements = selected.reusableRequirements;
         }
+    }
+
+    /** Native machine ids need an explicit structural profile, independently of viewer categories. */
+    public static boolean isNativeExecutable(RecipeHolder<?> holder)
+    {
+        return VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family(holder))
+                || RecipeIoProfileRegistry.allowsNativeFallback(holder.value());
     }
 
     public static boolean supported(RecipeHolder<?> holder)

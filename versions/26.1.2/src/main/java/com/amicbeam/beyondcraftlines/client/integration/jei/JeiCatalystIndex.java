@@ -88,7 +88,8 @@ public final class JeiCatalystIndex
         TITLES_BY_TYPE = Map.copyOf(titles);
         CATEGORIES_BY_TYPE = Map.copyOf(categories);
         allPlanningFamilies = com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalogScope.fullFamilies(
-                categories.keySet().stream().map(Object::toString).toList());
+                categories.keySet().stream().map(Object::toString).toList(),
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.nativeFallbackFamilies());
         INPUT_GROUPS_BY_TYPE = Map.of();
         enqueueRecipeTypes(TYPE_STATE.activate(previousActiveTypes.stream()
                 .filter(CATEGORIES_BY_TYPE::containsKey).toList()));

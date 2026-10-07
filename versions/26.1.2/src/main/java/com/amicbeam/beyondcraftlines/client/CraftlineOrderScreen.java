@@ -304,11 +304,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 .recipeIdsForOutput(menu.initialTarget());
         var available = menu.recipesForResourceOutput(menu.initialTarget());
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} client target candidates network={} target={} indexed={} available={} familyIds={} candidateRecipes={}",
+                "{} client target candidates network={} target={} indexed={} available={} familyIds={} indexedRecipes={} candidateRecipes={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 menu.networkId(), com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics
                         .resource(menu.initialTarget()), indexed.size(), available.size(),
-                menu.availableFamilies().stream().sorted().limit(128).toList(),
+                menu.availableFamilies().stream().sorted().limit(128).toList(), indexed.stream().limit(16).toList(),
                 available.stream().limit(16).map(holder -> holder.id().identifier().toString() + "@"
                         + com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.family(holder)).toList());
     }

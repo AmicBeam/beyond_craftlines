@@ -14,11 +14,15 @@ public final class RecipeCatalogScope
     { return preloadAll ? fullFamilies : Set.copyOf(networkFamilies); }
 
     public static Set<String> fullFamilies(Collection<String> jeiCategories)
+    { return fullFamilies(jeiCategories, Set.of()); }
+
+    public static Set<String> fullFamilies(Collection<String> jeiCategories, Collection<String> nativeFamilies)
     {
         LinkedHashSet<String> families = new LinkedHashSet<>(Set.of(
                 "crafting", "smelting", "blasting", "smoking",
                 "minecraft:smithing", "minecraft:stonecutting"));
         families.addAll(jeiCategories);
+        families.addAll(nativeFamilies);
         jeiCategories.stream().map(VanillaProvisionerRecipeTypes::runtimeFamily).forEach(families::add);
         return Set.copyOf(families);
     }

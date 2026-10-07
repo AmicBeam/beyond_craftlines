@@ -36,6 +36,24 @@ public final class RecipeIoProfileRegistry
 
     private RecipeIoProfileRegistry() {}
 
+    public static Set<String> nativeFallbackFamilies()
+    {
+        return entries.stream().map(Entry::profile).filter(profile -> profile.nativeFallback().active())
+                .flatMap(profile -> profile.recipeTypes().stream()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    public static boolean allowsNativeFallback(Recipe<?> recipe)
+    { return recipe != null && allowsNativeFallback(recipe, RecipePlanningService.family(recipe.getType())); }
+
+    static boolean allowsNativeFallback(Object recipe, String family)
+    {
+        if (recipe == null || family == null) return false;
+        return entries.stream().map(Entry::profile).filter(profile -> !profile.recipeTypes().isEmpty()
+                        && profile.recipeTypes().contains(family) && profile.nativeFallback().active()
+                        && matchesClass(recipe, profile.recipeClasses(), profile.recipeClassPrefixes()))
+                .anyMatch(profile -> profile.nativeFallback().matches(recipe));
+    }
+
     public static List<String> inputMembers(Object recipe)
     { return resolved(recipe).inputFields(); }
 
@@ -216,7 +234,8 @@ public final class RecipeIoProfileRegistry
                 dynamicOutput, representationFields, structuralWrappers, outputWrappers,
                 countSemantics, outputMappings, countedWrappers, directions, multipliers,
                 RecipeOutputProbabilities.parse(object.getAsJsonArray("output_probability_rules")),
-                strings(object.getAsJsonArray("ignored_output_fields"), MEMBER_NAME, 32));
+                strings(object.getAsJsonArray("ignored_output_fields"), MEMBER_NAME, 32),
+                NativeRecipeFallbackPolicy.parse(object.getAsJsonObject("native_recipe_fallback")));
     }
 
     private static ResolvedProfile resolved(Object recipe)
@@ -523,7 +542,8 @@ public final class RecipeIoProfileRegistry
                           Map<String, InputCountSemantics> inputCountSemantics,
                           List<OutputMapping> outputMappings, List<CountedWrapper> countedWrappers,
                           List<DirectionRule> directions, List<MultiplierRule> multipliers,
-                          List<RecipeOutputProbabilities.Rule> outputProbabilityRules, Set<String> ignoredOutputFields)
+                          List<RecipeOutputProbabilities.Rule> outputProbabilityRules, Set<String> ignoredOutputFields,
+                          NativeRecipeFallbackPolicy nativeFallback)
     {
         boolean scoped()
         { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty()

@@ -241,6 +241,18 @@
 
 上游依据：[JEI 1.21.1 的布局构造返回值](https://github.com/mezz/JustEnoughItems/blob/1.21.1/Library/src/main/java/mezz/jei/library/gui/recipes/layout/builder/RecipeLayoutBuilder.java)、[ATM10 官方星祭坛配方脚本](https://github.com/AllTheMods/ATM-10/blob/main/kubejs/server_scripts/modpack/runic_multis/recipes/star_altar.js)。
 
+## 6.9 原生 EMI 查看器的星祭坛兜底
+
+通用声明／权限逻辑覆盖三个支持版本；下列 ATM10 自定义家族仅在真实注册该家族的整合包中生效，不假设其它版本安装了 MI 或存在同名机器。
+
+1. 在 ATM10 8.1 的 JEI＋EMI 环境启用 `modern_industrialization:star_altar`，等待目录完成。确认 `client native fallback indexed` 包含真实 `modern_industrialization:kjs/...` 配方 ID，`client target candidates` 的 `available` 包含祭坛候选而非只有星块拆解。
+2. 展开 ATM 之星，核对 28、15、2 等材料数量及附魔／命名组件；缺料时仍显示祭坛分支。服务端固定链必须重新读取同一个原生配方 ID，网络供给器仍负责真实投料和产物回收。
+3. 取消祭坛类型或切换到没有该端点的网络，确认原生候选被过滤且服务端不能绕过绑定检查。
+4. 使用含概率输入、概率输出、多项输出或非空流体输入／输出的同家族测试配方，确认此兜底不接纳；没有原生声明的任意模组类型仍不被放行。
+5. `/craftlines reload` 后重新捕获并保存，再进入世界时复用目录；声明通过现有 IO profile 同步，客户端和服务端采用相同规则。
+
+上游依据：[MI 原生配方公开字段与原版输入输出 API](https://github.com/AztechMC/Modern-Industrialization/blob/1.21.x/src/main/java/aztech/modern_industrialization/machines/recipe/MachineRecipe.java)。
+
 ## 7. 取消已启用类型
 
 1. 在 GUI 中取消勾选“搅拌”，只保留“压块”。

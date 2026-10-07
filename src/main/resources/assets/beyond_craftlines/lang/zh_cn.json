@@ -295,5 +295,9 @@
   "config.beyond_craftlines.dashboard_check_interval_ticks": "仪表盘检查间隔",
   "config.beyond_craftlines.max_active_automatic_orders_per_network": "每网络自动订单上限",
   "config.beyond_craftlines.max_dashboard_recipe_bytes": "仪表盘配方数据长度上限",
-  "config.beyond_craftlines.max_dashboard_recipe_choices": "仪表盘配方选择条目上限"
+  "config.beyond_craftlines.max_dashboard_recipe_choices": "仪表盘配方选择条目上限",
+  "command.beyond_craftlines.reload.no_world": "请先进入世界。",
+  "command.beyond_craftlines.reload.success": "已清除当前世界或服务器的配方缓存，将重新加载当前网络的配方。",
+  "command.beyond_craftlines.reload.failed": "无法清除配方缓存，请查看日志。",
+  "gui.beyond_craftlines.loading_recipe_cache": "正在读取配方缓存：%s/%s"
 }

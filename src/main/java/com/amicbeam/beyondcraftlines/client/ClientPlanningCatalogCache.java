@@ -20,9 +20,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -37,10 +34,8 @@ import java.util.zip.GZIPOutputStream;
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
-    static final int VERSION = 3;
-    // Recipe IDs do not describe KubeJS recipes, tags, profiles, or the connected server.
-    // Keep disk reuse within one verified resource session until a full content digest is available.
-    private static volatile String resourceSession = java.util.UUID.randomUUID().toString();
+    static final int VERSION = 4;
+    // Stable across logins. Same-ID content changes are explicitly refreshed with /craftlines reload.
     private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
     private static final long MAX_TOTAL_NBT_BYTES = 1024L * 1024L * 1024L;
     private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
@@ -60,8 +55,13 @@ final class ClientPlanningCatalogCache
 
     private ClientPlanningCatalogCache() {}
 
-    static void invalidateResources()
-    { resourceSession = java.util.UUID.randomUUID().toString(); }
+    static void invalidateDisk() throws IOException
+    { invalidate(path()); }
+
+    static void invalidate(Path cachePath) throws IOException
+    {
+        PlanningCatalogCacheFiles.invalidate(cachePath);
+    }
 
     static LoadJob loadAsync(List<String> holderIds, long generation)
     { return loadAsync(path(), holderIds, generation); }
@@ -84,7 +84,9 @@ final class ClientPlanningCatalogCache
     {
         if (!cacheable(catalog)) return;
         String fingerprint = fingerprint(holderIds);
-        try { IO.execute(() -> write(level, fingerprint, catalog)); }
+        Path cachePath = path();
+        long revision = PlanningCatalogCacheFiles.revision(cachePath);
+        try { IO.execute(() -> write(level, cachePath, revision, fingerprint, catalog)); }
         catch (RejectedExecutionException exception)
         { LOGGER.warn("{} client planning cache save skipped because the bounded I/O queue is full",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX); }
@@ -108,9 +110,9 @@ final class ClientPlanningCatalogCache
         return true;
     }
 
-    private static void write(Level level, String fingerprint, ClientRecipePlanner.Catalog catalog)
+    private static void write(Level level, Path path, long revision, String fingerprint,
+                              ClientRecipePlanner.Catalog catalog)
     {
-        Path path = path();
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
         {
@@ -124,8 +126,7 @@ final class ClientPlanningCatalogCache
                 output.writeInt(catalog.recipes().size());
                 for (ClientRecipePlanner.Recipe recipe : catalog.recipes()) writeRecipe(output, level, recipe);
             }
-            if (Files.size(temporary) > MAX_FILE_BYTES) Files.deleteIfExists(temporary);
-            else moveReplacing(temporary, path);
+            PlanningCatalogCacheFiles.install(path, temporary, revision, MAX_FILE_BYTES);
         }
         catch (IOException | RuntimeException | LinkageError exception)
         {
@@ -244,31 +245,22 @@ final class ClientPlanningCatalogCache
     }
 
     static String fingerprint(List<String> holderIds)
-    {
-        try
-        {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            digest.update(resourceSession.getBytes(StandardCharsets.UTF_8));
-            holderIds.forEach(id -> {
-                digest.update(id.getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) 0);
-            });
-            return java.util.HexFormat.of().formatHex(digest.digest());
-        }
-        catch (NoSuchAlgorithmException impossible)
-        { throw new IllegalStateException(impossible); }
-    }
+    { return PlanningCatalogCacheIdentity.fingerprint(holderIds); }
 
     private static Path path()
-    { return Minecraft.getInstance().gameDirectory.toPath().resolve("config")
-            .resolve("beyond_craftlines-planning-catalog-v3.dat"); }
-
-    private static void moveReplacing(Path source, Path target) throws IOException
     {
-        try { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
-        catch (java.nio.file.AtomicMoveNotSupportedException ignored)
-        { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
+        Minecraft minecraft = Minecraft.getInstance();
+        var server = minecraft.getSingleplayerServer();
+        var remote = minecraft.getCurrentServer();
+        String scope = server != null ? "world:" + server.getWorldPath(
+                net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize()
+                : "server:" + (remote != null ? remote.ip : "unknown");
+        return cachePath(minecraft.gameDirectory.toPath(),
+                net.minecraft.SharedConstants.getCurrentVersion().getName(), scope);
     }
+
+    static Path cachePath(Path gameDirectory, String gameVersion, String scope)
+    { return PlanningCatalogCacheIdentity.cachePath(gameDirectory, gameVersion, scope); }
 
     static final class LoadJob
     {

@@ -348,7 +348,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int completed=planningCatalogBuilder==null?0:planningCatalogBuilder.completedRecipes();
         int total=planningCatalogBuilder==null?0:planningCatalogBuilder.totalRecipes();
-        return Component.translatable("gui.beyond_craftlines.capturing_recipes",
+        return Component.translatable(planningCatalogBuilder != null && planningCatalogBuilder.loadingCache()
+                ? "gui.beyond_craftlines.loading_recipe_cache" : "gui.beyond_craftlines.capturing_recipes",
                 completed,total).getString();
     }
 
@@ -356,7 +357,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private String recipeLookupIndexingText()
     {
-        return Component.translatable("gui.beyond_craftlines.indexing_recipes",
+        return Component.translatable(ClientPlanningCatalogWarmup.handle().loadingCache()
+                ? "gui.beyond_craftlines.loading_recipe_cache" : "gui.beyond_craftlines.indexing_recipes",
                 menu.indexedRecipeCandidates(), menu.totalRecipeCandidates()).getString();
     }
 

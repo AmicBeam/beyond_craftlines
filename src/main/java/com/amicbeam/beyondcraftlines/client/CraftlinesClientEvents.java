@@ -28,6 +28,7 @@ import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -100,6 +101,9 @@ public final class CraftlinesClientEvents
     public static final class GameBus
     {
         private static PendingBoundConfig pendingBoundConfig;
+
+        @SubscribeEvent public static void registerCommands(RegisterClientCommandsEvent event)
+        { ClientRecipeCacheCommands.register(event.getDispatcher()); }
 
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
         {

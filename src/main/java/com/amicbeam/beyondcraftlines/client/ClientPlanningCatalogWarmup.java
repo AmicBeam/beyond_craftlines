@@ -210,8 +210,16 @@ public final class ClientPlanningCatalogWarmup
 
     public static synchronized void invalidate()
     {
-        ClientPlanningCatalogCache.invalidateResources();
         invalidateCapture();
+    }
+
+    /** Explicitly discards the persistent catalog as well as any in-flight capture. */
+    public static synchronized void reload() throws java.io.IOException
+    {
+        ClientPlanningCatalogCache.invalidateDisk();
+        invalidateCapture();
+        RecipePlanningService.clearRecipeCache();
+        JeiCatalystIndex.refresh();
     }
 
     /** A recipe sync can change contents without changing any IDs. */
@@ -222,7 +230,6 @@ public final class ClientPlanningCatalogWarmup
 
     public static synchronized void clear()
     {
-        ClientPlanningCatalogCache.invalidateResources();
         requested = false;
         families = Set.of();
         invalidateCapture();
@@ -388,6 +395,7 @@ public final class ClientPlanningCatalogWarmup
             if (level != null) ClientPlanningCatalogWarmup.advance(level, timeBudgetNanos);
         }
         public boolean complete() { return ClientPlanningCatalogWarmup.complete(); }
+        public boolean loadingCache() { return loadJob != null && !loadJob.terminalWithoutCatalog(); }
         public ClientRecipePlanner.Catalog catalog()
         {
             if (!complete()) throw new IllegalStateException("planning catalog is not ready");

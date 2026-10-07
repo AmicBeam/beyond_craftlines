@@ -295,5 +295,9 @@
   "config.beyond_craftlines.dashboard_check_interval_ticks": "Dashboard check interval",
   "config.beyond_craftlines.max_active_automatic_orders_per_network": "Automatic orders per network",
   "config.beyond_craftlines.max_dashboard_recipe_bytes": "Dashboard recipe data limit",
-  "config.beyond_craftlines.max_dashboard_recipe_choices": "Dashboard recipe choice limit"
+  "config.beyond_craftlines.max_dashboard_recipe_choices": "Dashboard recipe choice limit",
+  "command.beyond_craftlines.reload.no_world": "Enter a world first.",
+  "command.beyond_craftlines.reload.success": "Recipe cache cleared for this world or server. Recipes for the current network will be reloaded.",
+  "command.beyond_craftlines.reload.failed": "Unable to clear the recipe cache. Check the log.",
+  "gui.beyond_craftlines.loading_recipe_cache": "Loading recipe cache: %s/%s"
 }

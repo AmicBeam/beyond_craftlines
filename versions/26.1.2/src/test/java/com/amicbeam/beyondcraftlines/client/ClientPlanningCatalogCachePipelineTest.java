@@ -59,7 +59,7 @@ final class ClientPlanningCatalogCachePipelineTest
         assertTrue(cancelled.terminalWithoutCatalog());
         assertEquals("cancelled", cancelled.stateName());
     }
-    @Test void unchangedRecipeIdsDoNotReuseAPreviousResourceSession() throws Exception
+    @Test void unchangedRecipeIdsReuseAfterMemoryInvalidation() throws Exception
     {
         List<String> ids = List.of("pack:changed_recipe");
         Path cache = directory.resolve("stale.dat");
@@ -73,14 +73,41 @@ final class ClientPlanningCatalogCachePipelineTest
             output.write(fingerprint);
             output.writeInt(0);
         }
-        ClientPlanningCatalogCache.invalidateResources();
-        assertNotEquals(old, ClientPlanningCatalogCache.fingerprint(ids));
-        var miss = ClientPlanningCatalogCache.loadAsync(cache, ids, 12L);
+        ClientPlanningCatalogWarmup.invalidate();
+        assertEquals(old, ClientPlanningCatalogCache.fingerprint(ids));
+        var hit = ClientPlanningCatalogCache.loadAsync(cache, ids, 12L);
         assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
-            while (!miss.terminalWithoutCatalog()) Thread.sleep(1L);
+            while (!hit.complete() && !hit.terminalWithoutCatalog())
+            {
+                hit.advance(null, 1_000_000L);
+                Thread.sleep(1L);
+            }
         });
-        assertEquals("miss", miss.stateName());
-        assertFalse(miss.complete());
+        assertTrue(hit.complete());
+
+        var changedIds = ClientPlanningCatalogCache.loadAsync(cache, List.of("pack:other_recipe"), 13L);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            while (!changedIds.terminalWithoutCatalog()) Thread.sleep(1L);
+        });
+        assertEquals("miss", changedIds.stateName());
+
+        ClientPlanningCatalogCache.invalidate(cache);
+        assertFalse(Files.exists(cache));
+        var reloading = ClientPlanningCatalogCache.loadAsync(cache, ids, 14L);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            while (!reloading.terminalWithoutCatalog()) Thread.sleep(1L);
+        });
+        assertEquals("miss", reloading.stateName());
+    }
+
+    @Test void separatesWorldsServersAndMinecraftVersions()
+    {
+        Path first = ClientPlanningCatalogCache.cachePath(directory, "26.1.2", "world:first");
+        assertEquals(first, ClientPlanningCatalogCache.cachePath(directory, "26.1.2", "world:first"));
+        assertNotEquals(first, ClientPlanningCatalogCache.cachePath(directory, "26.1.2", "world:second"));
+        assertNotEquals(first, ClientPlanningCatalogCache.cachePath(directory, "26.1.2", "server:first"));
+        assertNotEquals(first, ClientPlanningCatalogCache.cachePath(directory, "1.21.1", "world:first"));
+        assertTrue(first.startsWith(directory));
     }
 
 }

@@ -13,12 +13,16 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     from '../../src/main/java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogCache.java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogWarmup.java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientRecipeCacheCommands.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheIdentity.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheFiles.java'
     into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
     filteringCharset = 'UTF-8'
     filter { line -> line
             .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
             .replace('ResourceLocation', 'Identifier')
             .replace('level.getRecipeManager()', 'level')
+            .replace('SharedConstants.getCurrentVersion().getName()', 'SharedConstants.getCurrentVersion().name()')
     }
 }
 sourceSets.main.java.srcDir preparePlanningCatalogCache

@@ -112,6 +112,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingIn()
     {
+        JeiCatalystIndex.refresh();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
@@ -123,6 +124,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
+        com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.reset();
     }
 
     public static boolean showRecipesFor(ItemStack stack)

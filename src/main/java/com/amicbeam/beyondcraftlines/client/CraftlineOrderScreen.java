@@ -404,11 +404,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private String indexingRecipesText()
     {
-        int completed = planningCatalogBuilder == null ? 0 : planningCatalogBuilder.completedRecipes();
-        int total = planningCatalogBuilder == null ? 0 : planningCatalogBuilder.totalRecipes();
-        return Component.translatable(planningCatalogBuilder != null && planningCatalogBuilder.loadingCache()
-                ? "gui.beyond_craftlines.loading_recipe_cache" : "gui.beyond_craftlines.capturing_recipes",
-                completed, total).getString();
+        var progress = ClientPlanningCatalogWarmup.handle();
+        return Component.translatable(progress.progressTranslationKey(),
+                progress.progressCompleted(), progress.progressTotal()).getString();
     }
 
     private String planningText()
@@ -416,14 +414,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             ? "gui.beyond_craftlines.planning_tree" : "gui.beyond_craftlines.validating_tree").getString(); }
 
     private String recipeLookupIndexingText()
-    {
-        return Component.translatable(ClientPlanningCatalogWarmup.handle().loadingCache()
-                ? "gui.beyond_craftlines.loading_recipe_cache" : "gui.beyond_craftlines.indexing_recipes",
-                menu.indexedRecipeCandidates(), menu.totalRecipeCandidates()).getString();
-    }
+    { return indexingRecipesText(); }
 
     private String jeiTypeIndexingText()
-    { return Component.translatable("gui.beyond_craftlines.indexing_jei_types").getString(); }
+    { return Component.translatable(ClientJeiRecipeCache.loading()
+            ? "gui.beyond_craftlines.loading_jei_cache"
+            : CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get()
+                    ? "gui.beyond_craftlines.indexing_all_jei_types"
+                    : "gui.beyond_craftlines.indexing_jei_types").getString(); }
 
     private void finishPlanningCatalogPreparation()
     {

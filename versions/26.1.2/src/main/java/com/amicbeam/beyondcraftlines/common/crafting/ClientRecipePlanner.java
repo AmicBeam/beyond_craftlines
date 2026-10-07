@@ -38,7 +38,12 @@ public final class ClientRecipePlanner
 
     public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders)
     { return new CatalogBuilder(level, holders); }
-    public static CatalogBuilder restored(Catalog catalog,int total){return new CatalogBuilder(catalog,total);}
+
+    public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders, Catalog cached)
+    { return new CatalogBuilder(level, holders, cached); }
+
+    public static CatalogBuilder restored(Catalog catalog, int total)
+    { return new CatalogBuilder(catalog, total); }
 
     public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
                                 Identifier target, long requested,
@@ -591,6 +596,31 @@ public final class ClientRecipePlanner
             this.holders = this.allHolders;
             if(this.holders.isEmpty())advanceMerge(Long.MAX_VALUE);
         }
+        private int reused;
+        private int removed;
+
+        /** Runs on the cache worker: only unchanged IDs seed the new capture. */
+        private CatalogBuilder(Level level, List<RecipeHolder<?>> current, Catalog cached)
+        {
+            this.level = level;
+            this.allHolders = List.copyOf(current);
+            this.total = current.size();
+            Set<Identifier> ids = current.stream().map(holder -> holder.id().identifier())
+                    .collect(java.util.stream.Collectors.toSet());
+            Set<Identifier> removedIds = new HashSet<>();
+            for (Recipe recipe : cached.recipes())
+            {
+                if (ids.contains(recipe.id()))
+                    captures.computeIfAbsent(recipe.id(), ignored -> new ArrayList<>()).add(recipe);
+                else removedIds.add(recipe.id());
+            }
+            this.holders = current.stream().filter(holder -> !captures.containsKey(holder.id().identifier())).toList();
+            this.completed = current.size() - this.holders.size();
+            this.reused = completed;
+            this.removed = removedIds.size();
+            if (this.holders.isEmpty()) advanceMerge(Long.MAX_VALUE);
+        }
+
         private CatalogBuilder(Catalog catalog,int total){this.level=null;this.allHolders=List.of();this.holders=List.of();this.total=total;this.completed=total;this.catalog=catalog;}
 
         public void advance(long timeBudgetNanos)
@@ -634,6 +664,9 @@ public final class ClientRecipePlanner
         public boolean complete() { return catalog != null; }
         public int completedRecipes() { return completed; }
         public int totalRecipes() { return total; }
+        public int reusedRecipes() { return reused; }
+        public int removedRecipes() { return removed; }
+        public int missingRecipes() { return total - reused; }
         public long captureMillis(){return captureNanos/1_000_000L;}
         public long captureSteps(){return captureSteps;}
         public long mergeMillis(){return mergeNanos/1_000_000L;}

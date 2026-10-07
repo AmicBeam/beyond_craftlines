@@ -88,6 +88,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())', 'serializeNBT()')
             .replace('NbtAccounter.unlimitedHeap()', 'new NbtAccounter(Long.MAX_VALUE)')
             .replace('serializeNBT(level.registryAccess())', 'serializeNBT()')
+            .replace('serializeNBT(registryAccess)', 'serializeNBT()')
+            .replace('deserializeNBT(encoded.nbt(), registryAccess)', 'deserializeNBT(encoded.nbt())')
             .replace('deserializeNBT(encoded, level.registryAccess())', 'deserializeNBT(encoded)')
             .replace('deserializeNBT(encoded.nbt(), level.registryAccess())', 'deserializeNBT(encoded.nbt())')
             .replace('player.registryAccess()', '')

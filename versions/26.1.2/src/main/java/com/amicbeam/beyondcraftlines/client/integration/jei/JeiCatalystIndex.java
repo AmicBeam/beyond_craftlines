@@ -39,6 +39,11 @@ public final class JeiCatalystIndex
     private static volatile IJeiRuntime runtime;
     private static volatile Set<String> allPlanningFamilies = Set.of();
     private static boolean allTypesRequested;
+    private static final ArrayDeque<SourceTask> SOURCE_QUEUE = new ArrayDeque<>();
+    private static Map<String, java.util.List<String>> categorySources = new HashMap<>();
+    private static boolean sourcesStarted;
+    private static boolean persistentReady;
+    private static long sourceStartedNanos;
     private static boolean recipesDirty;
 
     private JeiCatalystIndex() {}
@@ -49,6 +54,7 @@ public final class JeiCatalystIndex
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
         JeiVirtualRecipeLayouts.resetDiagnostics();
         RecipeIndexDiagnostics.reset();
+        resetPersistentCache();
         Set<Identifier> previousActiveTypes = TYPE_STATE.activeTypes();
         JeiCatalystIndex.runtime = runtime;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(
@@ -203,6 +209,7 @@ public final class JeiCatalystIndex
     {
         IJeiRuntime current = runtime;
         if (current == null) return;
+        if (!preparePersistentCache(timeBudgetNanos)) return;
         int remaining = MAX_LAYOUTS_PER_FRAME;
         long deadline=System.nanoTime()+Math.max(0L,timeBudgetNanos);
         while (remaining > 0 && !TYPE_QUEUE.isEmpty() && System.nanoTime() < deadline)
@@ -213,7 +220,15 @@ public final class JeiCatalystIndex
             {
                 TYPE_QUEUE.removeFirst();
                 TYPE_STATE.complete(task.recipeType());
-                if (TYPE_QUEUE.isEmpty()) RecipeIndexDiagnostics.summarize("jei_warmup_complete");
+                if (TYPE_QUEUE.isEmpty())
+                {
+                    RecipeIndexDiagnostics.summarize("jei_warmup_complete");
+                    com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.save(
+                            TYPE_STATE.completedTypes().stream().map(Object::toString)
+                                    .collect(java.util.stream.Collectors.toUnmodifiableSet()),
+                            INPUT_GROUPS_BY_TYPE.entrySet().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
+                                    entry -> entry.getKey().toString(), Map.Entry::getValue)));
+                }
             }
             if (processed) remaining--;
         }
@@ -221,6 +236,112 @@ public final class JeiCatalystIndex
         {
             recipesDirty = false;
             RecipeCatalog.setClientRecipes(RECIPES_BY_ID.values());
+        }
+    }
+
+    private static void resetPersistentCache()
+    {
+        com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.reset();
+        SOURCE_QUEUE.clear();
+        categorySources = new HashMap<>();
+        sourcesStarted = false;
+        persistentReady = false;
+    }
+
+    /** Cheap source enumeration runs on the render thread; no drawable is created here. */
+    private static boolean preparePersistentCache(long timeBudgetNanos)
+    {
+        if (persistentReady) return true;
+        if (net.minecraft.client.Minecraft.getInstance().level == null) return false;
+        if (!sourcesStarted)
+        {
+            sourcesStarted = true;
+            sourceStartedNanos = System.nanoTime();
+            CATEGORIES_BY_TYPE.forEach((type, category) -> SOURCE_QUEUE.addLast(new SourceTask(type, category)));
+            LOGGER.info("{} client JEI source scan started categories={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, SOURCE_QUEUE.size());
+        }
+        long deadline = System.nanoTime() + timeBudgetNanos;
+        while (!SOURCE_QUEUE.isEmpty() && System.nanoTime() < deadline)
+        {
+            SourceTask source = SOURCE_QUEUE.peekFirst();
+            source.advance(runtime);
+            if (source.complete)
+            {
+                SOURCE_QUEUE.removeFirst();
+                if (!source.failed) categorySources.put(source.type.toString(), java.util.List.copyOf(source.tokens));
+            }
+        }
+        if (!SOURCE_QUEUE.isEmpty()) return false;
+        com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.Restored restored =
+                com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.prepare(categorySources);
+        if (restored == null) return false;
+        persistentReady = true;
+        categorySources = Map.of();
+        Set<Identifier> restoredTypes = restored.types().stream().map(Identifier::tryParse)
+                .filter(java.util.Objects::nonNull).filter(CATEGORIES_BY_TYPE::containsKey)
+                .collect(java.util.stream.Collectors.toSet());
+        TYPE_STATE.request(restoredTypes);
+        restoredTypes.forEach(TYPE_STATE::complete);
+        TYPE_QUEUE.removeIf(task -> restoredTypes.contains(task.recipeType()));
+        restored.groups().forEach((type, groups) -> {
+            Identifier id = Identifier.tryParse(type);
+            if (id != null) mergeInputGroups(id, groups);
+        });
+        recipesDirty = false;
+        RecipeCatalog.setClientRecipes(RECIPES_BY_ID.values());
+        LOGGER.info("{} client JEI preparation ready restoredTypes={} pendingTypes={} elapsedMs={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                restoredTypes.size(), TYPE_QUEUE.size(), (System.nanoTime() - sourceStartedNanos) / 1_000_000L);
+        return true;
+    }
+
+    private static final class SourceTask
+    {
+        private final Identifier type;
+        private final IRecipeCategory<Object> category;
+        private final java.util.List<String> tokens = new java.util.ArrayList<>();
+        private Iterator<Object> recipes;
+        private boolean complete;
+        private boolean failed;
+
+        @SuppressWarnings("unchecked")
+        SourceTask(Identifier type, IRecipeCategory<?> category)
+        {
+            this.type = type;
+            this.category = (IRecipeCategory<Object>) category;
+            tokens.add("category:" + category.getClass().getName());
+        }
+
+        void advance(IJeiRuntime runtime)
+        {
+            long started = System.nanoTime();
+            try
+            {
+                if (recipes == null) recipes = runtime.getRecipeManager().createRecipeLookup(category.getRecipeType())
+                        .includeHidden().get().iterator();
+                if (!recipes.hasNext()) { complete = true; return; }
+                Object recipe = recipes.next();
+                rememberServerRecipe(category, recipe);
+                Object id = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
+                        ? holder.id().identifier() : category.getIdentifier(recipe);
+                String sourceClass = java.lang.reflect.Proxy.isProxyClass(recipe.getClass())
+                        ? java.util.Arrays.stream(recipe.getClass().getInterfaces()).map(Class::getName)
+                                .sorted().collect(java.util.stream.Collectors.joining(","))
+                        : recipe.getClass().getName();
+                tokens.add(id == null ? "class:" + sourceClass : "id:" + id);
+            }
+            catch (RuntimeException | LinkageError exception)
+            {
+                complete = failed = true;
+                LOGGER.warn("{} client JEI source scan failed type={} error={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, type, exception.toString());
+            }
+            finally
+            {
+                RecipeIndexDiagnostics.record("jei_source_scan", System.nanoTime() - started,
+                        "<source>", type, category.getClass(), -1, -1);
+            }
         }
     }
 
@@ -266,6 +387,7 @@ public final class JeiCatalystIndex
     public static void clear()
     {
         RecipeIndexDiagnostics.reset();
+        resetPersistentCache();
         runtime = null;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
         TYPE_QUEUE.clear();

@@ -12,6 +12,8 @@ sourceSets.main.resources.srcDir '../../src/main/resources'
 def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', Sync) {
     from '../../src/main/java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogCache.java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientJeiRecipeCache.java'
+    include 'com/amicbeam/beyondcraftlines/client/JeiRecipeSourceFingerprint.java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogWarmup.java'
     include 'com/amicbeam/beyondcraftlines/client/ClientRecipeCacheCommands.java'
     include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheIdentity.java'

@@ -154,7 +154,7 @@ public final class ClientPlanningCatalogWarmup
         builder = null;
         lookupBuilder = null;
         ClientRecipeLookupIndex.clear();
-        loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation);
+        loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation, pendingHolders);
         completionLogged = false;
         cacheSaveRequestedOrRestored = false;
         LOGGER.info("{} client planning catalog preparation started holders={} generation={}",
@@ -178,8 +178,15 @@ public final class ClientPlanningCatalogWarmup
             }
             if (loading.complete() && loading.generation() == generation)
             {
-                builder = ClientRecipePlanner.restored(loading.catalog(), pendingHolders.size());
-                cacheSaveRequestedOrRestored = true;
+                builder = loading.exactMatch()
+                        ? ClientRecipePlanner.restored(loading.catalog(), pendingHolders.size()) : loading.reconciled();
+                cacheSaveRequestedOrRestored = loading.exactMatch();
+                lookupBuilder = loading.restoredLookup();
+                if (lookupBuilder != null) lookupBuilder.install();
+                if (!loading.exactMatch())
+                    LOGGER.info("{} client planning cache reconciled reused={} capture={} removed={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            builder.reusedRecipes(), builder.missingRecipes(), loading.removedRecipeIds());
                 LOGGER.info("{} client planning cache restored recipes={} readHeaderMs={} decompressParseMs={} ioWallMs={} decodeMs={} queueDepth={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                         loading.completedRecipes(), loading.headerMillis(), loading.parseMillis(), loading.ioMillis(),
@@ -203,7 +210,11 @@ public final class ClientPlanningCatalogWarmup
         if (lookupBuilder != null && !lookupBuilder.complete() && System.nanoTime() < deadline)
         {
             long lookupStarted = System.nanoTime();
-            try { lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime())); }
+            try
+            {
+                lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime()));
+                if (lookupBuilder.complete()) lookupBuilder.install();
+            }
             finally
             {
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
@@ -226,6 +237,7 @@ public final class ClientPlanningCatalogWarmup
     public static synchronized void reload() throws java.io.IOException
     {
         ClientPlanningCatalogCache.invalidateDisk();
+        ClientJeiRecipeCache.invalidateDisk();
         invalidateCapture();
         RecipePlanningService.clearRecipeCache();
         JeiCatalystIndex.refresh();
@@ -308,8 +320,9 @@ public final class ClientPlanningCatalogWarmup
         LOGGER.info("{} client planning progress stage={} completed={}/{} queueDepth={} maxMainSliceMs={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 snapshotBuilder != null ? "recipe_snapshot"
-                        : loadJob != null ? "cache_decode" : "recipe_capture", HANDLE.completedRecipes(),
-                HANDLE.totalRecipes(), loadJob == null ? 0 : loadJob.queueDepth(), maxMainSliceNanos / 1_000_000L);
+                        : loadJob != null ? "cache_decode"
+                        : lookupBuilder != null ? "lookup_index" : "recipe_capture", HANDLE.progressCompleted(),
+                HANDLE.progressTotal(), loadJob == null ? 0 : loadJob.queueDepth(), maxMainSliceNanos / 1_000_000L);
         maxMainSliceNanos = 0L;
     }
 
@@ -425,6 +438,29 @@ public final class ClientPlanningCatalogWarmup
         }
         public boolean complete() { return ClientPlanningCatalogWarmup.complete(); }
         public boolean loadingCache() { return loadJob != null && !loadJob.terminalWithoutCatalog(); }
+        public String progressTranslationKey()
+        {
+            if (snapshotBuilder != null) return "gui.beyond_craftlines.checking_recipe_ids";
+            if (loadJob != null) return loadJob.buildingLookup()
+                    ? "gui.beyond_craftlines.building_recipe_lookup" : "gui.beyond_craftlines.loading_recipe_cache";
+            if (builder != null && !builder.complete()) return builder.reusedRecipes() > 0
+                    ? "gui.beyond_craftlines.updating_recipe_index" : "gui.beyond_craftlines.capturing_recipes";
+            return "gui.beyond_craftlines.building_recipe_lookup";
+        }
+        public int progressCompleted()
+        {
+            if (loadJob != null && loadJob.buildingLookup()) return loadJob.restoredLookup().completedRecipes();
+            if (lookupBuilder != null) return lookupBuilder.completedRecipes();
+            return completedRecipes() - (loadJob == null && snapshotBuilder == null && builder != null
+                    ? builder.reusedRecipes() : 0);
+        }
+        public int progressTotal()
+        {
+            if (loadJob != null && loadJob.buildingLookup()) return loadJob.restoredLookup().totalRecipes();
+            if (lookupBuilder != null) return lookupBuilder.totalRecipes();
+            return totalRecipes() - (loadJob == null && snapshotBuilder == null && builder != null
+                    ? builder.reusedRecipes() : 0);
+        }
         public ClientRecipePlanner.Catalog catalog()
         {
             if (!complete()) throw new IllegalStateException("planning catalog is not ready");

@@ -29,4 +29,15 @@ final class RecipeTypeWarmupTrackerTest
         assertEquals(List.of("example:crusher"), tracker.activate(List.of("example:crusher")));
     }
 
+    @Test void restoredCategoriesAreReadyAndDoNotEnterTheWarmupQueueAgain()
+    {
+        var tracker = new RecipeTypeWarmupTracker<String>();
+        tracker.request(Set.of("test:cached"));
+        tracker.complete("test:cached");
+        assertEquals(List.of("test:added"), tracker.activate(List.of("test:cached", "test:added")));
+        assertEquals(Set.of("test:cached"), tracker.completedTypes());
+        assertTrue(tracker.ready(Set.of("test:cached")));
+        assertFalse(tracker.ready(Set.of("test:added")));
+    }
+
 }

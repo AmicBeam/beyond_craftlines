@@ -39,6 +39,50 @@ public final class VirtualProvisionerRecipeRegistry
     private static final java.util.concurrent.atomic.AtomicLong REVISION =
             new java.util.concurrent.atomic.AtomicLong();
 
+    private static long clientEpoch;
+
+    public record CachedDescriptor(Identifier id, Descriptor descriptor) {}
+
+    public static void cancelClientRestore()
+    { synchronized (CLIENT_CATALOG) { clientEpoch++; } }
+
+    public static long clientEpoch()
+    { synchronized (CLIENT_CATALOG) { return clientEpoch; } }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot()
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            List<CachedDescriptor> result = new ArrayList<>(CLIENT_CATALOG.size());
+            CLIENT_CATALOG.forEach((id, holder) -> {
+                Descriptor descriptor = DESCRIPTORS.get(holder.value());
+                if (descriptor != null) result.add(new CachedDescriptor(id, descriptor));
+            });
+            return List.copyOf(result);
+        }
+    }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot(long epoch)
+    {
+        synchronized (CLIENT_CATALOG)
+        { return epoch == clientEpoch ? clientCatalogSnapshot() : null; }
+    }
+
+    /** An old disk reader cannot add recipes after a world/runtime reset. */
+    public static boolean restoreForClientCatalog(long epoch, Identifier id, Descriptor descriptor)
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            if (epoch != clientEpoch) return false;
+            Recipe<?> recipe = proxy(descriptor);
+            RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
+            CLIENT_CATALOG.put(id, holder);
+            DESCRIPTORS.put(recipe, descriptor);
+            REVISION.incrementAndGet();
+            return true;
+        }
+    }
+
     private VirtualProvisionerRecipeRegistry() {}
 
     public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
@@ -100,10 +144,14 @@ public final class VirtualProvisionerRecipeRegistry
 
     public static void clear()
     {
-        RECIPES.clear();
-        CLIENT_CATALOG.clear();
-        DESCRIPTORS.clear();
-        REVISION.incrementAndGet();
+        synchronized (CLIENT_CATALOG)
+        {
+            clientEpoch++;
+            RECIPES.clear();
+            CLIENT_CATALOG.clear();
+            DESCRIPTORS.clear();
+            REVISION.incrementAndGet();
+        }
     }
 
     @SuppressWarnings("unchecked")

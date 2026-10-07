@@ -42,7 +42,8 @@ public final class ClientRecipeLookupIndex
         private final Map<String, String> itemsByOutput = new LinkedHashMap<>();
         private final Map<String, Set<String>> outputsByRecipe = new LinkedHashMap<>();
         private final LinkedHashSet<String> recipeIds = new LinkedHashSet<>();
-        private int next;
+        private volatile int next;
+        private Snapshot built;
         private boolean complete;
 
         private Builder(List<ClientRecipePlanner.Recipe> recipes) { this.recipes = recipes; }
@@ -74,13 +75,21 @@ public final class ClientRecipeLookupIndex
                 processed++;
             }
             if (next < recipes.size()) return;
-            snapshot = new Snapshot(freezeLists(byOutput), freezeLists(byCompatibleOutput),
+            built = new Snapshot(freezeLists(byOutput), freezeLists(byCompatibleOutput),
                     freezeLists(byItem), Map.copyOf(itemsByOutput), freezeSets(outputsByRecipe),
                     List.copyOf(recipeIds), true);
             complete = true;
         }
 
+        /** Publish only after the owner has checked its world/runtime generation. */
+        public void install()
+        {
+            if (!complete) throw new IllegalStateException("lookup index is not complete");
+            snapshot = built;
+        }
         public boolean complete() { return complete; }
+        public int completedRecipes() { return next; }
+        public int totalRecipes() { return recipes.size(); }
 
         private static Map<String, List<String>> freezeLists(Map<String, List<String>> source)
         {

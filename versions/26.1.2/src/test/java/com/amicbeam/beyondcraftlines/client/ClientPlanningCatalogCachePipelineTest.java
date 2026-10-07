@@ -88,9 +88,14 @@ final class ClientPlanningCatalogCachePipelineTest
 
         var changedIds = ClientPlanningCatalogCache.loadAsync(cache, List.of("pack:other_recipe"), 13L);
         assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
-            while (!changedIds.terminalWithoutCatalog()) Thread.sleep(1L);
+            while (!changedIds.complete() && !changedIds.terminalWithoutCatalog())
+            {
+                changedIds.advance(null, 1_000_000L);
+                Thread.sleep(1L);
+            }
         });
-        assertEquals("miss", changedIds.stateName());
+        assertTrue(changedIds.complete());
+        assertFalse(changedIds.exactMatch());
         assertEquals("recipe_ids_changed", changedIds.reason());
 
         ClientPlanningCatalogCache.invalidate(cache);

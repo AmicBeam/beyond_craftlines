@@ -88,7 +88,7 @@ public final class ClientRecipePlanner
     {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
-        Map<IStackKey<?>, List<Recipe>> byOutput = catalog.byOutput();
+        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput = catalog::lookup;
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
@@ -103,7 +103,7 @@ public final class ClientRecipePlanner
                 state.rootNoRecipe, state.cyclicDependencies > 0, exhausted));
     }
 
-    private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
+    private static void resolve(IStackKey<?> resource, long needed, java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
                                 Set<IStackKey<?>> visiting, State state,
                                 Map<String, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, String> manualIngredients,
@@ -128,7 +128,7 @@ public final class ClientRecipePlanner
         String resourceId = RecipeResourceResolver.resolutionKey(resource);
         try
         {
-            List<Recipe> candidates = recipesFor(byOutput, resource);
+            List<Recipe> candidates = byOutput.apply(resource);
             ResourceLocation selected = manualRecipes.get(resourceId);
             if (selected == null) selected = manualRecipes.get(RecipeResourceResolver.sortKey(resource));
             if (selected == null) selected = state.recipes.get(resourceId);
@@ -200,7 +200,7 @@ public final class ClientRecipePlanner
     }
 
     private static void resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe,
-                                      Map<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
+                                      java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
                                       State state, Map<String, ResourceLocation> manualRecipes,
                                       Map<IngredientKey, String> manualIngredients,
                                       int depth, int maxDepth, ClientPlanningBudget budget)
@@ -225,7 +225,7 @@ public final class ClientRecipePlanner
                 candidates = slot.candidates().stream().sorted(Comparator
                         .<Candidate>comparingLong(candidate -> available(
                                 state.stock, candidate.key(), slot.use())).reversed()
-                        .thenComparing(candidate -> !recipesFor(byOutput, candidate.key()).isEmpty() ? 0 : 1)
+                        .thenComparing(candidate -> !byOutput.apply(candidate.key()).isEmpty() ? 0 : 1)
                         .thenComparing(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))).toList();
             }
             options.add(candidates);
@@ -269,7 +269,7 @@ public final class ClientRecipePlanner
     }
 
     private static boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe,
-                                        Map<IStackKey<?>, List<Recipe>> byOutput,
+                                        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
                                         Set<IStackKey<?>> visiting, State state,
                                         Map<String, ResourceLocation> manualRecipes,
                                         Map<IngredientKey, String> manualIngredients,
@@ -385,7 +385,8 @@ public final class ClientRecipePlanner
     public static final class Catalog
     {
         private final List<Recipe> recipes;
-        private final Map<IStackKey<?>, List<Recipe>> byOutput;
+        private final OutputRecipeMap byOutput;
+        private final Set<String> availableFamilies;
 
         public Catalog(List<Recipe> recipes)
         {
@@ -396,10 +397,29 @@ public final class ClientRecipePlanner
             index.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
             index.finish();
             this.byOutput = index;
+            this.availableFamilies = null;
         }
 
-        public List<Recipe> recipes() { return recipes; }
-        private Map<IStackKey<?>, List<Recipe>> byOutput() { return byOutput; }
+        private Catalog(Catalog source, Set<String> availableFamilies)
+        {
+            this.recipes = source.recipes;
+            this.byOutput = source.byOutput;
+            this.availableFamilies = Set.copyOf(availableFamilies);
+        }
+
+        /** Shares captured recipes and indexes; only candidate lookup is scoped to the network. */
+        public Catalog forFamilies(Set<String> availableFamilies)
+        { return new Catalog(this, availableFamilies); }
+
+        public List<Recipe> recipes()
+        {
+            return availableFamilies == null ? recipes : recipes.stream()
+                    .filter(recipe -> com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                            .includes(recipe.family(), availableFamilies)).toList();
+        }
+
+        private List<Recipe> lookup(IStackKey<?> resource)
+        { return byOutput.lookup(resource, availableFamilies); }
     }
 
     /** Main-thread cursor that yields after each output, slot, or ingredient candidate. */
@@ -772,16 +792,29 @@ public final class ClientRecipePlanner
         }
 
         private List<Recipe> lookup(IStackKey<?> resource)
+        { return lookup(resource, null); }
+
+        private List<Recipe> lookup(IStackKey<?> resource, Set<String> availableFamilies)
         {
             List<Recipe> exact = byResolution.getOrDefault(
                     RecipeResourceResolver.resolutionKey(resource), List.of()).stream()
+                    .filter(recipe -> availableFamilies == null
+                            || com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                    .includes(recipe.family(), availableFamilies))
                     .filter(recipe -> StackKeyMatch.exact(resource, recipe.output())).toList();
             if (!exact.isEmpty()) return exact;
             List<Map.Entry<IStackKey<?>, List<Recipe>>> candidates = byCoarse.getOrDefault(
                     RecipeResourceResolver.sortKey(resource), List.of());
+            if (availableFamilies != null) candidates = candidates.stream()
+                    .filter(entry -> entry.getValue().stream().anyMatch(recipe ->
+                            com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                    .includes(recipe.family(), availableFamilies))).toList();
             for (var entry : candidates)
             {
-                List<Recipe> configured = entry.getValue().stream().filter(recipe ->
+                List<Recipe> configured = entry.getValue().stream()
+                        .filter(recipe -> availableFamilies == null
+                                || com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                        .includes(recipe.family(), availableFamilies)).filter(recipe ->
                         RecipeIoProfileRegistry.outputMatches(recipe.outputMatch(), resource, entry.getKey(),
                                 StackKeyMatch::exact,
                                 (left, right) -> left.isSame(right) || right.isSame(left))).toList();

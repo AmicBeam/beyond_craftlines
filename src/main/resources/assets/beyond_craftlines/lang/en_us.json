@@ -299,5 +299,6 @@
   "command.beyond_craftlines.reload.no_world": "Enter a world first.",
   "command.beyond_craftlines.reload.success": "Recipe cache cleared for this world or server. Recipes for the current network will be reloaded.",
   "command.beyond_craftlines.reload.failed": "Unable to clear the recipe cache. Check the log.",
-  "gui.beyond_craftlines.loading_recipe_cache": "Loading recipe cache: %s/%s"
+  "gui.beyond_craftlines.loading_recipe_cache": "Loading recipe cache: %s/%s",
+  "config.beyond_craftlines.preload_all_recipe_types": "Preload all recipe types"
 }

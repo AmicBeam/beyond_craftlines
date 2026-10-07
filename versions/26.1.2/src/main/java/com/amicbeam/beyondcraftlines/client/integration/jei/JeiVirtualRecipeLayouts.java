@@ -178,9 +178,10 @@ public final class JeiVirtualRecipeLayouts
     {
         String family = com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                 .executionFamily(captured.type().toString());
-        return VirtualProvisionerRecipeRegistry.register(family, captured.output().key(), captured.output().amount(),
+        return VirtualProvisionerRecipeRegistry.retainForClientCatalog(
+                VirtualProvisionerRecipeRegistry.register(family, captured.output().key(), captured.output().amount(),
                 captured.inputs().stream().map(input -> new VirtualProvisionerRecipeRegistry.InputSlot(
-                        input.inputGroup(), input.candidates(), input.use())).toList(), captured.byproducts(), captured.guaranteedByproducts());
+                        input.inputGroup(), input.candidates(), input.use())).toList(), captured.byproducts(), captured.guaranteedByproducts()));
     }
 
     public record Captured(Identifier type, KeyAmount output,

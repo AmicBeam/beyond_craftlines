@@ -51,7 +51,7 @@ public final class ClientPlanningCatalogWarmup
 
     public static synchronized void request(Collection<String> availableFamilies)
     {
-        Set<String> next = Set.copyOf(availableFamilies);
+        Set<String> next = JeiCatalystIndex.planningFamilies(availableFamilies);
         if (requested && families.equals(next)) return;
         if (!families.equals(next)) invalidateCapture();
         requested = true;

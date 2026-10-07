@@ -273,7 +273,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             if (planningCatalogBuilder.complete())
             {
-                planningCatalog=planningCatalogBuilder.catalog();
+                planningCatalog=planningCatalogBuilder.catalog().forFamilies(menu.availableFamilies());
                 planningCatalogRevision = planningCatalogBuildRevision;
                 finishPlanningCatalogPreparation();
             }
@@ -307,7 +307,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         planningCatalogBuilder=ClientPlanningCatalogWarmup.handle();
         if (planningCatalogBuilder.complete())
         {
-            planningCatalog=planningCatalogBuilder.catalog();
+            planningCatalog=planningCatalogBuilder.catalog().forFamilies(menu.availableFamilies());
             planningCatalogRevision = planningCatalogBuildRevision;
             finishPlanningCatalogPreparation();
         }

@@ -299,5 +299,6 @@
   "command.beyond_craftlines.reload.no_world": "请先进入世界。",
   "command.beyond_craftlines.reload.success": "已清除当前世界或服务器的配方缓存，将重新加载当前网络的配方。",
   "command.beyond_craftlines.reload.failed": "无法清除配方缓存，请查看日志。",
-  "gui.beyond_craftlines.loading_recipe_cache": "正在读取配方缓存：%s/%s"
+  "gui.beyond_craftlines.loading_recipe_cache": "正在读取配方缓存：%s/%s",
+  "config.beyond_craftlines.preload_all_recipe_types": "首次预热全部配方类型"
 }

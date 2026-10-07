@@ -99,7 +99,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (Minecraft.getInstance().screen instanceof
                     com.amicbeam.beyondcraftlines.client.CraftlineOrderScreen) return;
             JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
-            if (payload.available())
+            if (payload.available() || CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
                 com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
             else com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         };
@@ -333,6 +333,12 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
     {
+        if (runtime != null && Minecraft.getInstance().level != null
+                && CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
+        {
+            JeiCatalystIndex.prewarmAllRecipeTypes();
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(java.util.Set.of());
+        }
         com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.refreshMetadata();
         long started = System.nanoTime();
         long deadline = System.nanoTime() + CLIENT_FRAME_BUDGET_NANOS;

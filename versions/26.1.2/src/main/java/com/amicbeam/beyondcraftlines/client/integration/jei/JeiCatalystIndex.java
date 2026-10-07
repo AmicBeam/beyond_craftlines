@@ -36,6 +36,8 @@ public final class JeiCatalystIndex
     private static final ArrayDeque<SearchTask> TYPE_QUEUE = new ArrayDeque<>();
     private static final RecipeTypeWarmupTracker<Identifier> TYPE_STATE = new RecipeTypeWarmupTracker<>();
     private static volatile IJeiRuntime runtime;
+    private static volatile Set<String> allPlanningFamilies = Set.of();
+    private static boolean allTypesRequested;
     private static boolean recipesDirty;
 
     private JeiCatalystIndex() {}
@@ -52,6 +54,7 @@ public final class JeiCatalystIndex
         com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.clear();
         TYPE_QUEUE.clear();
         TYPE_STATE.clear();
+        allTypesRequested = false;
         RECIPES_BY_ID.clear();
         recipesDirty = false;
         RecipeCatalog.clearClient();
@@ -82,6 +85,8 @@ public final class JeiCatalystIndex
         TYPES_BY_CATALYST = Map.copyOf(frozen);
         TITLES_BY_TYPE = Map.copyOf(titles);
         CATEGORIES_BY_TYPE = Map.copyOf(categories);
+        allPlanningFamilies = com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalogScope.fullFamilies(
+                categories.keySet().stream().map(Object::toString).toList());
         INPUT_GROUPS_BY_TYPE = Map.of();
         enqueueRecipeTypes(TYPE_STATE.activate(previousActiveTypes.stream()
                 .filter(CATEGORIES_BY_TYPE::containsKey).toList()));
@@ -110,6 +115,21 @@ public final class JeiCatalystIndex
         enqueueRecipeTypes(TYPE_STATE.activate(parsed));
     }
 
+    public static Set<String> planningFamilies(java.util.Collection<String> networkFamilies)
+    {
+        return com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalogScope.select(
+                com.amicbeam.beyondcraftlines.CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get(),
+                networkFamilies, allPlanningFamilies);
+    }
+
+    /** Once per runtime; it does not depend on having a network or bound machines. */
+    public static void prewarmAllRecipeTypes()
+    {
+        if (runtime == null || allTypesRequested) return;
+        allTypesRequested = true;
+        enqueueRecipeTypes(TYPE_STATE.activate(CATEGORIES_BY_TYPE.keySet()));
+    }
+
     public static boolean recipeTypesReady(java.util.Collection<String> types)
     { return runtime == null || TYPE_STATE.ready(knownRecipeTypes(types)); }
 
@@ -121,6 +141,8 @@ public final class JeiCatalystIndex
 
     private static Set<Identifier> knownRecipeTypes(java.util.Collection<String> types)
     {
+        if (com.amicbeam.beyondcraftlines.CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
+            return CATEGORIES_BY_TYPE.keySet();
         LinkedHashSet<Identifier> parsed = new LinkedHashSet<>();
         for (String value : types)
         {
@@ -243,6 +265,7 @@ public final class JeiCatalystIndex
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
         TYPE_QUEUE.clear();
         TYPE_STATE.clear();
+        allTypesRequested = false;
         RECIPES_BY_ID.clear();
         recipesDirty = false;
         TYPES_BY_CATALYST = Map.of();

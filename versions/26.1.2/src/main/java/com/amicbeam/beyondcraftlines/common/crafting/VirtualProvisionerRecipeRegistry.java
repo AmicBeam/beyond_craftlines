@@ -31,6 +31,9 @@ public final class VirtualProvisionerRecipeRegistry
                 @Override protected boolean removeEldestEntry(Map.Entry<Identifier, RecipeHolder<?>> eldest)
                 { return size() > MAX_RECIPES; }
             });
+    // Client category warmup is a complete catalog, not an evictable request cache.
+    private static final Map<Identifier, RecipeHolder<?>> CLIENT_CATALOG = Collections.synchronizedMap(
+            new LinkedHashMap<>());
     private static final Map<Recipe<?>, Descriptor> DESCRIPTORS = Collections.synchronizedMap(
             new java.util.WeakHashMap<>());
     private static final java.util.concurrent.atomic.AtomicLong REVISION =
@@ -60,7 +63,7 @@ public final class VirtualProvisionerRecipeRegistry
     public static RecipeHolder<?> register(Descriptor descriptor)
     {
         Identifier id = descriptor.id();
-        RecipeHolder<?> existing = RECIPES.get(id);
+        RecipeHolder<?> existing = find(id).orElse(null);
         if (existing != null) return existing;
         Recipe<?> recipe = proxy(descriptor);
         RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
@@ -71,10 +74,24 @@ public final class VirtualProvisionerRecipeRegistry
     }
 
     public static Optional<RecipeHolder<?>> find(Identifier id)
-    { return Optional.ofNullable(RECIPES.get(id)); }
+    {
+        RecipeHolder<?> retained = CLIENT_CATALOG.get(id);
+        return Optional.ofNullable(retained != null ? retained : RECIPES.get(id));
+    }
+
+    public static RecipeHolder<?> retainForClientCatalog(RecipeHolder<?> holder)
+    {
+        CLIENT_CATALOG.put(holder.id().identifier(), holder);
+        return holder;
+    }
 
     public static List<RecipeHolder<?>> recipes()
-    { synchronized (RECIPES) { return List.copyOf(RECIPES.values()); } }
+    {
+        Map<Identifier, RecipeHolder<?>> snapshot;
+        synchronized (RECIPES) { snapshot = new LinkedHashMap<>(RECIPES); }
+        synchronized (CLIENT_CATALOG) { snapshot.putAll(CLIENT_CATALOG); }
+        return List.copyOf(snapshot.values());
+    }
 
     public static Descriptor descriptor(Recipe<?> recipe)
     { return DESCRIPTORS.get(recipe); }
@@ -84,6 +101,7 @@ public final class VirtualProvisionerRecipeRegistry
     public static void clear()
     {
         RECIPES.clear();
+        CLIENT_CATALOG.clear();
         DESCRIPTORS.clear();
         REVISION.incrementAndGet();
     }

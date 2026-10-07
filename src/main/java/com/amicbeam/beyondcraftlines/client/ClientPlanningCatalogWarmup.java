@@ -45,7 +45,7 @@ public final class ClientPlanningCatalogWarmup
     private static long maxMainSliceNanos;
     private static volatile long snapshotNanos;
     private static boolean completionLogged;
-    private static boolean cachePersisted;
+    private static boolean cacheSaveRequestedOrRestored;
 
     private ClientPlanningCatalogWarmup() {}
 
@@ -156,7 +156,7 @@ public final class ClientPlanningCatalogWarmup
         ClientRecipeLookupIndex.clear();
         loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation);
         completionLogged = false;
-        cachePersisted = false;
+        cacheSaveRequestedOrRestored = false;
         LOGGER.info("{} client planning catalog preparation started holders={} generation={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 holders.size(), generation);
@@ -179,7 +179,7 @@ public final class ClientPlanningCatalogWarmup
             if (loading.complete() && loading.generation() == generation)
             {
                 builder = ClientRecipePlanner.restored(loading.catalog(), pendingHolders.size());
-                cachePersisted = true;
+                cacheSaveRequestedOrRestored = true;
                 LOGGER.info("{} client planning cache restored recipes={} readHeaderMs={} decompressParseMs={} ioWallMs={} decodeMs={} queueDepth={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                         loading.completedRecipes(), loading.headerMillis(), loading.parseMillis(), loading.ioMillis(),
@@ -189,9 +189,9 @@ public final class ClientPlanningCatalogWarmup
             }
             else if (loading.terminalWithoutCatalog())
             {
-                LOGGER.info("{} client planning cache unavailable state={} ioMs={}; capturing recipes",
+                LOGGER.info("{} client planning cache unavailable state={} reason={} path={} ioMs={}; capturing recipes",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                        loading.stateName(), loading.ioMillis());
+                        loading.stateName(), loading.reason(), loading.cachePath(), loading.ioMillis());
                 loadJob = null;
                 builder = ClientRecipePlanner.beginCapture(level, pendingHolders);
             }
@@ -273,7 +273,7 @@ public final class ClientPlanningCatalogWarmup
         ClientRecipeLookupIndex.clear();
         startedNanos = 0L;
         completionLogged = false;
-        cachePersisted = false;
+        cacheSaveRequestedOrRestored = false;
         snapshotNanos = 0L;
     }
 
@@ -318,14 +318,14 @@ public final class ClientPlanningCatalogWarmup
         if (!complete() || completionLogged) return;
         completionLogged = true;
         com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.summarize("catalog_ready");
-        if (!cachePersisted)
+        if (!cacheSaveRequestedOrRestored)
         {
             Level level = Minecraft.getInstance().level;
             if (level != null) ClientPlanningCatalogCache.save(level, holderIds, builder.catalog());
-            cachePersisted = true;
+            cacheSaveRequestedOrRestored = true;
         }
-        LOGGER.info("{} client planning catalog ready holders={} elapsedMs={} snapshotMs={} candidateMs={} candidateSteps={} mergeMs={} maxMainSliceMs={}",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, holderIds.size(),
+        LOGGER.info("{} client planning catalog ready holders={} recipes={} elapsedMs={} snapshotMs={} candidateMs={} candidateSteps={} mergeMs={} maxMainSliceMs={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, holderIds.size(), builder.catalog().recipes().size(),
                 (System.nanoTime() - startedNanos) / 1_000_000L, snapshotNanos / 1_000_000L,
                 builder.captureMillis(), builder.captureSteps(), builder.mergeMillis(),
                 maxMainSliceNanos / 1_000_000L);

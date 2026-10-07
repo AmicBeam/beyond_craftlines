@@ -27,6 +27,7 @@ final class ClientPlanningCatalogCachePipelineTest
         assertFalse(job.complete());
         assertEquals(7L, job.generation());
         assertEquals("miss", job.stateName());
+        assertEquals("file_missing", job.reason());
     }
 
     @Test void restoresAValidEmptyCatalogAndHonorsCancellation() throws Exception
@@ -90,6 +91,7 @@ final class ClientPlanningCatalogCachePipelineTest
             while (!changedIds.terminalWithoutCatalog()) Thread.sleep(1L);
         });
         assertEquals("miss", changedIds.stateName());
+        assertEquals("recipe_ids_changed", changedIds.reason());
 
         ClientPlanningCatalogCache.invalidate(cache);
         assertFalse(Files.exists(cache));
@@ -98,6 +100,42 @@ final class ClientPlanningCatalogCachePipelineTest
             while (!reloading.terminalWithoutCatalog()) Thread.sleep(1L);
         });
         assertEquals("miss", reloading.stateName());
+        assertEquals("file_missing", reloading.reason());
+    }
+
+    @Test void savesToDiskAndRestoresThroughTheRealAsyncPipeline() throws Exception
+    {
+        Path cache = directory.resolve("saved.dat");
+        var catalog = new com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner.Catalog(List.of());
+        var save = ClientPlanningCatalogCache.saveAsync(null, cache, List.of("pack:recipe"), catalog);
+        assertNotNull(save);
+        save.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertTrue(Files.isRegularFile(cache));
+        assertFalse(Files.exists(cache.resolveSibling("saved.dat.tmp")));
+        var hit = ClientPlanningCatalogCache.loadAsync(cache, List.of("pack:recipe"), 21L);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            while (!hit.complete() && !hit.terminalWithoutCatalog())
+            {
+                hit.advance(null, 1_000_000L);
+                Thread.sleep(1L);
+            }
+        });
+        assertTrue(hit.complete(), hit.reason());
+    }
+
+    @Test void identifiesAnIncompatibleFormatInsteadOfAnUnexplainedMiss() throws Exception
+    {
+        Path cache = directory.resolve("old.dat");
+        try (var output = new DataOutputStream(new GZIPOutputStream(Files.newOutputStream(cache))))
+        {
+            output.writeInt(ClientPlanningCatalogCache.MAGIC);
+            output.writeInt(ClientPlanningCatalogCache.VERSION - 1);
+        }
+        var job = ClientPlanningCatalogCache.loadAsync(cache, List.of(), 22L);
+        assertTimeoutPreemptively(Duration.ofSeconds(2), () -> {
+            while (!job.terminalWithoutCatalog()) Thread.sleep(1L);
+        });
+        assertEquals("format_version_changed", job.reason());
     }
 
     @Test void separatesWorldsServersAndMinecraftVersions()

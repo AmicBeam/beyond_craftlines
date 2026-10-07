@@ -16,6 +16,7 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     include 'com/amicbeam/beyondcraftlines/client/ClientRecipeCacheCommands.java'
     include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheIdentity.java'
     include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheFiles.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheCounts.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeCatalogScope.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'

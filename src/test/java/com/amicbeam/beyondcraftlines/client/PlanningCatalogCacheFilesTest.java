@@ -22,17 +22,19 @@ final class PlanningCatalogCacheFilesTest
 
         PlanningCatalogCacheFiles.invalidate(cache);
         assertFalse(Files.exists(cache));
-        PlanningCatalogCacheFiles.install(cache, pending, oldRevision, 1024L);
+        assertEquals(PlanningCatalogCacheFiles.InstallResult.INVALIDATED,
+                PlanningCatalogCacheFiles.install(cache, pending, oldRevision));
         assertFalse(Files.exists(cache));
         assertFalse(Files.exists(pending));
 
         Files.writeString(pending, "new catalog");
-        PlanningCatalogCacheFiles.install(cache, pending, PlanningCatalogCacheFiles.revision(cache), 1024L);
+        assertEquals(PlanningCatalogCacheFiles.InstallResult.INSTALLED,
+                PlanningCatalogCacheFiles.install(cache, pending, PlanningCatalogCacheFiles.revision(cache)));
         assertEquals("new catalog", Files.readString(cache));
         assertFalse(Files.exists(pending));
     }
 
-    @Test void reloadOnlyRemovesItsOwnScopeAndOversizedSavesKeepExistingCache() throws Exception
+    @Test void reloadOnlyRemovesItsOwnScopeAndLargeSavesAreInstalled() throws Exception
     {
         Path first = directory.resolve("first.dat");
         Path second = directory.resolve("second.dat");
@@ -43,10 +45,17 @@ final class PlanningCatalogCacheFilesTest
         assertEquals("second", Files.readString(second));
         assertEquals(secondRevision, PlanningCatalogCacheFiles.revision(second));
 
-        Path oversized = directory.resolve("second.dat.tmp");
-        Files.writeString(oversized, "too large");
-        PlanningCatalogCacheFiles.install(second, oversized, secondRevision, 1L);
-        assertEquals("second", Files.readString(second));
-        assertFalse(Files.exists(oversized));
+        Path large = directory.resolve("second.dat.tmp");
+        long size = 2L * 1024L * 1024L * 1024L + 1;
+        try (var channel = java.nio.channels.FileChannel.open(large,
+                java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE))
+        {
+            channel.position(size - 1);
+            channel.write(java.nio.ByteBuffer.wrap(new byte[] {0}));
+        }
+        assertEquals(PlanningCatalogCacheFiles.InstallResult.INSTALLED,
+                PlanningCatalogCacheFiles.install(second, large, secondRevision));
+        assertEquals(size, Files.size(second));
+        assertFalse(Files.exists(large));
     }
 }

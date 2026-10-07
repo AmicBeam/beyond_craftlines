@@ -30,20 +30,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-/** Versioned, bounded client cache for immutable planning catalogs. */
+/** Versioned client cache with streaming I/O and no catalog-size cap. */
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
     static final int VERSION = 4;
     // Stable across logins. Same-ID content changes are explicitly refreshed with /craftlines reload.
-    private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
-    private static final long MAX_TOTAL_NBT_BYTES = 1024L * 1024L * 1024L;
-    private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
-    private static final long MAX_TOTAL_ENTRIES = 8_000_000L;
-    private static final int MAX_RECIPES = 200_000;
-    private static final int MAX_SLOTS = 128;
-    private static final int MAX_CANDIDATES = 200_000;
-    private static final int MAX_STRING_BYTES = 1_048_576;
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(2), runnable -> {
@@ -82,92 +74,108 @@ final class ClientPlanningCatalogCache
 
     static void save(Level level, List<String> holderIds, ClientRecipePlanner.Catalog catalog)
     {
-        if (!cacheable(catalog)) return;
-        String fingerprint = fingerprint(holderIds);
-        Path cachePath = path();
-        long revision = PlanningCatalogCacheFiles.revision(cachePath);
-        try { IO.execute(() -> write(level, cachePath, revision, fingerprint, catalog)); }
-        catch (RejectedExecutionException exception)
-        { LOGGER.warn("{} client planning cache save skipped because the bounded I/O queue is full",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX); }
+        saveAsync(level, path(), holderIds, catalog);
     }
 
-    private static boolean cacheable(ClientRecipePlanner.Catalog catalog)
+    static Future<?> saveAsync(Level level, Path cachePath, List<String> holderIds,
+                               ClientRecipePlanner.Catalog catalog)
     {
-        if (catalog.recipes().size() > MAX_RECIPES) return false;
-        long entries = catalog.recipes().size();
-        for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
+        List<String> stableIds = List.copyOf(holderIds);
+        long revision = PlanningCatalogCacheFiles.revision(cachePath);
+        try
         {
-            if (recipe.slots().size() > MAX_SLOTS) return false;
-            entries += recipe.slots().size();
-            for (ClientRecipePlanner.Slot slot : recipe.slots())
-            {
-                if (slot.candidates().size() > MAX_CANDIDATES) return false;
-                entries += slot.candidates().size();
-                if (entries > MAX_TOTAL_ENTRIES) return false;
-            }
+            return IO.submit(() -> write(level, cachePath, revision, stableIds, catalog));
         }
-        return true;
+        catch (RejectedExecutionException exception)
+        {
+            LOGGER.warn("{} client planning cache save skipped reason=io_queue_full path={} recipes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    cachePath, catalog.recipes().size());
+            return null;
+        }
     }
 
-    private static void write(Level level, Path path, long revision, String fingerprint,
+    private static void write(Level level, Path path, long revision, List<String> holderIds,
                               ClientRecipePlanner.Catalog catalog)
     {
+        long started = System.nanoTime();
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
         {
+            PlanningCatalogCacheCounts budget = new PlanningCatalogCacheCounts();
+            budget.addRecipes(catalog.recipes().size());
             Files.createDirectories(path.getParent());
+            LOGGER.info("{} client planning cache save started path={} recipes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    path, catalog.recipes().size());
             try (DataOutputStream output = new DataOutputStream(new BufferedOutputStream(
                     new GZIPOutputStream(Files.newOutputStream(temporary)))))
             {
                 output.writeInt(MAGIC);
                 output.writeInt(VERSION);
-                writeString(output, fingerprint);
+                writeString(output, fingerprint(holderIds), budget);
                 output.writeInt(catalog.recipes().size());
-                for (ClientRecipePlanner.Recipe recipe : catalog.recipes()) writeRecipe(output, level, recipe);
+                for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
+                    writeRecipe(output, level, recipe, budget);
             }
-            PlanningCatalogCacheFiles.install(path, temporary, revision, MAX_FILE_BYTES);
+            long bytes = Files.size(temporary);
+            var result = PlanningCatalogCacheFiles.install(path, temporary, revision);
+            if (result == PlanningCatalogCacheFiles.InstallResult.INSTALLED)
+                LOGGER.info("{} client planning cache saved path={} recipes={} entries={} bytes={} elapsedMs={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        path, catalog.recipes().size(), budget.entries(), bytes,
+                        (System.nanoTime() - started) / 1_000_000L);
+            else LOGGER.warn("{} client planning cache save skipped reason={} path={} recipes={} bytes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    result, path, catalog.recipes().size(), bytes);
         }
         catch (IOException | RuntimeException | LinkageError exception)
         {
+            LOGGER.warn("{} client planning cache save failed path={} recipes={} elapsedMs={} error={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    path, catalog.recipes().size(), (System.nanoTime() - started) / 1_000_000L,
+                    exception.toString());
             try { Files.deleteIfExists(temporary); }
             catch (IOException ignored) {}
         }
     }
 
     private static void writeRecipe(DataOutputStream output, Level level,
-                                    ClientRecipePlanner.Recipe recipe) throws IOException
+                                    ClientRecipePlanner.Recipe recipe, PlanningCatalogCacheCounts budget) throws IOException
     {
-        writeString(output, recipe.id().toString());
-        writeString(output, recipe.family());
-        writeKey(output, level, recipe.output());
+        writeString(output, recipe.id().toString(), budget);
+        writeString(output, recipe.family(), budget);
+        writeKey(output, level, recipe.output(), budget);
         output.writeLong(recipe.outputCount());
-        writeString(output, recipe.outputMatch().name());
+        writeString(output, recipe.outputMatch().name(), budget);
+        budget.addByproducts(recipe.byproducts().size());
         output.writeInt(recipe.byproducts().size());
         for (var byproduct : recipe.byproducts())
         {
-            writeKey(output, level, byproduct.key());
+            writeKey(output, level, byproduct.key(), budget);
             output.writeLong(byproduct.amount());
         }
+        budget.addSlots(recipe.slots().size());
         output.writeInt(recipe.slots().size());
         for (ClientRecipePlanner.Slot slot : recipe.slots())
         {
             output.writeInt(slot.index());
-            writeString(output, slot.use().kind().name());
+            writeString(output, slot.use().kind().name(), budget);
             output.writeInt(slot.use().damagePerCraft());
+            budget.addCandidates(slot.candidates().size());
             output.writeInt(slot.candidates().size());
             for (ClientRecipePlanner.Candidate candidate : slot.candidates())
             {
-                writeKey(output, level, candidate.key());
+                writeKey(output, level, candidate.key(), budget);
                 output.writeLong(candidate.count());
                 writeString(output, candidate.explicitSelectionItem() == null
-                        ? "" : candidate.explicitSelectionItem().toString());
-                writeString(output, candidate.explicitSelection() == null ? "" : candidate.explicitSelection());
+                        ? "" : candidate.explicitSelectionItem().toString(), budget);
+                writeString(output, candidate.explicitSelection() == null ? "" : candidate.explicitSelection(), budget);
             }
         }
     }
 
-    private static EncodedRecipe readEncodedRecipe(DataInputStream input, ReadBudget budget,
+    private static EncodedRecipe readEncodedRecipe(DataInputStream input, PlanningCatalogCacheCounts budget,
                                                    NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation id = ResourceLocation.tryParse(readString(input, budget));
@@ -176,22 +184,22 @@ final class ClientPlanningCatalogCache
         long outputCount = input.readLong();
         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch =
                 RecipeIoProfileRegistry.OutputMatchSemantics.valueOf(readString(input, budget));
-        int byproductCount = bounded(input.readInt(), 64);
-        budget.addEntries(byproductCount);
-        List<EncodedYield> byproducts = new ArrayList<>(byproductCount);
+        int byproductCount = nonNegative(input.readInt());
+        budget.addByproducts(byproductCount);
+        List<EncodedYield> byproducts = new ArrayList<>();
         for (int i = 0; i < byproductCount; i++)
             byproducts.add(new EncodedYield(readEncodedKey(input, budget, nbtBudget), input.readLong()));
-        int slotCount = bounded(input.readInt(), MAX_SLOTS);
-        budget.addEntries(slotCount);
-        List<EncodedSlot> slots = new ArrayList<>(slotCount);
+        int slotCount = nonNegative(input.readInt());
+        budget.addSlots(slotCount);
+        List<EncodedSlot> slots = new ArrayList<>();
         for (int i = 0; i < slotCount; i++)
         {
             int slotIndex = input.readInt();
             VirtualInputUse.Kind kind = VirtualInputUse.Kind.valueOf(readString(input, budget));
             VirtualInputUse use = new VirtualInputUse(kind, input.readInt());
-            int candidateCount = bounded(input.readInt(), MAX_CANDIDATES);
-            budget.addEntries(candidateCount);
-            List<EncodedCandidate> candidates = new ArrayList<>(candidateCount);
+            int candidateCount = nonNegative(input.readInt());
+            budget.addCandidates(candidateCount);
+            List<EncodedCandidate> candidates = new ArrayList<>();
             for (int candidate = 0; candidate < candidateCount; candidate++)
             {
                 EncodedKey key = readEncodedKey(input, budget, nbtBudget);
@@ -206,13 +214,13 @@ final class ClientPlanningCatalogCache
         return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots), List.copyOf(byproducts));
     }
 
-    private static void writeKey(DataOutputStream output, Level level, IStackKey<?> key) throws IOException
+    private static void writeKey(DataOutputStream output, Level level, IStackKey<?> key, PlanningCatalogCacheCounts budget) throws IOException
     {
-        writeString(output, key.getTypeId().toString());
+        writeString(output, key.getTypeId().toString(), budget);
         NbtIo.write(key.serializeNBT(level.registryAccess()), output);
     }
 
-    private static EncodedKey readEncodedKey(DataInputStream input, ReadBudget budget,
+    private static EncodedKey readEncodedKey(DataInputStream input, PlanningCatalogCacheCounts budget,
                                              NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation type = ResourceLocation.tryParse(readString(input, budget));
@@ -221,23 +229,23 @@ final class ClientPlanningCatalogCache
         return new EncodedKey(type, encoded);
     }
 
-    private static int bounded(int value, int maximum) throws IOException
+    private static int nonNegative(int value) throws IOException
     {
-        if (value < 0 || value > maximum) throw new IOException("invalid cache collection size");
+        if (value < 0) throw new IOException("negative cache length/count value=" + value);
         return value;
     }
 
-    private static void writeString(DataOutputStream output, String value) throws IOException
+    private static void writeString(DataOutputStream output, String value, PlanningCatalogCacheCounts budget) throws IOException
     {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > MAX_STRING_BYTES) throw new IOException("cache string is too large");
+        budget.addStringBytes(bytes.length);
         output.writeInt(bytes.length);
         output.write(bytes);
     }
 
-    private static String readString(DataInputStream input, ReadBudget budget) throws IOException
+    private static String readString(DataInputStream input, PlanningCatalogCacheCounts budget) throws IOException
     {
-        int length = bounded(input.readInt(), MAX_STRING_BYTES);
+        int length = nonNegative(input.readInt());
         budget.addStringBytes(length);
         byte[] bytes = input.readNBytes(length);
         if (bytes.length != length) throw new java.io.EOFException("truncated cache string");
@@ -272,6 +280,7 @@ final class ClientPlanningCatalogCache
         private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
         private final java.util.Map<IStackKey<?>, IStackKey<?>> decodedKeys = new java.util.HashMap<>();
         private volatile State state = State.QUEUED;
+        private volatile String reason = "pending";
         private volatile int totalRecipes;
         private volatile int decodedRecipes;
         private volatile Future<?> future;
@@ -290,7 +299,7 @@ final class ClientPlanningCatalogCache
         private void start()
         {
             try { future = IO.submit(this::read); }
-            catch (RejectedExecutionException exception) { state = State.MISS; }
+            catch (RejectedExecutionException exception) { miss("io_queue_full"); }
         }
 
         private void read()
@@ -298,18 +307,26 @@ final class ClientPlanningCatalogCache
             long started = System.nanoTime();
             try
             {
-                if (!Files.isRegularFile(cachePath) || Files.size(cachePath) > MAX_FILE_BYTES)
-                { state = State.MISS; return; }
+                if (!Files.isRegularFile(cachePath)) { miss("file_missing"); return; }
                 try (DataInputStream input = new DataInputStream(new BufferedInputStream(
                         new GZIPInputStream(Files.newInputStream(cachePath)))))
                 {
-                    ReadBudget budget = new ReadBudget();
-                    NbtAccounter nbtBudget = NbtAccounter.create(MAX_TOTAL_NBT_BYTES);
-                    if (input.readInt() != MAGIC || input.readInt() != VERSION
-                            || !fingerprint(holderIds).equals(readString(input, budget)))
-                    { state = State.MISS; return; }
-                    totalRecipes = bounded(input.readInt(), MAX_RECIPES);
-                    budget.addEntries(totalRecipes);
+                    PlanningCatalogCacheCounts budget = new PlanningCatalogCacheCounts();
+                    NbtAccounter nbtBudget = NbtAccounter.unlimitedHeap();
+                    if (input.readInt() != MAGIC) { miss("invalid_magic"); return; }
+                    if (input.readInt() != VERSION) { miss("format_version_changed"); return; }
+                    String savedFingerprint = readString(input, budget);
+                    String currentFingerprint = fingerprint(holderIds);
+                    if (!currentFingerprint.equals(savedFingerprint))
+                    {
+                        miss("recipe_ids_changed");
+                        LOGGER.info("{} client planning cache fingerprint mismatch path={} saved={} current={} holders={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                cachePath, savedFingerprint, currentFingerprint, holderIds.size());
+                        return;
+                    }
+                    totalRecipes = nonNegative(input.readInt());
+                    budget.addRecipes(totalRecipes);
                     headerNanos = System.nanoTime() - started;
                     state = State.READING;
                     for (int i = 0; i < totalRecipes && !cancelled; i++)
@@ -351,6 +368,7 @@ final class ClientPlanningCatalogCache
             }
             catch (IOException | RuntimeException | LinkageError exception)
             {
+                reason = exception.toString();
                 state = State.FAILED;
                 LOGGER.warn("{} client planning cache read failed path={} error={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
@@ -430,6 +448,9 @@ final class ClientPlanningCatalogCache
         long headerMillis() { return headerNanos / 1_000_000L; }
         long parseMillis() { return parseNanos / 1_000_000L; }
         long decodeMillis() { return decodeNanos / 1_000_000L; }
+        private void miss(String reason) { this.reason = reason; state = State.MISS; }
+        String reason() { return reason; }
+        Path cachePath() { return cachePath; }
         String stateName() { return state.name().toLowerCase(java.util.Locale.ROOT); }
 
         private final class DecodeCursor
@@ -495,19 +516,4 @@ final class ClientPlanningCatalogCache
                                  RecipeIoProfileRegistry.OutputMatchSemantics outputMatch,
                                  List<EncodedSlot> slots, List<EncodedYield> byproducts) {}
 
-    private static final class ReadBudget
-    {
-        private long stringBytes;
-        private long entries;
-        void addStringBytes(int count) throws IOException
-        {
-            stringBytes += count;
-            if (stringBytes > MAX_TOTAL_STRING_BYTES) throw new IOException("cache text budget exceeded");
-        }
-        void addEntries(int count) throws IOException
-        {
-            entries += count;
-            if (entries > MAX_TOTAL_ENTRIES) throw new IOException("cache entry budget exceeded");
-        }
-    }
 }

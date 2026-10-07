@@ -23,15 +23,18 @@ final class PlanningCatalogCacheFiles
         Files.deleteIfExists(path);
     }
 
-    static synchronized void install(Path path, Path temporary, long revision, long maxBytes) throws IOException
+    enum InstallResult { INSTALLED, INVALIDATED }
+
+    static synchronized InstallResult install(Path path, Path temporary, long revision) throws IOException
     {
-        if (Files.size(temporary) > maxBytes || revision != revision(path))
+        if (revision != revision(path))
         {
             Files.deleteIfExists(temporary);
-            return;
+            return InstallResult.INVALIDATED;
         }
         try { Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
         catch (java.nio.file.AtomicMoveNotSupportedException ignored)
         { Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING); }
+        return InstallResult.INSTALLED;
     }
 }

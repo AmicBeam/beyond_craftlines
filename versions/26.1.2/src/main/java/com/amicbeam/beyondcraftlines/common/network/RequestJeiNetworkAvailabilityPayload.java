@@ -24,7 +24,8 @@ public record RequestJeiNetworkAvailabilityPayload() implements CustomPacketPayl
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player)
             {
-                DimensionsNet network = DimensionsNet.getPrimaryNetFromPlayer(player);
+                DimensionsNet network = com.amicbeam.beyondcraftlines.common.data
+                        .CraftlineNetworkContext.resolve(player);
                 var types = network == null ? java.util.List.<String>of()
                         : DeviceBindingRegistry.availableFamilies(player.level().getServer(), network.getId())
                         .stream().sorted().toList();

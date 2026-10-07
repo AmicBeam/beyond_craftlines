@@ -5,7 +5,6 @@ import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
-import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -117,14 +116,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             boolean malformedRequest=!payload.jeiRecipeType().isBlank()&&requestedType==null
                     ||!payload.recipeId().isBlank()&&requestedRecipe==null;
-            DimensionsNet network;
-            if (player.containerMenu instanceof CraftlineOrderMenu orderMenu)
-                network = orderMenu.canAccessNetwork(player)
-                        ? DimensionsNet.getNetFromId(orderMenu.networkId()) : null;
-            else network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
-                    ? DimensionsNet.getAllNetFromPlayer(player).stream()
-                            .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
-                    : DimensionsNet.getPrimaryNetFromPlayer(player);
+            DimensionsNet network = com.amicbeam.beyondcraftlines.common.data
+                    .CraftlineNetworkContext.resolve(player);
             if (network == null)
             {
                 openOrderMenu(player, -1, target, null, false, java.util.Set.of(), "network unavailable");

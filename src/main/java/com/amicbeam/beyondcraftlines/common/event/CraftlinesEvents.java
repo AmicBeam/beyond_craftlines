@@ -21,6 +21,15 @@ public final class CraftlinesEvents
     private CraftlinesEvents() {}
 
     @SubscribeEvent
+    public static void onContainerOpen(net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Open event)
+    {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)
+            com.amicbeam.beyondcraftlines.common.data.CraftlineNetworkContext
+                    .rememberMenu(player, event.getContainer());
+    }
+
+
+    @SubscribeEvent
     public static void onServerTick(ServerTickEvent.Post event)
     {
         var server = event.getServer();

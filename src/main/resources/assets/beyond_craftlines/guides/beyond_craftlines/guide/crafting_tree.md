@@ -15,7 +15,15 @@ The crafting tree is the planning and confirmation screen for a Craftlines order
 - From a **JEI or EMI recipe page**, click the Craftlines entry button. Automatic planning keeps the displayed recipe as the root. Selecting or forgetting a recipe preference in Craftlines updates EMI BoM, and EMI default-recipe changes are mirrored back into Craftlines.
 - Middle-click an ingredient in a **JEI/EMI recipe, ingredient list, or bookmark list**, or an item in a **Beyond Dimensions network item slot**. Craftlines opens the tree with only that target and no preselected root recipe, then runs the normal automatic planning and expansion against recipes available on the current network. This avoids binding the entry action to an arbitrary first recipe or to an unavailable recipe type.
 
-The first loading stage incrementally indexes recipe outputs and publishes the complete tree only when that index is ready. The second stage keeps the tree visible while preparing the immutable planning catalog. Both caches are reused until recipes are reloaded.
+JEI descriptions and planning catalogs persist for the current world/server. Later entries restore valid caches and update changed categories or recipe IDs; the complete tree appears when its lookup index is ready.
+
+## Refreshing caches manually
+
+Run `/craftlines reload` in your own client chat after joining a world; no operator permission is required. It clears this world's/server's JEI descriptions and planning catalog and reloads according to your preload setting. Orders, bindings, inventory, and saved preferences are retained.
+
+For datapack/IO profile changes, apply the server data using `/reload` or the modpack's required procedure first, then run the Craftlines command on affected clients. Refresh manually when contents change without new IDs, or when synthetic recipes have no reliable native IDs and their class/count is unchanged.
+
+`planning.preloadAllRecipeTypes=true` preloads all supported types by default; `false` uses the active network's types. Command success means invalidation finished, while indexing and saving continue. Wait for `client JEI cache save result=INSTALLED` and `client planning cache saved` before fully closing the game.
 
 ## Reading the layout
 

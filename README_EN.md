@@ -27,6 +27,14 @@ Version 0.6.0 adds persistent JEI descriptions and planning catalogs, incrementa
 
 To investigate indexing stalls, search the instance’s `logs/latest.log` or `logs/debug.log` for `slow recipe index`. Calls taking at least 20ms produce WARN entries with the stage, recipe ID, type, implementation class, duration, known input size, and thread. Details are deduplicated per recipe and stage and capped at 128 per JEI runtime, with a slowest-call summary. Run `/craftlines reload` to collect a fresh set.
 
+## Reloading recipe caches
+
+After joining a world, run `/craftlines reload` in your own client chat; no operator permission is needed. It clears the current world's/server's JEI descriptions and planning catalog, then prepares recipes according to `planning.preloadAllRecipeTypes`. Other scopes, orders, bindings, and saved preferences remain intact.
+
+For datapack/IO profile changes, have an administrator apply the server data using `/reload` or the modpack's required procedure first; affected players then run `/craftlines reload` locally. Command success confirms cache invalidation, not completed indexing or saving. Wait for both `client JEI cache save result=INSTALLED` and `client planning cache saved` before fully closing the game.
+
+See the [detailed cache guide (Chinese)](docs/RECIPE_CACHE.md) and [Wiki](https://github.com/AmicBeam/beyond_craftlines/wiki/配方缓存与重载).
+
 ## Supported Versions
 
 - Minecraft 1.20.1 / Forge 47 / Java 17

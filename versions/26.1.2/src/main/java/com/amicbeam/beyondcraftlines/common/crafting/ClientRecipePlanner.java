@@ -374,14 +374,23 @@ public final class ClientRecipePlanner
 
         public Catalog(List<Recipe> recipes)
         {
-            this.recipes = List.copyOf(recipes);
-            OutputRecipeMap index = new OutputRecipeMap();
-            for (Recipe recipe : this.recipes)
-                index.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
-            index.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
-            index.finish();
-            this.byOutput = index;
-            this.availableFamilies = null;
+            long started = System.nanoTime();
+            try
+            {
+                this.recipes = List.copyOf(recipes);
+                OutputRecipeMap index = new OutputRecipeMap();
+                for (Recipe recipe : this.recipes)
+                    index.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
+                index.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
+                index.finish();
+                this.byOutput = index;
+                this.availableFamilies = null;
+            }
+            finally
+            {
+                RecipeIndexDiagnostics.record("catalog_index", System.nanoTime() - started,
+                        "<catalog>", "<all>", Catalog.class, -1, -1);
+            }
         }
 
         private Catalog(Catalog source, Set<String> availableFamilies)
@@ -406,48 +415,149 @@ public final class ClientRecipePlanner
         { return byOutput.lookup(resource, availableFamilies); }
     }
 
+    private static void logSlowInputs(String stage, long elapsedNanos, RecipeHolder<?> holder, String family,
+                                      List<RecipeResourceResolver.ResourceIngredient> ingredients)
+    {
+        if (elapsedNanos < RecipeIndexDiagnostics.SLOW_NANOS) return;
+        logSlowCapture(stage, elapsedNanos, holder, family, ingredients == null ? -1 : ingredients.size(),
+                ingredients == null ? -1 : ingredients.stream().mapToLong(input -> input.candidates().size()).sum());
+    }
+
+    private static void logSlowCapture(String stage, long elapsedNanos, RecipeHolder<?> holder, String family,
+                                       int slots, long candidates)
+    {
+        if (elapsedNanos < RecipeIndexDiagnostics.SLOW_NANOS) return;
+        RecipeIndexDiagnostics.record(stage, elapsedNanos, holder.id().identifier(), family,
+                holder.value().getClass(), slots, candidates);
+    }
+
+    /** Main-thread cursor that yields after each output, slot, or ingredient candidate. */
     private static final class CaptureCursor
     {
         private final RecipeHolder<?> holder;
+        private final String family;
         private final List<KeyAmount> outputs;
         private final List<Recipe> captured;
         private int outputIndex;
         private DirectionCursor direction;
-        private CaptureCursor(Level level,RecipeHolder<?> holder){this.holder=holder;this.outputs=RecipeOutputResolver.outputs(holder.value(),level);this.captured=new ArrayList<>(outputs.size());}
-        private boolean advance(Level level){if(outputs.isEmpty())return true;if(direction==null)direction=new DirectionCursor(level,holder,outputs.get(outputIndex));Recipe recipe=direction.advance(level);if(recipe==null)return false;captured.add(recipe);direction=null;outputIndex++;return outputIndex>=outputs.size();}
-        private List<Recipe> result(){return List.copyOf(captured);}
+
+        private CaptureCursor(Level level, RecipeHolder<?> holder)
+        {
+            this.holder = holder;
+            // Resolve once and reuse it; diagnostic formatting must not call mod accessors again.
+            String resolvedFamily = "<unavailable>";
+            long started = System.nanoTime();
+            try { this.family = resolvedFamily = RecipePlanningService.family(holder); }
+            finally { logSlowCapture("recipe_type", System.nanoTime() - started, holder, resolvedFamily, -1, -1); }
+            started = System.nanoTime();
+            try { this.outputs = RecipeOutputResolver.outputs(holder.value(), level); }
+            finally { logSlowCapture("recipe_outputs", System.nanoTime() - started, holder, family, -1, -1); }
+            this.captured = new ArrayList<>(outputs.size());
+        }
+
+        private boolean advance(Level level)
+        {
+            if (outputs.isEmpty()) return true;
+            if (direction == null) direction = new DirectionCursor(level, holder, outputs.get(outputIndex), family);
+            Recipe recipe = direction.advance(level);
+            if (recipe == null) return false;
+            captured.add(recipe);
+            direction = null;
+            outputIndex++;
+            return outputIndex >= outputs.size();
+        }
+
+        private List<Recipe> result() { return List.copyOf(captured); }
     }
 
     private static final class DirectionCursor
     {
         private final RecipeHolder<?> holder;
+        private final String family;
         private final KeyAmount output;
         private final List<RecipeResourceResolver.ResourceIngredient> ingredients;
         private final List<ItemStack> baselineSamples;
-        private final List<Slot> slots=new ArrayList<>();
+        private final List<Slot> slots = new ArrayList<>();
         private int ingredientIndex;
         private int candidateIndex;
-        private LinkedHashMap<String,Candidate> candidates;
-        private DirectionCursor(Level level,RecipeHolder<?> holder,KeyAmount output){this.holder=holder;this.output=output;this.ingredients=RecipeResourceResolver.ingredientsForOutput(holder.value(),output.key());List<RecipePlan.IngredientSelection> baseline=ingredients.stream().filter(ingredient->ingredient.candidates().getFirst().key() instanceof ItemStackKey).map(ingredient->new RecipePlan.IngredientSelection(ingredient.slot(),IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();this.baselineSamples=SimulatedCrafting.selectedSamples(holder,baseline);}
+        private LinkedHashMap<String, Candidate> candidates;
+
+        private DirectionCursor(Level level, RecipeHolder<?> holder, KeyAmount output, String family)
+        {
+            this.holder = holder;
+            this.family = family;
+            this.output = output;
+            List<RecipeResourceResolver.ResourceIngredient> resolved = null;
+            long started = System.nanoTime();
+            try
+            {
+                resolved = RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
+                this.ingredients = resolved;
+            }
+            finally { logSlowInputs("recipe_inputs", System.nanoTime() - started, holder, family, resolved); }
+            started = System.nanoTime();
+            try
+            {
+                List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
+                        .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
+                        .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
+                                IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
+                this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+            }
+            finally { logSlowInputs("recipe_samples", System.nanoTime() - started, holder, family, ingredients); }
+        }
+
         private Recipe advance(Level level)
         {
-            if(ingredientIndex<ingredients.size())
+            String stage = ingredientIndex < ingredients.size() ? "recipe_candidate" : "recipe_finalize";
+            long started = System.nanoTime();
+            try { return advanceCurrent(level); }
+            finally { logSlowInputs(stage, System.nanoTime() - started, holder, family, ingredients); }
+        }
+
+        private Recipe advanceCurrent(Level level)
+        {
+            if (ingredientIndex < ingredients.size())
             {
-                RecipeResourceResolver.ResourceIngredient ingredient=ingredients.get(ingredientIndex);
-                if(candidates==null)candidates=new LinkedHashMap<>();
-                if(candidateIndex<ingredient.candidates().size())
+                RecipeResourceResolver.ResourceIngredient ingredient = ingredients.get(ingredientIndex);
+                if (candidates == null) candidates = new LinkedHashMap<>();
+                if (candidateIndex < ingredient.candidates().size())
                 {
-                    KeyAmount value=ingredient.candidates().get(candidateIndex++);Candidate candidate=new Candidate(value.key(),value.amount());
-                    if(value.key() instanceof ItemStackKey itemKey){Identifier selectedItem=itemId(value.key());KeyAmount proxy=SimulatedCrafting.bucketFluidInput(holder,level,baselineSamples,ingredient.slot(),itemKey.getReadOnlyStack());if(proxy!=null){Candidate fluid=new Candidate(proxy.key(),proxy.amount(),FluidContainerChoice.proxy(selectedItem));candidates.putIfAbsent(fluid.selection(),fluid);}}
-                    candidates.putIfAbsent(candidate.selection(),candidate);return null;
+                    KeyAmount value = ingredient.candidates().get(candidateIndex++);
+                    Candidate candidate = new Candidate(value.key(), value.amount());
+                    if (value.key() instanceof ItemStackKey itemKey)
+                    {
+                        Identifier selectedItem = itemId(value.key());
+                        KeyAmount proxy = SimulatedCrafting.bucketFluidInput(holder, level, baselineSamples,
+                                ingredient.slot(), itemKey.getReadOnlyStack());
+                        if (proxy != null)
+                        {
+                            Candidate fluid = new Candidate(proxy.key(), proxy.amount(),
+                                    FluidContainerChoice.proxy(selectedItem));
+                            candidates.putIfAbsent(fluid.selection(), fluid);
+                        }
+                    }
+                    candidates.putIfAbsent(candidate.selection(), candidate);
+                    return null;
                 }
-                if(!candidates.isEmpty())slots.add(new Slot(ingredient.slot(),List.copyOf(candidates.values()),VirtualInputUse.CONSUMED));
-                ingredientIndex++;candidateIndex=0;candidates=null;return null;
+                if (!candidates.isEmpty()) slots.add(new Slot(ingredient.slot(),
+                        List.copyOf(candidates.values()), VirtualInputUse.CONSUMED));
+                ingredientIndex++;
+                candidateIndex = 0;
+                candidates = null;
+                return null;
             }
-            List<RecipePlan.IngredientSelection> baseline=slots.stream().filter(slot->slot.candidates().getFirst().selectionItem()!=null).map(slot->new RecipePlan.IngredientSelection(slot.index(),slot.candidates().getFirst().selection())).toList();
-            VirtualInputUse[] inputUses=SimulatedCrafting.inputUses(holder,level,baseline);
-            List<Slot> completedSlots=slots.stream().map(slot->new Slot(slot.index(),slot.candidates(),VirtualInputUse.forRecipeSlot(holder.value(),slot.index(),slot.index()<inputUses.length?inputUses[slot.index()]:VirtualInputUse.CONSUMED))).toList();
-            return new Recipe(holder.id().identifier(),RecipePlanningService.family(holder),output.key(),Math.max(1,output.amount()),RecipeIoProfileRegistry.outputMatchSemantics(holder.value(),holder.id().identifier().toString()),completedSlots, VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null ? List.of()
+            List<RecipePlan.IngredientSelection> baseline = slots.stream()
+                    .filter(slot -> slot.candidates().getFirst().selectionItem() != null)
+                    .map(slot -> new RecipePlan.IngredientSelection(
+                            slot.index(), slot.candidates().getFirst().selection())).toList();
+            VirtualInputUse[] inputUses = SimulatedCrafting.inputUses(holder, level, baseline);
+            List<Slot> completedSlots = slots.stream().map(slot -> new Slot(slot.index(), slot.candidates(),
+                    VirtualInputUse.forRecipeSlot(holder.value(), slot.index(),
+                            slot.index() < inputUses.length ? inputUses[slot.index()] : VirtualInputUse.CONSUMED))).toList();
+            return new Recipe(holder.id().identifier(), family, output.key(),
+                    Math.max(1, output.amount()), RecipeIoProfileRegistry.outputMatchSemantics(
+                    holder.value(), holder.id().identifier().toString()), completedSlots, VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null ? List.of()
                     : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).guaranteedByproducts());
         }
     }
@@ -487,8 +597,14 @@ public final class ClientRecipePlanner
             while(next<holders.size()&&(processed<1||System.nanoTime()-started<timeBudgetNanos))
             {
                 long captureStarted=System.nanoTime();
-                if(cursor==null)cursor=new CaptureCursor(level,holders.get(next));
-                boolean holderComplete=cursor.advance(level);
+                boolean holderComplete;
+                try
+                {
+                    if (cursor == null) cursor = new CaptureCursor(level, holders.get(next));
+                    holderComplete = cursor.advance(level);
+                }
+                finally { logSlowCapture("recipe_step", System.nanoTime() - captureStarted, holders.get(next),
+                        cursor == null ? "<unavailable>" : cursor.family, -1, -1); }
                 captureSteps++;
                 captureNanos+=System.nanoTime()-captureStarted;
                 if(holderComplete){RecipeHolder<?> holder=holders.get(next++);captures.put(holder.id().identifier(),cursor.result());cursor=null;completed++;}

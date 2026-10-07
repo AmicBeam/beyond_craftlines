@@ -220,6 +220,16 @@
 5. 将配置设为 `false` 后重进，确认恢复按网络类型预热；切回 `true` 后重新得到完整目录。
 6. 整合包包含超过 16,384 条 JEI 虚拟描述时，确认最先完成的分类仍可查询，下单入口不会因为 LRU 淘汰而丢失。
 
+## 6.7 慢配方日志
+
+三个支持版本均使用同一阈值与限流规则：
+
+1. 在测试环境令某个 JEI 布局创建、配方输入／输出 accessor 或单候选处理调用耗时超过 20ms，完成预热后在 `logs/latest.log` 或 `logs/debug.log` 搜索 `slow recipe index`。
+2. 确认明细能区分 `jei_layout`、`jei_capture`、`jei_register`、`recipe_outputs`、`recipe_inputs`、`recipe_samples`、`recipe_candidate`、`recipe_finalize`；带稳定配方 ID、分类／类型、实现类、单次耗时和线程名。没有 JEI 稳定 ID 时显示分类内序号，未知数量为 `-1`。
+3. 检查 `recipe_snapshot` 的后台线程与渲染线程日志可以区分；`index_frame`、`recipe_step`、`catalog_index` 和 `lookup_index` 是聚合处理时间，不误解为单配方或整帧耗时。
+4. 重复处理同一慢配方同一阶段，确认明细不重复，汇总中的 `calls`／`suppressed` 继续增长；超过 128 个不同明细后只提示一次限额，同时仍汇总最慢配方。
+5. `/craftlines reload` 后重复操作，确认允许重新输出同配方明细；异常抛出路径仍有计时，但原有异常处理行为保留。正常快速配方不应新增逐条日志。
+
 ## 7. 取消已启用类型
 
 1. 在 GUI 中取消勾选“搅拌”，只保留“压块”。

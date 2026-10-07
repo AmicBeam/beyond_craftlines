@@ -275,19 +275,36 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
     {
-        if (runtime != null && Minecraft.getInstance().level != null
-                && CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
+        long frameStarted = System.nanoTime();
+        try
         {
-            JeiCatalystIndex.prewarmAllRecipeTypes();
-            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(java.util.Set.of());
+            if (runtime != null && Minecraft.getInstance().level != null
+                    && CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
+            {
+                JeiCatalystIndex.prewarmAllRecipeTypes();
+                com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(java.util.Set.of());
+            }
+            long metadataStarted = System.nanoTime();
+            try { com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.refreshMetadata(); }
+            finally
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "metadata_refresh", System.nanoTime() - metadataStarted,
+                        "<metadata>", "<all>", CraftlinesJeiPlugin.class, -1, -1);
+            }
+            long started=System.nanoTime();
+            long deadline=System.nanoTime()+CLIENT_FRAME_BUDGET_NANOS;
+            JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
+            long remaining=deadline-System.nanoTime();
+            if(remaining>0)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.recordFrameSlice(System.nanoTime()-started);
         }
-        com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.refreshMetadata();
-        long started=System.nanoTime();
-        long deadline=System.nanoTime()+CLIENT_FRAME_BUDGET_NANOS;
-        JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
-        long remaining=deadline-System.nanoTime();
-        if(remaining>0)com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.recordFrameSlice(System.nanoTime()-started);
+        finally
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                    "index_frame", System.nanoTime() - frameStarted,
+                    "<frame>", "<all>", CraftlinesJeiPlugin.class, -1, -1);
+        }
     }
 
     private static void queueOrder(OpenOrderMenuPayload payload)

@@ -201,7 +201,16 @@ public final class ClientPlanningCatalogWarmup
         if (builder != null && builder.complete() && lookupBuilder == null)
             lookupBuilder = ClientRecipeLookupIndex.begin(builder.catalog());
         if (lookupBuilder != null && !lookupBuilder.complete() && System.nanoTime() < deadline)
-            lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime()));
+        {
+            long lookupStarted = System.nanoTime();
+            try { lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime())); }
+            finally
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "lookup_index", System.nanoTime() - lookupStarted,
+                        "<catalog>", "<all>", ClientRecipeLookupIndex.class, -1, -1);
+            }
+        }
         long elapsed = System.nanoTime() - sliceStarted;
         maxMainSliceNanos = Math.max(maxMainSliceNanos, elapsed);
         logMetricsIfDue();
@@ -308,6 +317,7 @@ public final class ClientPlanningCatalogWarmup
     {
         if (!complete() || completionLogged) return;
         completionLogged = true;
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.summarize("catalog_ready");
         if (!cachePersisted)
         {
             Level level = Minecraft.getInstance().level;
@@ -370,13 +380,24 @@ public final class ClientPlanningCatalogWarmup
 
         private void accept(RecipeHolder<?> holder)
         {
-            scanned++;
-            String family = RecipePlanningService.family(holder);
-            boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
-            if (RecipePlanningService.supported(holder)
-                    && RecipeIndexVisibility.includesPlanningRecipe(
-                            family, virtual, availableFamilies))
-                selected.putIfAbsent(holder.id().toString(), holder);
+            long started = System.nanoTime();
+            String family = "<unavailable>";
+            try
+            {
+                scanned++;
+                family = RecipePlanningService.family(holder);
+                boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
+                if (RecipePlanningService.supported(holder)
+                        && RecipeIndexVisibility.includesPlanningRecipe(
+                                family, virtual, availableFamilies))
+                    selected.putIfAbsent(holder.id().toString(), holder);
+            }
+            finally
+            {
+                long elapsed = System.nanoTime() - started;
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "recipe_snapshot", elapsed, holder.id(), family, holder.value().getClass(), -1, -1);
+            }
         }
 
         private boolean complete() { return complete; }

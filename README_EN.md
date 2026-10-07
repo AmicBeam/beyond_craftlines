@@ -25,6 +25,8 @@ Version 0.5.2 preserves JEI focus links and multiple outputs, credits guaranteed
 - **Craftline Dashboards**: Attach a thin dashboard to a container or network device, then drop an item, fluid, or chemical into its JEI ghost ingredient slot. It stores the maintained amount, network/container monitoring mode, redstone behavior, blocking mode, and a fixed recipe tree. Automatic refill orders do not consume player order slots and default to ten active orders per network.
 - **Persistent orders and status management**: Orders, step progress, and machine bindings survive world saves. Players can inspect network orders, diagnose why a step is waiting, and cancel unfinished work.
 
+To investigate indexing stalls, search the instance’s `logs/latest.log` or `logs/debug.log` for `slow recipe index`. Calls taking at least 20ms produce WARN entries with the stage, recipe ID, type, implementation class, duration, known input size, and thread. Details are deduplicated per recipe and stage and capped at 128 per JEI runtime, with a slowest-call summary. Run `/craftlines reload` to collect a fresh set.
+
 ## Supported Versions
 
 - Minecraft 1.20.1 / Forge 47 / Java 17

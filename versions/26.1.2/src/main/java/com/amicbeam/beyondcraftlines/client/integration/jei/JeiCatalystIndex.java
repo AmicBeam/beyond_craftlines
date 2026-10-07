@@ -2,6 +2,7 @@ package com.amicbeam.beyondcraftlines.client.integration.jei;
 
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeTypeWarmupTracker;
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import mezz.jei.api.recipe.category.IRecipeCategory;
 import mezz.jei.api.runtime.IJeiRuntime;
@@ -47,6 +48,7 @@ public final class JeiCatalystIndex
     {
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
         JeiVirtualRecipeLayouts.resetDiagnostics();
+        RecipeIndexDiagnostics.reset();
         Set<Identifier> previousActiveTypes = TYPE_STATE.activeTypes();
         JeiCatalystIndex.runtime = runtime;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.reload(
@@ -210,6 +212,7 @@ public final class JeiCatalystIndex
             {
                 TYPE_QUEUE.removeFirst();
                 TYPE_STATE.complete(task.recipeType());
+                if (TYPE_QUEUE.isEmpty()) RecipeIndexDiagnostics.summarize("jei_warmup_complete");
             }
             if (processed) remaining--;
         }
@@ -261,6 +264,7 @@ public final class JeiCatalystIndex
 
     public static void clear()
     {
+        RecipeIndexDiagnostics.reset();
         runtime = null;
         com.amicbeam.beyondcraftlines.common.crafting.JeiInputGroupProfileRegistry.clear();
         TYPE_QUEUE.clear();
@@ -320,6 +324,8 @@ public final class JeiCatalystIndex
         private final Identifier recipeType;
         private Iterator<Object> recipes;
         private boolean complete;
+        private long recipeOrdinal;
+        private String diagnosticId;
 
         @SuppressWarnings("unchecked")
         private SearchTask(IRecipeCategory<?> category, Identifier recipeType)
@@ -328,25 +334,49 @@ public final class JeiCatalystIndex
         private boolean advance(IJeiRuntime runtime)
         {
             if (complete) return false;
+            Object recipe = null;
             try
             {
-                if (recipes == null)
+                long started = System.nanoTime();
+                try
                 {
-                    var lookup = runtime.getRecipeManager().createRecipeLookup(category.getRecipeType())
-                            .includeHidden();
-                    recipes = lookup.get().iterator();
+                    if (recipes == null)
+                    {
+                        var lookup = runtime.getRecipeManager().createRecipeLookup(category.getRecipeType())
+                                .includeHidden();
+                        recipes = lookup.get().iterator();
+                    }
+                    if (!recipes.hasNext()) { complete = true; return false; }
+                    recipe = recipes.next();
+                    recipeOrdinal++;
+                    diagnosticId = null;
                 }
-                if (!recipes.hasNext()) { complete = true; return false; }
-                Object recipe = recipes.next();
-                runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
-                                runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup())
-                        .ifPresent(layout -> {
-                            var values = JeiVirtualRecipeLayouts.captures(
-                                    category.getRecipeType().getUid(), layout);
-                            if (!values.isEmpty()) JeiCatalystIndex.captured(
-                                    category.getRecipeType().getUid(), category, recipe, values);
-                        });
-                if (!recipes.hasNext()) complete = true;
+                finally { logSlow("jei_lookup", System.nanoTime() - started, recipe, java.util.List.of()); }
+
+                java.util.Optional<mezz.jei.api.gui.IRecipeLayoutDrawable<Object>> layout;
+                started = System.nanoTime();
+                try
+                {
+                    layout = runtime.getRecipeManager().createRecipeLayoutDrawable(category, recipe,
+                            runtime.getJeiHelpers().getFocusFactory().getEmptyFocusGroup());
+                }
+                finally { logSlow("jei_layout", System.nanoTime() - started, recipe, java.util.List.of()); }
+                if (layout.isPresent())
+                {
+                    java.util.List<JeiVirtualRecipeLayouts.Captured> values = java.util.List.of();
+                    started = System.nanoTime();
+                    try { values = JeiVirtualRecipeLayouts.captures(recipeType, layout.get()); }
+                    finally { logSlow("jei_capture", System.nanoTime() - started, recipe, values); }
+                    if (!values.isEmpty())
+                    {
+                        started = System.nanoTime();
+                        try { JeiCatalystIndex.captured(recipeType, category, recipe, values); }
+                        finally { logSlow("jei_register", System.nanoTime() - started, recipe, values); }
+                    }
+                }
+                started = System.nanoTime();
+                try { if (!recipes.hasNext()) complete = true; }
+                finally { logSlow("jei_lookup", System.nanoTime() - started, recipe, java.util.List.of()); }
                 return true;
             }
             catch (RuntimeException | LinkageError exception)
@@ -355,6 +385,30 @@ public final class JeiCatalystIndex
                 LOGGER.warn("Unable to lazily index JEI recipe category {}", category.getClass().getName(), exception);
                 return false;
             }
+        }
+
+        private void logSlow(String stage, long elapsedNanos, Object recipe,
+                             java.util.List<JeiVirtualRecipeLayouts.Captured> values)
+        {
+            if (elapsedNanos < RecipeIndexDiagnostics.SLOW_NANOS) return;
+            if (recipe != null && diagnosticId == null)
+            {
+                diagnosticId = "unregistered#" + recipeOrdinal;
+                try
+                {
+                    Object id = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
+                            ? holder.id().identifier() : category.getIdentifier(recipe);
+                    if (id != null) diagnosticId = id.toString();
+                }
+                catch (RuntimeException | LinkageError ignored) {}
+            }
+            Object source = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
+                    ? holder.value() : recipe;
+            int slots = values.isEmpty() ? -1 : values.get(0).inputs().size();
+            long candidates = values.isEmpty() ? -1 : values.get(0).inputs().stream()
+                    .mapToLong(input -> input.candidates().size()).sum();
+            RecipeIndexDiagnostics.record(stage, elapsedNanos, recipe == null ? "<category>" : diagnosticId,
+                    recipeType, source == null ? category.getClass() : source.getClass(), slots, candidates);
         }
 
         private boolean complete() { return complete; }

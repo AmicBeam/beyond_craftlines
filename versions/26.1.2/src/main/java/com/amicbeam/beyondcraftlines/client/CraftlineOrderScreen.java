@@ -293,8 +293,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (preferencesLoaded) return;
         preferencesLoaded = true;
         loadClientPreferences();
+        logTargetRecipeCandidates();
         selectInitialTarget();
         beginPlanningCatalogCapture();
+    }
+
+    private void logTargetRecipeCandidates()
+    {
+        var indexed = com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex
+                .recipeIdsForOutput(menu.initialTarget());
+        var available = menu.recipesForResourceOutput(menu.initialTarget());
+        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                "{} client target candidates network={} target={} indexed={} available={} familyIds={} candidateRecipes={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                menu.networkId(), com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics
+                        .resource(menu.initialTarget()), indexed.size(), available.size(),
+                menu.availableFamilies().stream().sorted().limit(128).toList(),
+                available.stream().limit(16).map(holder -> holder.id().identifier().toString() + "@"
+                        + com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.family(holder)).toList());
     }
 
     private void beginPlanningCatalogCapture()

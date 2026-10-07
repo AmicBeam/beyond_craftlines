@@ -237,9 +237,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                                       java.util.Set<String> families, String initialError)
     {
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} server open menu network={} recipe={} pinned={} families={} error={} target={}",
+                "{} server open menu network={} recipe={} pinned={} families={} familyIds={} error={} target={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                networkId, recipe, pinned, families.size(), initialError,
+                networkId, recipe, pinned, families.size(), families.stream().sorted().limit(128).toList(), initialError,
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                 new CraftlineOrderMenu(id, inventory, networkId, target, recipe, pinned, families),

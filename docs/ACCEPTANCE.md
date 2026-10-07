@@ -230,6 +230,17 @@
 4. 重复处理同一慢配方同一阶段，确认明细不重复，汇总中的 `calls`／`suppressed` 继续增长；超过 128 个不同明细后只提示一次限额，同时仍汇总最慢配方。
 5. `/craftlines reload` 后重复操作，确认允许重新输出同配方明细；异常抛出路径仍有计时，但原有异常处理行为保留。正常快速配方不应新增逐条日志。
 
+## 6.8 ATM10 8.1 新版 JEI 与工作站输入缓存
+
+适用于三个支持版本的通用桥接／缓存行为；ATM10 8.1 运行复测使用 Minecraft 1.21.1 NeoForge：
+
+1. 使用返回直接布局的旧版 JEI，以及返回 `Optional<RecipeLayout>` 的新版 JEI，确认显式 focus link 均能被捕获；Optional 为空不创建伪布局记录，真正缺失桥接时仍拒绝描述。
+2. ATM10 8.1 / JEI 19.57.0.446 中为供给器启用符文之星祭坛类型，完成重载后打开 ATM 之星配方树。确认原来 `JEI layout relation bridge is unavailable` 的拒绝消失，祭坛候选进入树；材料仍保留数量、组件和可复用语义。
+3. 搜索 `client target candidates`：`indexed` 为当前目标的全局候选数，`available` 为通过菜单网络过滤的候选数，`familyIds` 和 `candidateRecipes` 列出有界诊断信息。零全局候选与有候选但网络过滤后的零候选可以区分；Unsupported 日志包含配方身份、实际布局实现类和拒绝原因。
+4. 预热 Silent Gear 锻造类型，确认资源捕获后样本／余料读取复用同一份工作站输入，不再次整表枚举物品；非工作台配方不构造工作台基线样本。使用 `/craftlines reload` 后解析缓存必须更新。
+
+上游依据：[JEI 1.21.1 的布局构造返回值](https://github.com/mezz/JustEnoughItems/blob/1.21.1/Library/src/main/java/mezz/jei/library/gui/recipes/layout/builder/RecipeLayoutBuilder.java)、[ATM10 官方星祭坛配方脚本](https://github.com/AllTheMods/ATM-10/blob/main/kubejs/server_scripts/modpack/runic_multis/recipes/star_altar.js)。
+
 ## 7. 取消已启用类型
 
 1. 在 GUI 中取消勾选“搅拌”，只保留“压块”。

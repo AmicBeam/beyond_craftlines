@@ -514,11 +514,15 @@ public final class ClientRecipePlanner
             started = System.nanoTime();
             try
             {
-                List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
-                        .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
-                        .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
-                                IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
-                this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+                if (holder.value() instanceof net.minecraft.world.item.crafting.CraftingRecipe)
+                {
+                    List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
+                            .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
+                            .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
+                                    IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
+                    this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+                }
+                else this.baselineSamples = List.of();
             }
             finally { logSlowInputs("recipe_samples", System.nanoTime() - started, holder, family, ingredients); }
         }

@@ -14,6 +14,9 @@ public final class JeiLayoutRelations
 
     public static void record(Object layout, List<?> visible, List<? extends List<?>> groups)
     {
+        // JEI 19.57+ returns Optional<RecipeLayout>; older releases return the layout directly.
+        if (layout instanceof java.util.Optional<?> optional) layout = optional.orElse(null);
+        if (layout == null) return;
         List<List<Integer>> links = new ArrayList<>();
         for (List<?> group : groups)
         {

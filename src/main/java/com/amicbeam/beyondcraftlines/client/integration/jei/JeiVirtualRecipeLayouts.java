@@ -59,9 +59,14 @@ public final class JeiVirtualRecipeLayouts
             synchronized (WARNED)
             {
                 if (WARNED.size() < 128 && WARNED.add(warning))
+                {
+                    Object recipeId = "<unavailable>";
+                    try { recipeId = CraftlinesJeiPlugin.findRecipeId(layout); }
+                    catch (RuntimeException | LinkageError ignored) {}
                     org.slf4j.LoggerFactory.getLogger(JeiVirtualRecipeLayouts.class).warn(
-                            "Unsupported JEI recipe category={} recipeClass={} reason={}", type,
-                            layout.getRecipe().getClass().getName(), exception.getMessage());
+                            "Unsupported JEI recipe category={} recipe={} recipeClass={} layoutClass={} reason={}", type,
+                            recipeId, layout.getRecipe().getClass().getName(), layout.getClass().getName(), exception.getMessage());
+                }
             }
             return List.of();
         }
@@ -84,7 +89,8 @@ public final class JeiVirtualRecipeLayouts
                 values.add(value);
             });
             if (values.size() > VirtualRecipeLimits.CANDIDATES)
-                throw new IllegalArgumentException("JEI slot exceeds candidate budget");
+                throw new IllegalArgumentException("JEI slot exceeds candidate budget role=" + slot.getRole()
+                        + " observedAtLeast=" + values.size() + " limit=" + VirtualRecipeLimits.CANDIDATES);
             raw.add(List.copyOf(values));
         }
         long inputCandidates = 0;

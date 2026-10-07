@@ -255,6 +255,15 @@
 
 上游依据：[MI 原生配方公开字段与原版输入输出 API](https://github.com/AztechMC/Modern-Industrialization/blob/1.21.x/src/main/java/aztech/modern_industrialization/machines/recipe/MachineRecipe.java)。
 
+## 6.10 配方树 tooltip 层级和可见区域
+
+分别在 1.20.1 Forge、1.21.1 NeoForge、26.1.2 NeoForge 复测：
+
+1. 打开含大量缺料的树，把鼠标放在右侧缺料图标上，确认 tooltip 全部文字、背景及预览位于图标、数量和树内容上方，悬浮材料时不会同时出现背后树节点的 tooltip。
+2. 平移和缩放树，使节点被左、右、上边界部分裁剪；鼠标位于可见节点部分时仍有 tooltip，移至画布外的白色面板、右侧材料栏、底部帮助／错误行时不能触发被裁剪节点。
+3. 验证边框、最右边界和底部裁剪边界的悬浮与点击一致；移到节点外、清空树、重新加载材料或切换目标后不残留旧 tooltip。
+4. 打开候选选择弹窗，确认背景树和材料不会抢占弹窗 tooltip；关闭后正常恢复。
+
 ## 7. 取消已启用类型
 
 1. 在 GUI 中取消勾选“搅拌”，只保留“压块”。

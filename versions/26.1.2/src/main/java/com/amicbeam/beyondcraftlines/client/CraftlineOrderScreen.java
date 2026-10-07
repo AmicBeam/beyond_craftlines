@@ -116,6 +116,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private String previewError = "";
     private int previewNextPage;
     private int materialScroll;
+    private Map.Entry<IStackKey<?>, Long> hoveredMaterial;
+    private GraphNode hoveredTreeNode;
     private boolean materialSummaryReady;
     private boolean materialSummaryMissing;
     private boolean materialSummaryTheoretical;
@@ -243,6 +245,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return treeBottom() - 18 - lines * 12;
     }
     private boolean overTree(double x, double y) { return x >= treeLeft() && x < treeRight() && y >= treeTop() && y < treeBottom(); }
+    private boolean overTreeContent(double x, double y)
+    { return ViewportCulling.containsPoint(treeLeft() + 1, treeTop() + 1,
+            treeRight() - 1, treeContentBottom(), x, y); }
+
     private boolean pickerOpen() { return ingredientPickerNode != null || recipePickerNode != null; }
 
     @Override protected void containerTick()
@@ -503,12 +509,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick)
     {
+        hoveredMaterial = null;
+        hoveredTreeNode = null;
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         graphics.text(font, title, leftPos + 10, topPos + 9, 0x253545, false);
         renderTarget(graphics);
         renderMaterials(graphics, mouseX, mouseY);
         renderTree(graphics, mouseX, mouseY);
         renderIngredientPicker(graphics, mouseX, mouseY);
+        renderForegroundTooltips(graphics, mouseX, mouseY);
+    }
+
+    private void renderForegroundTooltips(GuiGraphicsExtractor graphics, int mouseX, int mouseY)
+    {
+        if (pickerOpen()) return;
+        if (hoveredMaterial == null && hoveredTreeNode == null) return;
+        graphics.nextStratum();
+        if (hoveredMaterial != null) renderMaterialTooltip(graphics, hoveredMaterial, mouseX, mouseY);
+        else renderNodeTooltip(graphics, hoveredTreeNode, mouseX, mouseY);
     }
 
     private void renderTarget(GuiGraphicsExtractor graphics)
@@ -590,23 +608,26 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 hovered = material;
         }
         renderMaterialScrollbar(graphics, materials.size());
-        if (hovered != null && !pickerOpen())
-        {
-            long available = planningResources.getOrDefault(hovered.getKey(), 0L);
-            List<Component> tooltip = new ArrayList<>(hovered.getKey().getRender().getTooltipLines(
-                    hovered.getKey(), available, net.minecraft.world.item.Item.TooltipContext.of(minecraft.level),
-                    minecraft.player, minecraft.options.advancedItemTooltips
-                            ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL));
-            tooltip.add(materialSummaryMissing
-                    ? Component.translatable("gui.beyond_craftlines.material_missing_amount", hovered.getValue())
-                    .withStyle(ChatFormatting.RED)
-                    : Component.translatable(materialSummaryTheoretical
-                                    ? "gui.beyond_craftlines.material_total_amount"
-                                    : "gui.beyond_craftlines.material_amounts",
-                            hovered.getValue(), available).withStyle(available >= hovered.getValue()
-                            ? ChatFormatting.GREEN : ChatFormatting.RED));
-            graphics.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
-        }
+        if (!pickerOpen()) hoveredMaterial = hovered;
+    }
+
+    private void renderMaterialTooltip(GuiGraphicsExtractor graphics, Map.Entry<IStackKey<?>, Long> hovered,
+                                        int mouseX, int mouseY)
+    {
+        long available = planningResources.getOrDefault(hovered.getKey(), 0L);
+        List<Component> tooltip = new ArrayList<>(hovered.getKey().getRender().getTooltipLines(
+                hovered.getKey(), available, net.minecraft.world.item.Item.TooltipContext.of(minecraft.level),
+                minecraft.player, minecraft.options.advancedItemTooltips
+                        ? TooltipFlag.Default.ADVANCED : TooltipFlag.Default.NORMAL));
+        tooltip.add(materialSummaryMissing
+                ? Component.translatable("gui.beyond_craftlines.material_missing_amount", hovered.getValue())
+                .withStyle(ChatFormatting.RED)
+                : Component.translatable(materialSummaryTheoretical
+                                ? "gui.beyond_craftlines.material_total_amount"
+                                : "gui.beyond_craftlines.material_amounts",
+                        hovered.getValue(), available).withStyle(available >= hovered.getValue()
+                        ? ChatFormatting.GREEN : ChatFormatting.RED));
+        graphics.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
     }
 
     private void renderMaterialScrollbar(GuiGraphicsExtractor graphics, int materialCount)
@@ -691,14 +712,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (!ViewportCulling.intersects(treeLeft(), treeTop(), treeRight(), contentBottom,
                     x - 1, y - 1, x + 29, y + 29)) continue;
             renderNode(graphics, node, mouseX, mouseY);
-            if (!pickerOpen() && mouseX >= x && mouseX < x + 28
-                    && mouseY >= y && mouseY < Math.min(y + 28, contentBottom)) hovered = node;
+            if (!pickerOpen() && ViewportCulling.hitTest(treeLeft() + 1, treeTop() + 1,
+                    treeRight() - 1, contentBottom, x, y, x + 28, y + 28, mouseX, mouseY)) hovered = node;
         }
         // Item/resource renderers may defer their vertices. Flush while scissoring is still active,
         // otherwise icons and counts can be emitted later on top of the footer and modal picker.
         graphics.disableScissor();
 
-        if (hovered != null) renderNodeTooltip(graphics, hovered, mouseX, mouseY);
+        hoveredTreeNode = hovered;
 
         String zoom = Math.round(treeZoom * 100) + "%";
         graphics.text(font, zoom, treeRight() - font.width(zoom) - 5, treeBottom() - 12, 0x8296A8, false);
@@ -871,7 +892,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         int x = nodeX(node);
         int y = nodeY(node);
-        boolean hover = mouseX >= x && mouseX < x + 28 && mouseY >= y && mouseY < y + 28;
+        boolean hover = !pickerOpen() && ViewportCulling.hitTest(treeLeft() + 1, treeTop() + 1,
+                treeRight() - 1, treeContentBottom(), x, y, x + 28, y + 28, mouseX, mouseY);
         int edge = node.selfIncrement ? BD_ORANGE
                 : node.jumpTarget != null ? BD_VIOLET : node.cyclic || node.cycleBlocked ? 0xFFB23A48
                 : node.stockSatisfied ? 0xFF39A96B : node.recipe == null ? 0xFFB23A48
@@ -1727,8 +1749,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private GraphNode nodeAt(double mouseX, double mouseY)
     {
-        if (pickerOpen() || mouseX < treeLeft() || mouseX >= treeRight()
-                || mouseY < treeTop() || mouseY >= treeContentBottom()) return null;
+        if (pickerOpen() || !overTreeContent(mouseX, mouseY)) return null;
         for (GraphNode node : treeNodes)
         {
             int x = nodeX(node);

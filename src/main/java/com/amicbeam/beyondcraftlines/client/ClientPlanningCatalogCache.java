@@ -80,6 +80,14 @@ final class ClientPlanningCatalogCache
         return job;
     }
 
+    static LoadJob loadAsync(Path cachePath, List<String> holderIds, long generation,
+                             java.util.Map<ResourceLocation, ResourceLocation> migrations)
+    {
+        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds), null, null, java.util.Map.copyOf(migrations));
+        job.start();
+        return job;
+    }
+
     static void save(Level level, List<String> holderIds, ClientRecipePlanner.Catalog catalog)
     {
         saveAsync(level, path(), holderIds, catalog);
@@ -88,11 +96,18 @@ final class ClientPlanningCatalogCache
     static Future<?> saveAsync(Level level, Path cachePath, List<String> holderIds,
                                ClientRecipePlanner.Catalog catalog)
     {
+        return saveWithRegistryAsync(level == null ? net.minecraft.core.RegistryAccess.EMPTY : level.registryAccess(),
+                cachePath, holderIds, catalog);
+    }
+
+    static Future<?> saveWithRegistryAsync(net.minecraft.core.RegistryAccess registryAccess, Path cachePath,
+                                          List<String> holderIds, ClientRecipePlanner.Catalog catalog)
+    {
         List<String> stableIds = List.copyOf(holderIds);
         long revision = PlanningCatalogCacheFiles.revision(cachePath);
         try
         {
-            return IO.submit(() -> write(level, cachePath, revision, stableIds, catalog));
+            return IO.submit(() -> write(registryAccess, cachePath, revision, stableIds, catalog));
         }
         catch (RejectedExecutionException exception)
         {
@@ -103,7 +118,7 @@ final class ClientPlanningCatalogCache
         }
     }
 
-    private static void write(Level level, Path path, long revision, List<String> holderIds,
+    private static void write(net.minecraft.core.RegistryAccess registryAccess, Path path, long revision, List<String> holderIds,
                               ClientRecipePlanner.Catalog catalog)
     {
         long started = System.nanoTime();
@@ -124,7 +139,7 @@ final class ClientPlanningCatalogCache
                 writeString(output, fingerprint(holderIds), budget);
                 output.writeInt(catalog.recipes().size());
                 for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
-                    writeRecipe(output, level, recipe, budget);
+                    writeRecipe(output, registryAccess, recipe, budget);
             }
             long bytes = Files.size(temporary);
             var result = PlanningCatalogCacheFiles.install(path, temporary, revision);
@@ -148,19 +163,19 @@ final class ClientPlanningCatalogCache
         }
     }
 
-    private static void writeRecipe(DataOutputStream output, Level level,
+    private static void writeRecipe(DataOutputStream output, net.minecraft.core.RegistryAccess registryAccess,
                                     ClientRecipePlanner.Recipe recipe, PlanningCatalogCacheCounts budget) throws IOException
     {
         writeString(output, recipe.id().toString(), budget);
         writeString(output, recipe.family(), budget);
-        writeKey(output, level, recipe.output(), budget);
+        writeKey(output, registryAccess, recipe.output(), budget);
         output.writeLong(recipe.outputCount());
         writeString(output, recipe.outputMatch().name(), budget);
         budget.addByproducts(recipe.byproducts().size());
         output.writeInt(recipe.byproducts().size());
         for (var byproduct : recipe.byproducts())
         {
-            writeKey(output, level, byproduct.key(), budget);
+            writeKey(output, registryAccess, byproduct.key(), budget);
             output.writeLong(byproduct.amount());
         }
         budget.addSlots(recipe.slots().size());
@@ -174,7 +189,7 @@ final class ClientPlanningCatalogCache
             output.writeInt(slot.candidates().size());
             for (ClientRecipePlanner.Candidate candidate : slot.candidates())
             {
-                writeKey(output, level, candidate.key(), budget);
+                writeKey(output, registryAccess, candidate.key(), budget);
                 output.writeLong(candidate.count());
                 writeString(output, candidate.explicitSelectionItem() == null
                         ? "" : candidate.explicitSelectionItem().toString(), budget);
@@ -296,6 +311,7 @@ final class ClientPlanningCatalogCache
         private volatile com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.Builder restoredLookup;
         private volatile boolean buildingLookup;
         private volatile int removedRecipeIds;
+        private final java.util.Map<ResourceLocation, ResourceLocation> idMigrations;
         private final ArrayBlockingQueue<EncodedRecipe> queue = new ArrayBlockingQueue<>(2);
         private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
         private final java.util.Map<IStackKey<?>, IStackKey<?>> decodedKeys = new java.util.HashMap<>();
@@ -314,8 +330,13 @@ final class ClientPlanningCatalogCache
 
         private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel,
                         List<net.minecraft.world.item.crafting.RecipeHolder<?>> currentHolders)
+        { this(cachePath, generation, holderIds, backgroundLevel, currentHolders, ClientJeiRecipeCache.idMigrations()); }
+
+        private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel,
+                        List<net.minecraft.world.item.crafting.RecipeHolder<?>> currentHolders,
+                        java.util.Map<ResourceLocation, ResourceLocation> idMigrations)
         { this.cachePath = cachePath; this.generation = generation; this.holderIds = holderIds;
-            this.backgroundLevel = backgroundLevel; this.currentHolders = currentHolders; }
+            this.backgroundLevel = backgroundLevel; this.currentHolders = currentHolders; this.idMigrations = idMigrations; }
 
         private void start()
         {
@@ -346,9 +367,10 @@ final class ClientPlanningCatalogCache
                                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                                 cachePath, savedFingerprint, currentFingerprint, holderIds.size());
                     }
-                    java.util.Set<String> currentIds = !exactMatch && currentHolders != null
+                    java.util.Set<String> currentIds = !exactMatch
                             ? new java.util.HashSet<>(holderIds) : null;
                     java.util.Set<ResourceLocation> removedIds = new java.util.HashSet<>();
+                    java.util.Set<ResourceLocation> migratedRecords = new java.util.HashSet<>();
                     totalRecipes = nonNegative(input.readInt());
                     budget.addRecipes(totalRecipes);
                     headerNanos = System.nanoTime() - started;
@@ -357,6 +379,15 @@ final class ClientPlanningCatalogCache
                     {
                         long parseStarted = System.nanoTime();
                         EncodedRecipe encoded = readEncodedRecipe(input, budget, nbtBudget);
+                        ResourceLocation migratedId = idMigrations.get(encoded.id());
+                        if (migratedId != null)
+                        {
+                            // Canonical virtual IDs define one output. Old aliases can collapse to the same recipe.
+                            // Native IDs are never migrated here, so their multiple output directions stay intact.
+                            if (!migratedRecords.add(migratedId)) { decodedRecipes = i + 1; continue; }
+                            encoded = new EncodedRecipe(migratedId, encoded.family(), encoded.output(),
+                                    encoded.outputCount(), encoded.outputMatch(), encoded.slots(), encoded.byproducts());
+                        }
                         if (currentIds != null && !currentIds.contains(encoded.id().toString()))
                         {
                             removedIds.add(encoded.id());
@@ -371,7 +402,7 @@ final class ClientPlanningCatalogCache
                             long decodeStarted = System.nanoTime();
                             DecodeCursor cursor = new DecodeCursor(encoded);
                             ClientRecipePlanner.Recipe recipe = null;
-                            while (recipe == null && !cancelled) recipe = cursor.advance(backgroundLevel);
+                            while (recipe == null && !cancelled) recipe = cursor.advance(backgroundLevel.registryAccess());
                             if (recipe != null)
                             {
                                 decoded.add(recipe);
@@ -436,7 +467,7 @@ final class ClientPlanningCatalogCache
                     if (encoded == null) break;
                     decoder = new DecodeCursor(encoded);
                 }
-                ClientRecipePlanner.Recipe recipe = decoder.advance(level);
+                ClientRecipePlanner.Recipe recipe = decoder.advance(level == null ? net.minecraft.core.RegistryAccess.EMPTY : level.registryAccess());
                 if (recipe != null)
                 {
                     decoded.add(recipe);
@@ -446,17 +477,18 @@ final class ClientPlanningCatalogCache
                 processed++;
             }
             decodeNanos += System.nanoTime() - started;
-            if (state == State.EOF && queue.isEmpty() && decoder == null && decoded.size() == totalRecipes)
+            // Header counts include removed IDs and legacy aliases collapsed during migration.
+            if (state == State.EOF && queue.isEmpty() && decoder == null)
             {
                 catalog = new ClientRecipePlanner.Catalog(decoded);
                 decodedKeys.clear();
             }
         }
 
-        private IStackKey<?> decodeKey(EncodedKey encoded, Level level)
+        private IStackKey<?> decodeKey(EncodedKey encoded, net.minecraft.core.RegistryAccess registryAccess)
         {
             IStackKey<?> key = StackKeyRegistry.getType(encoded.type())
-                    .deserializeNBT(encoded.nbt(), level.registryAccess());
+                    .deserializeNBT(encoded.nbt(), registryAccess);
             if (key == null || key.isEmpty()) throw new IllegalArgumentException("invalid cached stack key");
             IStackKey<?> existing = decodedKeys.putIfAbsent(key, key);
             return existing == null ? key : existing;
@@ -518,18 +550,18 @@ final class ClientPlanningCatalogCache
             private DecodeCursor(EncodedRecipe encoded)
             { this.encoded = encoded; this.slots = new ArrayList<>(encoded.slots().size()); }
 
-            private ClientRecipePlanner.Recipe advance(Level level)
+            private ClientRecipePlanner.Recipe advance(net.minecraft.core.RegistryAccess registryAccess)
             {
                 if (output == null)
                 {
-                    output = decodeKey(encoded.output(), level);
+                    output = decodeKey(encoded.output(), registryAccess);
                     return null;
                 }
                 if (byproductIndex < encoded.byproducts().size())
                 {
                     EncodedYield byproduct = encoded.byproducts().get(byproductIndex++);
                     byproducts.add(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
-                            decodeKey(byproduct.key(), level), byproduct.amount()));
+                            decodeKey(byproduct.key(), registryAccess), byproduct.amount()));
                     return null;
                 }
                 if (slotIndex < encoded.slots().size())
@@ -539,7 +571,7 @@ final class ClientPlanningCatalogCache
                     if (candidateIndex < slot.candidates().size())
                     {
                         EncodedCandidate candidate = slot.candidates().get(candidateIndex++);
-                        IStackKey<?> key = decodeKey(candidate.key(), level);
+                        IStackKey<?> key = decodeKey(candidate.key(), registryAccess);
                         candidates.add(candidate.selection().isEmpty()
                                 ? new ClientRecipePlanner.Candidate(key, candidate.count())
                                 : new ClientRecipePlanner.Candidate(key, candidate.count(),

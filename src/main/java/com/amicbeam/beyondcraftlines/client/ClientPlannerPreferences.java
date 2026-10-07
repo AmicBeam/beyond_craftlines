@@ -46,6 +46,32 @@ public final class ClientPlannerPreferences
         }
     }
 
+    public static synchronized boolean migrateRecipeIds(Map<ResourceLocation, ResourceLocation> migrations)
+    {
+        if (migrations.isEmpty()) return true;
+        Snapshot old = load();
+        Snapshot migrated = remapRecipeIds(old, migrations);
+        return migrated == old || write(migrated.recipes(), migrated.ingredients(), migrated.outputDestination());
+    }
+
+    static Snapshot remapRecipeIds(Snapshot old, Map<ResourceLocation, ResourceLocation> migrations)
+    {
+        LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
+        recipes.replaceAll((output, id) -> migrations.getOrDefault(id, id));
+        LinkedHashMap<String, String> ingredients = new LinkedHashMap<>(old.ingredients());
+        old.ingredients().forEach((key, selection) -> {
+            int separator = key.lastIndexOf('#');
+            if (separator < 1) return;
+            ResourceLocation previous = ResourceLocation.tryParse(key.substring(0, separator));
+            ResourceLocation replacement = previous == null ? null : migrations.get(previous);
+            if (replacement == null) return;
+            ingredients.remove(key);
+            ingredients.putIfAbsent(replacement + key.substring(separator), selection);
+        });
+        if (recipes.equals(old.recipes()) && ingredients.equals(old.ingredients())) return old;
+        return new Snapshot(Map.copyOf(recipes), Map.copyOf(ingredients), old.outputDestination());
+    }
+
     public static synchronized boolean setRecipe(String output, ResourceLocation recipe)
     {
         Snapshot old = load();

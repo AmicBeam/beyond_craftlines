@@ -55,7 +55,7 @@ final class ClientJeiRecipeCacheTest
         assertFalse(loaded.failed);
         assertEquals(Set.of("test:mixer"), loaded.result.types());
         assertEquals(1, loaded.result.recipes());
-        assertTrue(VirtualProvisionerRecipeRegistry.find(crusher.id()).isEmpty());
+        assertTrue(VirtualProvisionerRecipeRegistry.find(net.minecraft.resources.Identifier.parse("test:obsolete")).isEmpty());
         assertTrue(VirtualProvisionerRecipeRegistry.find(mixer.id()).isPresent());
     }
 
@@ -95,6 +95,54 @@ final class ClientJeiRecipeCacheTest
         assertTrue(loaded.result.types().isEmpty());
     }
 
+    @Test void legacyIdsMigrateWithoutRematerializingTheCategory() throws Exception
+    {
+        var descriptor = descriptor("test:crusher", "output");
+        var legacySources = Map.of("test:crusher", List.of("presentation:old"));
+        var stableSources = Map.of("test:crusher", List.of("class:stable"));
+        Path path = save(legacySources, List.of(descriptor));
+        var oldId = net.minecraft.resources.Identifier.parse("beyond_craftlines:jei_virtual/00000000-0000-0000-0000-000000000001");
+        rewriteId(path, descriptor.id().toString(), oldId.toString(), 1);
+        var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, stableSources, legacySources);
+        await(loaded);
+        assertFalse(loaded.failed);
+        assertEquals(Set.of("test:crusher"), loaded.result.types());
+        assertEquals(Map.of(oldId, descriptor.id()), loaded.idMigrations);
+        assertTrue(loaded.needsRewrite);
+        assertTrue(VirtualProvisionerRecipeRegistry.find(descriptor.id()).isPresent());
+    }
+
+    @Test void oneInvalidDescriptorOnlyInvalidatesItsCategoryAndRemovesPartialRestores() throws Exception
+    {
+        var first = descriptor("test:crusher", "first");
+        var bad = descriptor("test:crusher", "bad");
+        var good = descriptor("test:mixer", "good");
+        var sources = Map.of("test:crusher", List.of("id:a"), "test:mixer", List.of("id:b"));
+        Path path = save(sources, List.of(first, bad, good));
+        rewriteId(path, bad.id().toString(),
+                "beyond_craftlines:jei_virtual/00000000-0000-0000-0000-000000000001", ClientJeiRecipeCache.VERSION);
+        var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, sources);
+        await(loaded);
+        assertFalse(loaded.failed);
+        assertEquals(Set.of("test:mixer"), loaded.result.types());
+        assertEquals(1, loaded.result.recipes());
+        assertTrue(VirtualProvisionerRecipeRegistry.find(first.id()).isEmpty());
+        assertTrue(VirtualProvisionerRecipeRegistry.find(good.id()).isPresent());
+        assertEquals(3, loaded.processedRecipes);
+    }
+
+    private static void rewriteId(Path path, String oldId, String newId, int version) throws Exception
+    {
+        assertEquals(oldId.length(), newId.length());
+        byte[] raw;
+        try (var input = new java.util.zip.GZIPInputStream(Files.newInputStream(path))) { raw = input.readAllBytes(); }
+        java.nio.ByteBuffer.wrap(raw).putInt(4, version);
+        String binary = new String(raw, java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertTrue(binary.contains(oldId));
+        raw = binary.replace(oldId, newId).getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+        try (var output = new java.util.zip.GZIPOutputStream(Files.newOutputStream(path))) { output.write(raw); }
+    }
+
     @Test void manualReloadRejectsAnInFlightSave() throws Exception
     {
         Path path = directory.resolve("stale.dat");
@@ -112,7 +160,9 @@ final class ClientJeiRecipeCacheTest
         sources.forEach((type, tokens) -> fingerprints.put(type, JeiRecipeSourceFingerprint.fingerprint(tokens)));
         ClientJeiRecipeCache.write(RegistryAccess.EMPTY, path, PlanningCatalogCacheFiles.revision(path),
                 fingerprints, sources.keySet(), Map.of("minecraft:crafting", Set.of("ingredients", "tool")),
-                descriptors.stream().map(value -> new VirtualProvisionerRecipeRegistry.CachedDescriptor(value.id(), value)).toList());
+                descriptors.stream().map(value -> new VirtualProvisionerRecipeRegistry.CachedDescriptor(
+                        value.output().getTypeId().getNamespace().equals("removed_mod")
+                                ? net.minecraft.resources.Identifier.parse("test:obsolete") : value.id(), value)).toList());
         assertTrue(Files.isRegularFile(path));
         return path;
     }

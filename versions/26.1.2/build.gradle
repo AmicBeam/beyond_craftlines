@@ -20,6 +20,7 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheFiles.java'
     include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheCounts.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeCatalogScope.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/VirtualRecipeIdentity.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/NativeRecipeFallbackPolicy.java'
@@ -65,6 +66,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'com.google.code.gson:gson:2.11.0'
     testImplementation "net.neoforged:testframework:${neo_version}"
+    testImplementation "maven.modrinth:jei:${jei_version}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -106,3 +108,17 @@ tasks.withType(JavaCompile).configureEach {
 }
 tasks.withType(Jar).configureEach { includeEmptyDirs = false }
 tasks.named('test', Test) { useJUnitPlatform() }
+
+// Interface-only JEI fixtures need one class loader for both JEI API and Minecraft classes.
+// Run them separately from the FML unit-test bootstrap, and keep them in the build's check task.
+def testJeiSources = tasks.register('testJeiSources', Test) {
+    dependsOn tasks.named('testClasses')
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath.filter { !it.name.startsWith('junit-fml-') }
+    workingDir = layout.buildDirectory.dir('jeiSourceTestRun').get().asFile
+    doFirst { workingDir.mkdirs() }
+    include '**/SourceFingerprintStabilityTest.class'
+    useJUnitPlatform()
+}
+tasks.named('test', Test) { exclude '**/SourceFingerprintStabilityTest.class' }
+tasks.named('check') { dependsOn testJeiSources }

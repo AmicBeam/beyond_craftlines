@@ -21,7 +21,7 @@ import java.util.zip.*;
 public final class ClientJeiRecipeCache
 {
     static final int MAGIC = 0x42434C4A;
-    static final int VERSION = 1;
+    static final int VERSION = 2;
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final String PREFIX = com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX;
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -41,12 +41,16 @@ public final class ClientJeiRecipeCache
 
     /** Null means the I/O worker is still reading; an empty result means a cold cache. */
     public static synchronized Restored prepare(Map<String, List<String>> categorySources)
+    { return prepare(categorySources, Map.of()); }
+
+    public static synchronized Restored prepare(Map<String, List<String>> categorySources,
+                                                Map<String, List<String>> legacySources)
     {
         if (load == null)
         {
             Level level = Minecraft.getInstance().level;
             if (level == null) return null;
-            load = loadAsync(path(), level.registryAccess(), categorySources);
+            load = loadAsync(path(), level.registryAccess(), categorySources, legacySources);
             nextProgress = 0L;
         }
         if (!load.finished)
@@ -63,9 +67,15 @@ public final class ClientJeiRecipeCache
         if (applied) return load.result;
         applied = true;
         if (load.failed) VirtualProvisionerRecipeRegistry.clear();
+        else ClientPlannerPreferences.migrateRecipeIds(load.idMigrations);
         return load.result;
     }
 
+    public static synchronized Map<ResourceLocation, ResourceLocation> idMigrations()
+    { return load == null ? Map.of() : load.idMigrations; }
+    public static synchronized void releaseIdMigrations()
+    { if (load != null) load.idMigrations = Map.of(); }
+    public static synchronized boolean needsRewrite() { return load != null && load.needsRewrite; }
     public static synchronized int completedRecipes() { return load == null ? 0 : load.processedRecipes; }
     public static synchronized int totalRecipes() { return load == null ? 0 : load.totalRecipes; }
     public static synchronized boolean loading() { return load != null && !load.finished; }
@@ -117,8 +127,12 @@ public final class ClientJeiRecipeCache
     }
 
     static LoadJob loadAsync(Path cachePath, RegistryAccess registryAccess, Map<String, List<String>> sources)
+    { return loadAsync(cachePath, registryAccess, sources, Map.of()); }
+
+    static LoadJob loadAsync(Path cachePath, RegistryAccess registryAccess, Map<String, List<String>> sources,
+                             Map<String, List<String>> legacySources)
     {
-        LoadJob job = new LoadJob(cachePath, registryAccess, Map.copyOf(sources));
+        LoadJob job = new LoadJob(cachePath, registryAccess, Map.copyOf(sources), Map.copyOf(legacySources));
         try { job.future = IO.submit(job::read); }
         catch (RejectedExecutionException exception)
         {
@@ -217,6 +231,7 @@ public final class ClientJeiRecipeCache
         final Path cachePath;
         final RegistryAccess registryAccess;
         Map<String, List<String>> sources;
+        Map<String, List<String>> legacySources;
         final long epoch = VirtualProvisionerRecipeRegistry.clientEpoch();
         volatile Map<String, String> fingerprints = Map.of();
         volatile Restored result = new Restored(Set.of(), Map.of(), 0);
@@ -226,13 +241,19 @@ public final class ClientJeiRecipeCache
         volatile int restoredRecipes;
         volatile int processedRecipes;
         volatile int totalRecipes;
+        volatile boolean needsRewrite;
+        volatile Map<ResourceLocation, ResourceLocation> idMigrations = Map.of();
         Future<?> future;
         private final Map<IStackKey<?>, IStackKey<?>> keys = new HashMap<>();
         private final PlanningCatalogCacheCounts counts = new PlanningCatalogCacheCounts();
         private final NbtAccounter nbt = NbtAccounter.unlimitedHeap();
 
         LoadJob(Path path, RegistryAccess registryAccess, Map<String, List<String>> sources)
-        { this.cachePath = path; this.registryAccess = registryAccess; this.sources = sources; }
+        { this(path, registryAccess, sources, Map.of()); }
+
+        LoadJob(Path path, RegistryAccess registryAccess, Map<String, List<String>> sources,
+                Map<String, List<String>> legacySources)
+        { this.cachePath = path; this.registryAccess = registryAccess; this.sources = sources; this.legacySources = legacySources; }
 
         void cancel()
         {
@@ -248,7 +269,10 @@ public final class ClientJeiRecipeCache
                 Map<String, String> current = new HashMap<>();
                 sources.forEach((type, tokens) -> current.put(type, JeiRecipeSourceFingerprint.fingerprint(tokens)));
                 fingerprints = Map.copyOf(current);
+                Map<String, String> legacy = new HashMap<>();
+                legacySources.forEach((type, tokens) -> legacy.put(type, JeiRecipeSourceFingerprint.fingerprint(tokens)));
                 sources = Map.of();
+                legacySources = Map.of();
                 if (cancelled) return;
                 if (!Files.isRegularFile(cachePath))
                 {
@@ -258,8 +282,16 @@ public final class ClientJeiRecipeCache
                 try (var input = new DataInputStream(new BufferedInputStream(
                         new GZIPInputStream(Files.newInputStream(cachePath)))))
                 {
-                    if (input.readInt() != MAGIC || input.readInt() != VERSION)
-                        throw new IOException("incompatible JEI cache format");
+                    if (input.readInt() != MAGIC) throw new IOException("invalid JEI cache magic");
+                    int version = input.readInt();
+                    if (version < 1 || version > VERSION) throw new IOException("incompatible JEI cache format");
+                    boolean legacyIdentity = version == 1;
+                    needsRewrite = legacyIdentity;
+                    Map<ResourceLocation, ResourceLocation> migrations = new HashMap<>();
+                    Set<String> invalidFamilies = new HashSet<>();
+                    int rejected = 0;
+                    Map<String, Integer> restoredCounts = new HashMap<>();
+                    Set<ResourceLocation> restoredIds = new HashSet<>();
                     Set<String> reusable = new HashSet<>();
                     Map<String, Set<String>> groups = new HashMap<>();
                     int categoryCount = count(input);
@@ -270,7 +302,7 @@ public final class ClientJeiRecipeCache
                         Set<String> values = new HashSet<>();
                         int groupCount = count(input);
                         for (int g = 0; g < groupCount; g++) values.add(string(input));
-                        if (fingerprint.equals(current.get(type)))
+                        if (fingerprint.equals(current.get(type)) || legacyIdentity && fingerprint.equals(legacy.get(type)))
                         {
                             reusable.add(type);
                             groups.put(type, Set.copyOf(values));
@@ -280,38 +312,50 @@ public final class ClientJeiRecipeCache
                     totalRecipes = count(input);
                     for (int i = 0; i < totalRecipes && !cancelled; i++)
                     {
-                        ResourceLocation id = ResourceLocation.parse(string(input));
-                        String family = string(input);
-                        boolean restore = reusable.contains(family);
-                        IStackKey<?> output = key(input, restore);
-                        long amount = input.readLong();
-                        List<VirtualProvisionerRecipeRegistry.InputSlot> slots = new ArrayList<>();
-                        int slotCount = count(input);
-                        for (int slot = 0; slot < slotCount; slot++)
+                        EncodedDescriptor encoded = readDescriptor(input);
+                        String family = encoded.family();
+                        if (reusable.contains(family))
                         {
-                            String group = string(input);
-                            String kind = string(input);
-                            int damage = input.readInt();
-                            List<KeyAmount> candidates = amounts(input, restore);
-                            if (restore) slots.add(new VirtualProvisionerRecipeRegistry.InputSlot(group, candidates,
-                                    new VirtualInputUse(VirtualInputUse.Kind.valueOf(kind), damage)));
-                        }
-                        var byproducts = amounts(input, restore);
-                        var guaranteed = amounts(input, restore);
-                        if (restore)
-                        {
-                            var descriptor = new VirtualProvisionerRecipeRegistry.Descriptor(family, output, amount,
-                                    slots, byproducts, guaranteed);
-                            if (!id.equals(descriptor.id())) throw new IOException("JEI descriptor id does not match contents");
-                            if (!VirtualProvisionerRecipeRegistry.restoreForClientCatalog(epoch, id, descriptor))
-                            { cancelled = true; return; }
-                            restoredRecipes++;
+                            try
+                            {
+                                ResourceLocation savedId = ResourceLocation.parse(encoded.id());
+                                if (!savedId.getNamespace().equals("beyond_craftlines") || !savedId.getPath().startsWith("jei_virtual/"))
+                                    throw new IllegalArgumentException("cached descriptor has a non-virtual id=" + savedId);
+                                var descriptor = decodeDescriptor(encoded);
+                                ResourceLocation restoredId = descriptor.id();
+                                if (!savedId.equals(restoredId) && !legacyIdentity)
+                                    throw new IllegalArgumentException("descriptor id mismatch saved=" + savedId + " restored=" + restoredId);
+                                if (!VirtualProvisionerRecipeRegistry.restoreForClientCatalog(epoch, restoredId, descriptor))
+                                { cancelled = true; return; }
+                                if (!savedId.equals(restoredId)) migrations.put(savedId, restoredId);
+                                if (restoredIds.add(restoredId))
+                                {
+                                    restoredRecipes++;
+                                    restoredCounts.merge(family, 1, Integer::sum);
+                                }
+                            }
+                            catch (IOException | RuntimeException | LinkageError exception)
+                            {
+                                reusable.remove(family);
+                                groups.remove(family);
+                                invalidFamilies.add(family);
+                                rejected++;
+                                if (rejected <= 16)
+                                    LOGGER.warn("{} client JEI cached descriptor rejected type={} recipe={} error={}; reloading this category",
+                                            PREFIX, family, encoded.id(), exception.toString());
+                            }
                         }
                         processedRecipes = i + 1;
                     }
                     if (cancelled) return;
                     if (input.read() != -1) throw new IOException("trailing JEI cache data");
+                    VirtualProvisionerRecipeRegistry.discardRestoredFamilies(epoch, invalidFamilies);
+                    restoredRecipes -= invalidFamilies.stream().mapToInt(type -> restoredCounts.getOrDefault(type, 0)).sum();
+                    migrations.entrySet().removeIf(entry -> VirtualProvisionerRecipeRegistry.find(entry.getValue()).isEmpty());
+                    idMigrations = Map.copyOf(migrations);
                     result = new Restored(Set.copyOf(reusable), Map.copyOf(groups), restoredRecipes);
+                    LOGGER.info("{} client JEI cache identity migration version={} migrated={} rejectedCategories={}",
+                            PREFIX, version, migrations.size(), invalidFamilies.size());
                     LOGGER.info("{} client JEI cache restored categories={} reloadCategories={} recipes={} path={} elapsedMs={}",
                             PREFIX, reusable.size(), current.size() - reusable.size(), restoredRecipes, cachePath,
                             (System.nanoTime() - started) / 1_000_000L);
@@ -329,26 +373,52 @@ public final class ClientJeiRecipeCache
         { return ClientPlanningCatalogCache.nonNegative(input.readInt()); }
         private String string(DataInputStream input) throws IOException
         { return ClientPlanningCatalogCache.readString(input, counts); }
-        private IStackKey<?> key(DataInputStream input, boolean decode) throws IOException
+        private EncodedDescriptor readDescriptor(DataInputStream input) throws IOException
         {
-            var encoded = ClientPlanningCatalogCache.readEncodedKey(input, counts, nbt);
-            if (!decode) return null;
+            String id = string(input);
+            String family = string(input);
+            var output = ClientPlanningCatalogCache.readEncodedKey(input, counts, nbt);
+            long amount = input.readLong();
+            int slotCount = count(input);
+            List<EncodedSlot> slots = new ArrayList<>();
+            for (int i = 0; i < slotCount; i++)
+                slots.add(new EncodedSlot(string(input), string(input), input.readInt(), readAmounts(input)));
+            return new EncodedDescriptor(id, family, output, amount, slots, readAmounts(input), readAmounts(input));
+        }
+        private List<EncodedAmount> readAmounts(DataInputStream input) throws IOException
+        {
+            int size = count(input);
+            List<EncodedAmount> values = new ArrayList<>();
+            for (int i = 0; i < size; i++)
+                values.add(new EncodedAmount(ClientPlanningCatalogCache.readEncodedKey(input, counts, nbt), input.readLong()));
+            return values;
+        }
+        private VirtualProvisionerRecipeRegistry.Descriptor decodeDescriptor(EncodedDescriptor value) throws IOException
+        {
+            List<VirtualProvisionerRecipeRegistry.InputSlot> slots = new ArrayList<>();
+            for (var slot : value.slots())
+                slots.add(new VirtualProvisionerRecipeRegistry.InputSlot(slot.group(), decodeAmounts(slot.candidates()),
+                        new VirtualInputUse(VirtualInputUse.Kind.valueOf(slot.kind()), slot.damage())));
+            return new VirtualProvisionerRecipeRegistry.Descriptor(value.family(), key(value.output()), value.amount(),
+                    slots, decodeAmounts(value.byproducts()), decodeAmounts(value.guaranteed()));
+        }
+        private IStackKey<?> key(ClientPlanningCatalogCache.EncodedKey encoded) throws IOException
+        {
             IStackKey<?> key = StackKeyRegistry.getType(encoded.type()).deserializeNBT(encoded.nbt(), registryAccess);
-            if (key == null || key.isEmpty()) throw new IOException("invalid JEI cached stack key");
+            if (key == null || key.isEmpty()) throw new IOException("invalid JEI cached stack key type=" + encoded.type());
             IStackKey<?> existing = keys.putIfAbsent(key, key);
             return existing == null ? key : existing;
         }
-        private List<KeyAmount> amounts(DataInputStream input, boolean decode) throws IOException
+        private List<KeyAmount> decodeAmounts(List<EncodedAmount> values) throws IOException
         {
-            int count = count(input);
             List<KeyAmount> result = new ArrayList<>();
-            for (int i = 0; i < count; i++)
-            {
-                IStackKey<?> key = key(input, decode);
-                long amount = input.readLong();
-                if (decode) result.add(new KeyAmount(key, amount));
-            }
+            for (var value : values) result.add(new KeyAmount(key(value.key()), value.amount()));
             return result;
         }
     }
+
+    private record EncodedAmount(ClientPlanningCatalogCache.EncodedKey key, long amount) {}
+    private record EncodedSlot(String group, String kind, int damage, List<EncodedAmount> candidates) {}
+    private record EncodedDescriptor(String id, String family, ClientPlanningCatalogCache.EncodedKey output, long amount,
+                                     List<EncodedSlot> slots, List<EncodedAmount> byproducts, List<EncodedAmount> guaranteed) {}
 }

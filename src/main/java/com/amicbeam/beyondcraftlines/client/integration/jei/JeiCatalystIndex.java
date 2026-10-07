@@ -34,6 +34,10 @@ public final class JeiCatalystIndex
     private static boolean allTypesRequested;
     private static final ArrayDeque<SourceTask> SOURCE_QUEUE = new ArrayDeque<>();
     private static Map<String, java.util.List<String>> categorySources = new HashMap<>();
+    private static Map<String, java.util.List<String>> legacyCategorySources = new HashMap<>();
+    private static final Map<Object, String> nativeSourceIds = new java.util.IdentityHashMap<>();
+    private static final Set<String> nativeSourceIdSet = new java.util.HashSet<>();
+    private static Iterator<net.minecraft.world.item.crafting.RecipeHolder<?>> nativeSourceRecipes;
     private static boolean sourcesStarted;
     private static boolean persistentReady;
     private static long sourceStartedNanos;
@@ -235,6 +239,10 @@ public final class JeiCatalystIndex
         com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.reset();
         SOURCE_QUEUE.clear();
         categorySources = new HashMap<>();
+        legacyCategorySources = new HashMap<>();
+        nativeSourceIds.clear();
+        nativeSourceIdSet.clear();
+        nativeSourceRecipes = null;
         sourcesStarted = false;
         persistentReady = false;
         scannedSourceRecipes = 0L;
@@ -269,11 +277,22 @@ public final class JeiCatalystIndex
         {
             sourcesStarted = true;
             sourceStartedNanos = System.nanoTime();
+            nativeSourceRecipes = com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.allRecipes(
+                    net.minecraft.client.Minecraft.getInstance().level).iterator();
             CATEGORIES_BY_TYPE.forEach((type, category) -> SOURCE_QUEUE.addLast(new SourceTask(type, category)));
             LOGGER.info("{} client JEI source scan started categories={}",
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, SOURCE_QUEUE.size());
         }
         long deadline = System.nanoTime() + timeBudgetNanos;
+        while (nativeSourceRecipes != null && nativeSourceRecipes.hasNext() && System.nanoTime() < deadline)
+        {
+            var holder = nativeSourceRecipes.next();
+            String id = holder.id().toString();
+            nativeSourceIds.put(holder.value(), id);
+            nativeSourceIdSet.add(id);
+        }
+        if (nativeSourceRecipes != null && nativeSourceRecipes.hasNext()) return false;
+        nativeSourceRecipes = null;
         while (!SOURCE_QUEUE.isEmpty() && System.nanoTime() < deadline)
         {
             SourceTask source = SOURCE_QUEUE.peekFirst();
@@ -281,7 +300,11 @@ public final class JeiCatalystIndex
             if (source.complete)
             {
                 SOURCE_QUEUE.removeFirst();
-                if (!source.failed) categorySources.put(source.type.toString(), java.util.List.copyOf(source.tokens));
+                if (!source.failed)
+                {
+                    categorySources.put(source.type.toString(), java.util.List.copyOf(source.tokens));
+                    legacyCategorySources.put(source.type.toString(), java.util.List.copyOf(source.legacyTokens));
+                }
             }
         }
         if (!SOURCE_QUEUE.isEmpty())
@@ -298,16 +321,21 @@ public final class JeiCatalystIndex
             return false;
         }
         com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.Restored restored =
-                com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.prepare(categorySources);
+                com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.prepare(categorySources, legacyCategorySources);
         if (restored == null) return false;
         persistentReady = true;
         categorySources = Map.of();
+        legacyCategorySources = Map.of();
+        nativeSourceIds.clear();
+        nativeSourceIdSet.clear();
         Set<ResourceLocation> restoredTypes = restored.types().stream().map(ResourceLocation::tryParse)
                 .filter(java.util.Objects::nonNull).filter(CATEGORIES_BY_TYPE::containsKey)
                 .collect(java.util.stream.Collectors.toSet());
         TYPE_STATE.request(restoredTypes);
         restoredTypes.forEach(TYPE_STATE::complete);
         TYPE_QUEUE.removeIf(task -> restoredTypes.contains(task.recipeType()));
+        if (TYPE_QUEUE.isEmpty() && com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.needsRewrite())
+            com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.save(restored.types(), restored.groups());
         restored.groups().forEach((type, groups) -> {
             ResourceLocation id = ResourceLocation.tryParse(type);
             if (id != null) mergeInputGroups(id, groups);
@@ -324,6 +352,7 @@ public final class JeiCatalystIndex
         private final ResourceLocation type;
         private final IRecipeCategory<Object> category;
         private final java.util.List<String> tokens = new java.util.ArrayList<>();
+        private final java.util.List<String> legacyTokens = new java.util.ArrayList<>();
         private Iterator<Object> recipes;
         private boolean complete;
         private boolean failed;
@@ -333,7 +362,8 @@ public final class JeiCatalystIndex
         {
             this.type = type;
             this.category = (IRecipeCategory<Object>) category;
-            tokens.add("category:" + category.getClass().getName());
+            tokens.add("category:" + com.amicbeam.beyondcraftlines.client.JeiRecipeSourceFingerprint.stableClassName(category.getClass()));
+            legacyTokens.add("category:" + category.getClass().getName());
         }
 
         void advance(IJeiRuntime runtime)
@@ -347,17 +377,17 @@ public final class JeiCatalystIndex
                 Object recipe = recipes.next();
                 scannedSourceRecipes++;
 
-                Object id = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
+                Object legacyId = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
                         ? holder.id() : category.getRegistryName(recipe);
-                if (id != null) tokens.add("id:" + id);
-                else
-                {
-                    String sourceClass = java.lang.reflect.Proxy.isProxyClass(recipe.getClass())
-                            ? java.util.Arrays.stream(recipe.getClass().getInterfaces()).map(Class::getName)
-                                    .sorted().collect(java.util.stream.Collectors.joining(","))
-                            : recipe.getClass().getName();
-                    tokens.add("class:" + sourceClass);
-                }
+                String legacyClass = java.lang.reflect.Proxy.isProxyClass(recipe.getClass())
+                        ? java.util.Arrays.stream(recipe.getClass().getInterfaces()).map(Class::getName).sorted()
+                                .collect(java.util.stream.Collectors.joining(",")) : recipe.getClass().getName();
+                legacyTokens.add(legacyId == null ? "class:" + legacyClass : "id:" + legacyId);
+                // JEI presentation/bookmark IDs may include runtime identities. Only native IDs are authoritative.
+                String id = recipe instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder
+                        ? (nativeSourceIdSet.contains(holder.id().toString()) ? holder.id().toString() : null) : nativeSourceIds.get(recipe);
+                tokens.add(id == null ? "class:" + com.amicbeam.beyondcraftlines.client.JeiRecipeSourceFingerprint
+                        .stableClassName(recipe.getClass()) : "id:" + id);
             }
             catch (RuntimeException | LinkageError exception)
             {
@@ -455,6 +485,7 @@ public final class JeiCatalystIndex
         private Iterator<Object> recipes;
         private boolean complete;
         private long recipeOrdinal;
+        private int failedRecipes;
         private String diagnosticId;
 
         @SuppressWarnings("unchecked")
@@ -511,9 +542,13 @@ public final class JeiCatalystIndex
             }
             catch (RuntimeException | LinkageError exception)
             {
-                complete = true;
-                LOGGER.warn("Unable to lazily index JEI recipe category {}", category.getClass().getName(), exception);
-                return false;
+                // A consumed bad recipe must not prevent the remaining recipes in this category from loading.
+                complete = recipe == null;
+                if (++failedRecipes <= 8)
+                    LOGGER.warn("Unable to index JEI recipe type={} ordinal={} category={} error={} action={}",
+                            recipeType, recipeOrdinal, category.getClass().getName(), exception.toString(),
+                            complete ? "abort_broken_lookup" : "skip_recipe");
+                return recipe != null;
             }
         }
 

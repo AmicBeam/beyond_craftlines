@@ -128,6 +128,37 @@ final class ClientPlanningCatalogCachePipelineTest
         assertTrue(hit.complete(), hit.reason());
     }
 
+    @Test void restoresLegacyPlanningRecordsWithMigratedDescriptorIds() throws Exception
+    {
+        CacheTestKeys.register();
+        var oldId = net.minecraft.resources.Identifier.parse("beyond_craftlines:jei_virtual/00000000-0000-0000-0000-000000000001");
+        var anotherOldId = net.minecraft.resources.Identifier.parse("beyond_craftlines:jei_virtual/00000000-0000-0000-0000-000000000003");
+        var newId = net.minecraft.resources.Identifier.parse("beyond_craftlines:jei_virtual/00000000-0000-0000-0000-000000000002");
+        var recipe = new com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner.Recipe(
+                oldId, "test:machine", CacheTestKeys.key("output"), 1L,
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry.OutputMatchSemantics.EXACT, List.of());
+        var duplicate = new com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner.Recipe(
+                anotherOldId, recipe.family(), recipe.output(), recipe.outputCount(), recipe.outputMatch(), recipe.slots());
+        var catalog = new com.amicbeam.beyondcraftlines.common.crafting.ClientRecipePlanner.Catalog(List.of(recipe, duplicate));
+        Path path = directory.resolve("migration.dat");
+        var save = ClientPlanningCatalogCache.saveWithRegistryAsync(net.minecraft.core.RegistryAccess.EMPTY,
+                path, List.of(oldId.toString(), anotherOldId.toString()), catalog);
+        assertNotNull(save);
+        save.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        var load = ClientPlanningCatalogCache.loadAsync(path, List.of(newId.toString()), 28L, java.util.Map.of(oldId, newId, anotherOldId, newId));
+        assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
+            while (!load.complete() && !load.terminalWithoutCatalog())
+            {
+                load.advance(null, 1_000_000L);
+                Thread.sleep(1L);
+            }
+        });
+        assertTrue(load.complete(), load.reason());
+        assertEquals(List.of(newId), load.catalog().recipes().stream().map(r -> r.id()).toList());
+        assertEquals(recipe.output(), load.catalog().recipes().getFirst().output());
+        assertEquals(0, load.removedRecipeIds());
+    }
+
     @Test void identifiesAnIncompatibleFormatInsteadOfAnUnexplainedMiss() throws Exception
     {
         Path cache = directory.resolve("old.dat");

@@ -6,14 +6,14 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import java.lang.reflect.Proxy;
 
-final class CacheTestKeys
+public final class CacheTestKeys
 {
     private static boolean registered;
-    static synchronized void register()
+    public static synchronized void register()
     {
         if (!registered) { StackKeyRegistry.registerType(key("prototype")); registered = true; }
     }
-    static IStackKey<?> key(String name)
+    public static IStackKey<?> key(String name)
     {
         return (IStackKey<?>) Proxy.newProxyInstance(IStackKey.class.getClassLoader(), new Class<?>[]{IStackKey.class},
                 (proxy, method, args) -> switch (method.getName()) {

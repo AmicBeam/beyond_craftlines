@@ -24,4 +24,18 @@ final class JeiRecipeSourceFingerprintTest
         assertNotEquals(JeiRecipeSourceFingerprint.fingerprint(List.of("class:anonymous")),
                 JeiRecipeSourceFingerprint.fingerprint(List.of("class:anonymous", "class:anonymous")));
     }
+    @Test void generatedClassNamesDoNotCarryProcessSpecificProxyOrLambdaNumbers()
+    {
+        Runnable lambda = () -> {};
+        String name = JeiRecipeSourceFingerprint.stableClassName(lambda.getClass());
+        assertFalse(name.contains("/0x"));
+        assertFalse(name.matches(".*\\$\\$Lambda\\$[0-9]+.*"));
+        Object first = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{Runnable.class, java.util.function.Supplier.class}, (proxy, method, args) -> null);
+        Object second = java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{java.util.function.Supplier.class, Runnable.class}, (proxy, method, args) -> null);
+        assertEquals(JeiRecipeSourceFingerprint.stableClassName(first.getClass()),
+                JeiRecipeSourceFingerprint.stableClassName(second.getClass()));
+    }
+
 }

@@ -62,15 +62,7 @@ final class FullCatalogNetworkScopeTest
 
     static IStackKey<?> key(String name)
     {
-        return (IStackKey<?>) Proxy.newProxyInstance(IStackKey.class.getClassLoader(), new Class<?>[]{IStackKey.class},
-                (proxy, method, args) -> switch (method.getName()) {
-                    case "isEmpty" -> false;
-                    case "getTypeId" -> Identifier.fromNamespaceAndPath("test", "resource");
-                    case "getModId" -> "test";
-                    case "getSource", "getReadOnlyStack", "toString" -> name;
-                    case "isSame", "isSameTypeSameComponents", "equals" -> proxy == args[0];
-                    case "hashCode" -> System.identityHashCode(proxy);
-                    default -> throw new UnsupportedOperationException(method.getName());
-                });
+        com.amicbeam.beyondcraftlines.client.CacheTestKeys.register();
+        return com.amicbeam.beyondcraftlines.client.CacheTestKeys.key(name);
     }
 }

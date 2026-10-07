@@ -330,6 +330,7 @@ public final class ClientPlanningCatalogWarmup
     {
         if (!complete() || completionLogged) return;
         completionLogged = true;
+        ClientJeiRecipeCache.releaseIdMigrations();
         com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.summarize("catalog_ready");
         if (!cacheSaveRequestedOrRestored)
         {

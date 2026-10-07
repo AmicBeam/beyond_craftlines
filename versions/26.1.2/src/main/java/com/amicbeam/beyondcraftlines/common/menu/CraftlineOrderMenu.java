@@ -167,9 +167,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     {
         return RecipePlanningService.allRecipes(level).stream()
                 .filter(RecipePlanningService::supported)
-                .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
-                        .VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
-                                RecipePlanningService.family(holder))).toList();
+                .filter(holder -> RecipePlanningService.isNativeExecutable(holder)).toList();
     }
 
     private static List<RecipeHolder<?>> displayRecipes(net.minecraft.world.level.Level level)
@@ -182,8 +180,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     {
         RecipeHolder<?> crafting = com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
                 .forLevel(level).stream().filter(holder -> holder.id().identifier().equals(id))
-                .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
-                        .isPotentialNetworkExecutable(RecipePlanningService.family(holder)))
+                .filter(holder -> RecipePlanningService.isNativeExecutable(holder))
                 .findFirst().orElse(null);
         return crafting != null ? crafting : com.amicbeam.beyondcraftlines.common.crafting
                 .VirtualProvisionerRecipeRegistry.find(id).orElse(null);

@@ -80,8 +80,10 @@ public final class EmiClientIntegration
         return titlesByType.keySet();
     }
 
-    private static void refreshMetadata()
+    public static void refreshMetadata()
     {
+        // Wait for the completed reload, rather than caching EMI's empty/intermediate manager.
+        if (!dev.emi.emi.runtime.EmiReloadManager.isLoaded()) return;
         var manager = EmiApi.getRecipeManager();
         if (manager == metadataManager) return;
         boolean refreshed = false;
@@ -110,11 +112,10 @@ public final class EmiClientIntegration
             metadataManager = manager;
             refreshed = true;
         }
-        // Craftlines' JEI callback runs before JEMI finishes importing categories. Rebuild once
-        // against the finalized runtime so semantic input groups (the provisioner sublabels)
-        // are materialized for the same category ids exposed by EMI.
+        // A new EMI manager can contain the same JEMI categories. Preserve completed
+        // recipe layouts and the planning catalog unless the JEI category snapshot changed.
         if (refreshed)
-            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refresh();
+            com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex.refreshIfCategoriesChanged();
     }
 
     public static @Nullable ResourceLocation preferredRecipe(IStackKey<?> target)

@@ -35,14 +35,14 @@ repositories {
     }
 }
 
-def defaultBeyondDimensionsJar = layout.projectDirectory.file(
-        "../BeyondDimensions/build/libs/beyonddimensions-${minecraft_version}-neoforge-${beyond_dimensions_version}.jar")
 def beyondDimensionsJar = providers.gradleProperty('beyond_dimensions_jar')
-        .map { file(it) }
-        .getOrElse(defaultBeyondDimensionsJar.asFile)
 
 dependencies {
-    implementation files(beyondDimensionsJar)
+    if (beyondDimensionsJar.isPresent()) {
+        implementation files(file(beyondDimensionsJar.get()))
+    } else {
+        implementation "maven.modrinth:beyonddimensions:${beyond_dimensions_version}-${minecraft_version}-neoforge"
+    }
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     runtimeOnly "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"

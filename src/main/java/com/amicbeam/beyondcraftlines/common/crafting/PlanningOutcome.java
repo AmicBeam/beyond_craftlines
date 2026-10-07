@@ -12,6 +12,14 @@ public enum PlanningOutcome
     public String id() { return id; }
     public boolean craftable() { return this == READY; }
 
+    /** A non-cyclic alternative is more useful than a rejected loop, regardless of leaf counts. */
+    public static boolean prefersAlternative(PlanningOutcome current, long currentMissing,
+                                             PlanningOutcome alternative, long alternativeMissing)
+    {
+        if ((current == CYCLE) != (alternative == CYCLE)) return current == CYCLE;
+        return alternativeMissing <= currentMissing;
+    }
+
     public static PlanningOutcome byId(String id)
     {
         if (id != null) for (PlanningOutcome value : values()) if (value.id.equals(id)) return value;
@@ -23,8 +31,8 @@ public enum PlanningOutcome
     {
         if (!missing) return READY;
         if (rootNoRecipe) return NO_RECIPE;
-        if (cycle) return CYCLE;
         if (budgetExhausted) return BUDGET_EXHAUSTED;
+        if (cycle) return CYCLE;
         return MISSING_INPUTS;
     }
 }

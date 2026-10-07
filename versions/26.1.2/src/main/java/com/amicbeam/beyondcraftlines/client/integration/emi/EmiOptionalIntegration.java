@@ -11,6 +11,7 @@ import java.util.Set;
 public final class EmiOptionalIntegration
 {
     private EmiOptionalIntegration() {}
+    public static void refreshMetadata() {}
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY) { return false; }
     public static @Nullable Identifier preferredRecipe(IStackKey<?> target) { return null; }
     public static Set<Identifier> recipeTypesFor(net.minecraft.world.item.ItemStack workstation)

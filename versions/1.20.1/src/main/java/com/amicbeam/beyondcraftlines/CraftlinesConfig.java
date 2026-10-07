@@ -28,6 +28,11 @@ public final class CraftlinesConfig {
             .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
+    public static final ForgeConfigSpec.BooleanValue PRELOAD_ALL_RECIPE_TYPES = CLIENT_BUILDER
+            .comment("Preload all supported recipe types when entering a world and reuse the persistent catalog on later logins. Disable to preload only the current network's enabled types. Changing this setting switches the catalog scope.")
+            .translation("config.beyond_craftlines.preload_all_recipe_types")
+            .define("preloadAllRecipeTypes", true);
+
     public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .define("collapseDuplicateTreeResources", true);
     public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER

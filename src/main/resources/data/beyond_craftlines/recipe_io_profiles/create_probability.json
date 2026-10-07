@@ -1,0 +1,6 @@
+{
+  "recipe_classes": ["com.simibubi.create.content.processing.recipe.ProcessingRecipe"],
+  "output_probability_rules": [
+    {"outputs": "getRollableResults", "stack": "getStack", "chance": "getChance", "scale": 1}
+  ]
+}

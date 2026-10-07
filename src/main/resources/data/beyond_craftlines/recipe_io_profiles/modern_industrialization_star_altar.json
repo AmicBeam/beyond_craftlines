@@ -1,0 +1,11 @@
+{
+  "recipe_type": "modern_industrialization:star_altar",
+  "recipe_classes": ["aztech.modern_industrialization.machines.recipe.MachineRecipe"],
+  "include_defaults": false,
+  "native_recipe_fallback": {
+    "required_inputs": "itemInputs",
+    "single_output": "itemOutputs",
+    "probability": "probability",
+    "empty_sections": ["fluidInputs", "fluidOutputs"]
+  }
+}

@@ -137,6 +137,11 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     private void dispatchWireless()
     {
         if (!(level instanceof ServerLevel currentLevel) || wirelessConnections.isEmpty()) return;
+        if (deliveryStrategy == ProvisionerDeliveryStrategy.EVEN_SPLIT)
+        {
+            dispatchEvenly(currentLevel);
+            return;
+        }
         int size = wirelessConnections.size();
         for (KeyAmount staged : List.copyOf(storage.getStorage()))
         {
@@ -163,6 +168,52 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                 remaining -= inserted;
                 if (inserted > 0 && deliveryStrategy == ProvisionerDeliveryStrategy.ROUND_ROBIN)
                     connectionCursor = (index + 1) % size;
+            }
+        }
+    }
+
+    /** Each resource starts at the first binding; no round-robin cursor is consumed. */
+    private void dispatchEvenly(ServerLevel currentLevel)
+    {
+        List<WirelessConnection> targets = wirelessConnections.stream()
+                .filter(connection -> connection.role() == ConnectionRole.SUPPLY).toList();
+        for (KeyAmount staged : List.copyOf(storage.getStorage()))
+        {
+            if (staged.isEmpty()) continue;
+            long[] capacities = new long[targets.size()];
+            for (int i = 0; i < targets.size(); i++)
+            {
+                WirelessConnection connection = targets.get(i);
+                ServerLevel targetLevel = currentLevel.getServer().getLevel(connection.dimension());
+                if (targetLevel == null || !targetLevel.isLoaded(connection.position())
+                        || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
+                        .equals(connection.blockId())) continue;
+                capacities[i] = BoundMachineAutomation.insertCapacity(targetLevel, connection.position(),
+                        connection.face(), staged.key(), staged.amount());
+            }
+            long remaining = staged.amount();
+            while (remaining > 0)
+            {
+                long[] amounts = ProvisionerEvenSplitLogic.allocate(remaining, capacities);
+                long delivered = 0;
+                for (int i = 0; i < targets.size(); i++)
+                {
+                    if (amounts[i] <= 0) continue;
+                    WirelessConnection connection = targets.get(i);
+                    ServerLevel targetLevel = currentLevel.getServer().getLevel(connection.dimension());
+                    if (targetLevel == null) { capacities[i] = 0; continue; }
+                    KeyAmount taken = storage.extract(staged.key(), amounts[i], false, false);
+                    if (taken.isEmpty()) { capacities[i] = 0; continue; }
+                    long inserted = BoundMachineAutomation.insert(targetLevel, connection.position(),
+                            connection.face(), taken.key(), taken.amount());
+                    if (inserted < taken.amount())
+                        storage.insertFromOrder(taken.key(), taken.amount() - inserted, false);
+                    capacities[i] = inserted < amounts[i] ? 0 : capacities[i] - inserted;
+                    delivered += inserted;
+                }
+                remaining -= delivered;
+                // Rejected shares can go to other targets, but never spin on a refusing handler.
+                if (delivered == 0) break;
             }
         }
     }

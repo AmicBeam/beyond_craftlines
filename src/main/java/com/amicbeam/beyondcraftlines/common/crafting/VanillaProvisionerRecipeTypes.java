@@ -16,6 +16,7 @@ public final class VanillaProvisionerRecipeTypes
     private static final Set<String> NETWORK_EXECUTABLE = Set.of(
             "minecraft:smithing",
             "minecraft:stonecutting");
+    private static final Set<String> FURNACE_EXECUTABLE = Set.of("smelting", "blasting", "smoking");
     private static final Map<String, String> CATEGORY_BY_BLOCK = Map.ofEntries(
             Map.entry("minecraft:brewing_stand", "minecraft:brewing"),
             Map.entry("minecraft:smithing_table", "minecraft:smithing"),
@@ -53,7 +54,8 @@ public final class VanillaProvisionerRecipeTypes
     { return proxyEnabled && isProxyFamily(family); }
 
     public static boolean isPotentialNetworkExecutable(Object family)
-    { return family != null && ("crafting".equals(family.toString()) || isProxyFamily(family)); }
+    { return family != null && ("crafting".equals(family.toString())
+            || FURNACE_EXECUTABLE.contains(family.toString()) || isProxyFamily(family)); }
 
     public static boolean isProxyFamily(Object family)
     { return family != null && NETWORK_EXECUTABLE.contains(family.toString()); }

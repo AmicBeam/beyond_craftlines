@@ -1,0 +1,27 @@
+{
+  "jei_type": "botania:petals",
+  "recipe_classes": [
+    "vazkii.botania.common.crafting.PetalsRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "water",
+      "cardinality": "fixed",
+      "count": 1
+    },
+    {
+      "group": "reagent",
+      "cardinality": "single",
+      "members": [
+        "getReagent"
+      ]
+    },
+    {
+      "group": "ingredients",
+      "cardinality": "collection",
+      "members": [
+        "getIngredients"
+      ]
+    }
+  ]
+}

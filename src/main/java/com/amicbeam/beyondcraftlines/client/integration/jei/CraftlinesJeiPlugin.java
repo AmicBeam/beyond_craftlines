@@ -62,20 +62,20 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             {
                 ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                         .getRecipeType().getUid();
-                ResourceLocation craftingRecipe = serverCraftingRecipeId(recipeLayoutDrawable);
+                ResourceLocation craftingRecipe = serverRecipeId(recipeLayoutDrawable);
                 if (craftingRecipe != null)
                 {
                     var output = findOutput(recipeLayoutDrawable);
                     return output == null ? null : new OrderButtonController(
                             output.key(), craftingRecipe, recipeType, java.util.List.of(),
-                            output.amount(), scaledIcon);
+                            output.amount(), java.util.List.of(), java.util.List.of(), scaledIcon);
                 }
                 var captured = JeiVirtualRecipeLayouts.capture(recipeType, recipeLayoutDrawable);
                 if (captured == null) return null;
                 ResourceLocation recipe = JeiVirtualRecipeLayouts.register(captured).id();
                 return new OrderButtonController(
                         captured.output().key(), recipe, recipeType, captured.inputs(),
-                        captured.output().amount(), scaledIcon);
+                        captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts(), scaledIcon);
             }
         });
     }
@@ -94,8 +94,12 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         JeiNetworkAvailabilityPayload.clientReceiver = payload -> {
             networkAvailability = payload.available()
                     ? NetworkAvailability.AVAILABLE : NetworkAvailability.UNAVAILABLE;
+            // Availability polls describe the player's network. An open tree already
+            // owns its menu's recipe scope, which may belong to a different network.
+            if (Minecraft.getInstance().screen instanceof
+                    com.amicbeam.beyondcraftlines.client.CraftlineOrderScreen) return;
             JeiCatalystIndex.prewarmRecipeTypes(payload.recipeTypes());
-            if (payload.available())
+            if (payload.available() || CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
                 com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(payload.recipeTypes());
             else com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.clear();
         };
@@ -117,6 +121,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingIn()
     {
+        JeiCatalystIndex.refresh();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
@@ -128,6 +133,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
+        com.amicbeam.beyondcraftlines.client.ClientJeiRecipeCache.reset();
     }
 
     public static boolean showRecipesFor(ItemStack stack)
@@ -300,7 +306,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             boolean exact = com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                     .exact(target, captured.output().key());
             if (exactOnly != exact) continue;
-            ResourceLocation serverRecipe = serverCraftingRecipeId(layout);
+            ResourceLocation serverRecipe = serverRecipeId(layout);
             if (serverRecipe != null)
             {
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -313,7 +319,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             }
             var focusedCapture = exact ? captured : new JeiVirtualRecipeLayouts.Captured(
                     captured.type(), new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
-                    target, captured.output().amount()), captured.inputs());
+                    target, captured.output().amount()), captured.inputs(), captured.byproducts(), captured.guaranteedByproducts());
             ResourceLocation virtualRecipe = JeiVirtualRecipeLayouts.register(focusedCapture).id();
             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                     "{} client JEI match virtualRecipe={} exact={} inputs={} target={}",
@@ -321,7 +327,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     virtualRecipe, exact, captured.inputs().size(),
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
             return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
-                    captured.inputs(), captured.output().amount());
+                    captured.inputs(), captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts());
         }
         return null;
     }
@@ -329,14 +335,38 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     /** Advances the target-driven JEI queue once per rendered client frame. */
     public static void clientFrame()
     {
-        long started = System.nanoTime();
-        long deadline = System.nanoTime() + CLIENT_FRAME_BUDGET_NANOS;
-        JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
-        long remaining = deadline - System.nanoTime();
-        if (remaining > 0)
-            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
-        com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
-                .recordFrameSlice(System.nanoTime() - started);
+        long frameStarted = System.nanoTime();
+        try
+        {
+            if (runtime != null && Minecraft.getInstance().level != null
+                    && CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get())
+            {
+                JeiCatalystIndex.prewarmAllRecipeTypes();
+                com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.request(java.util.Set.of());
+            }
+            long metadataStarted = System.nanoTime();
+            try { com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.refreshMetadata(); }
+            finally
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "metadata_refresh", System.nanoTime() - metadataStarted,
+                        "<metadata>", "<all>", CraftlinesJeiPlugin.class, -1, -1);
+            }
+            long started = System.nanoTime();
+            long deadline = System.nanoTime() + CLIENT_FRAME_BUDGET_NANOS;
+            JeiCatalystIndex.tick(CLIENT_FRAME_BUDGET_NANOS);
+            long remaining = deadline - System.nanoTime();
+            if (remaining > 0)
+                com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.tick(remaining);
+            com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup
+                    .recordFrameSlice(System.nanoTime() - started);
+        }
+        finally
+        {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                    "index_frame", System.nanoTime() - frameStarted,
+                    "<frame>", "<all>", CraftlinesJeiPlugin.class, -1, -1);
+        }
     }
 
     private static void queueOrder(OpenOrderMenuPayload payload)
@@ -399,28 +429,15 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 .findFirst().orElse(null);
     }
 
-    private static java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs(
-            IRecipeLayoutDrawable<?> layout)
-    {
-        return layout.getRecipeSlotsView().getSlotViews(RecipeIngredientRole.INPUT).stream()
-                .map(slot -> new OpenOrderMenuPayload.VirtualInput(
-                        com.amicbeam.beyondcraftlines.common.crafting.JeiSlotInputGroup.fromSlotName(
-                                slot.getSlotName().orElse("")),
-                        slot.getAllIngredients().map(typed -> RecipeResourceResolver.fromStack(
-                                        typed.getIngredient())).filter(java.util.Objects::nonNull)
-                                .distinct().limit(64).toList()))
-                .filter(input -> !input.candidates().isEmpty()).limit(32).toList();
-    }
-
-    private static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)
+    static <T> @Nullable ResourceLocation findRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayedRecipe = layout.getRecipe();
         ResourceLocation intrinsic = intrinsicRecipeId(displayedRecipe);
         return intrinsic != null ? intrinsic : layout.getRecipeCategory().getRegistryName(layout.getRecipe());
     }
 
-    /** Real crafting recipes must keep their server id so SimulatedCrafting can execute them. */
-    private static <T> @Nullable ResourceLocation serverCraftingRecipeId(IRecipeLayoutDrawable<T> layout)
+    /** Native crafting, cooking, and workstation recipes keep their authoritative server id. */
+    private static <T> @Nullable ResourceLocation serverRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayed = layout.getRecipe();
         return JeiRecipeExecutionSource.usesServerRecipe(displayed)
@@ -476,7 +493,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private record OrderButtonController(IStackKey<?> target, ResourceLocation recipe,
                                          ResourceLocation recipeType,
                                          java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs,
-                                         long virtualOutputAmount, IDrawable icon)
+                                         long virtualOutputAmount, java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> virtualByproducts,
+                                         java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> guaranteedByproducts, IDrawable icon)
             implements IIconButtonController
     {
         @Override
@@ -503,7 +521,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (!input.isSimulate())
             {
                 queueOrder(new OpenOrderMenuPayload(target, recipe.toString(), recipeType.toString(),
-                        virtualInputs, virtualOutputAmount));
+                        virtualInputs, virtualOutputAmount, virtualByproducts, guaranteedByproducts));
             }
             return true;
         }

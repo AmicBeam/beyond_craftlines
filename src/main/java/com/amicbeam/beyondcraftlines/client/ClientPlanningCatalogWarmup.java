@@ -45,13 +45,13 @@ public final class ClientPlanningCatalogWarmup
     private static long maxMainSliceNanos;
     private static volatile long snapshotNanos;
     private static boolean completionLogged;
-    private static boolean cachePersisted;
+    private static boolean cacheSaveRequestedOrRestored;
 
     private ClientPlanningCatalogWarmup() {}
 
     public static synchronized void request(Collection<String> availableFamilies)
     {
-        Set<String> next = Set.copyOf(availableFamilies);
+        Set<String> next = JeiCatalystIndex.planningFamilies(availableFamilies);
         if (requested && families.equals(next)) return;
         if (!families.equals(next)) invalidateCapture();
         requested = true;
@@ -154,9 +154,9 @@ public final class ClientPlanningCatalogWarmup
         builder = null;
         lookupBuilder = null;
         ClientRecipeLookupIndex.clear();
-        loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation);
+        loadJob = ClientPlanningCatalogCache.loadAsync(Minecraft.getInstance().level, holderIds, generation, pendingHolders);
         completionLogged = false;
-        cachePersisted = false;
+        cacheSaveRequestedOrRestored = false;
         LOGGER.info("{} client planning catalog preparation started holders={} generation={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 holders.size(), generation);
@@ -178,8 +178,15 @@ public final class ClientPlanningCatalogWarmup
             }
             if (loading.complete() && loading.generation() == generation)
             {
-                builder = ClientRecipePlanner.restored(loading.catalog(), pendingHolders.size());
-                cachePersisted = true;
+                builder = loading.exactMatch()
+                        ? ClientRecipePlanner.restored(loading.catalog(), pendingHolders.size()) : loading.reconciled();
+                cacheSaveRequestedOrRestored = loading.exactMatch();
+                lookupBuilder = loading.restoredLookup();
+                if (lookupBuilder != null) lookupBuilder.install();
+                if (!loading.exactMatch())
+                    LOGGER.info("{} client planning cache reconciled reused={} capture={} removed={}",
+                            com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                            builder.reusedRecipes(), builder.missingRecipes(), loading.removedRecipeIds());
                 LOGGER.info("{} client planning cache restored recipes={} readHeaderMs={} decompressParseMs={} ioWallMs={} decodeMs={} queueDepth={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                         loading.completedRecipes(), loading.headerMillis(), loading.parseMillis(), loading.ioMillis(),
@@ -189,9 +196,9 @@ public final class ClientPlanningCatalogWarmup
             }
             else if (loading.terminalWithoutCatalog())
             {
-                LOGGER.info("{} client planning cache unavailable state={} ioMs={}; capturing recipes",
+                LOGGER.info("{} client planning cache unavailable state={} reason={} path={} ioMs={}; capturing recipes",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                        loading.stateName(), loading.ioMillis());
+                        loading.stateName(), loading.reason(), loading.cachePath(), loading.ioMillis());
                 loadJob = null;
                 builder = ClientRecipePlanner.beginCapture(level, pendingHolders);
             }
@@ -201,7 +208,20 @@ public final class ClientPlanningCatalogWarmup
         if (builder != null && builder.complete() && lookupBuilder == null)
             lookupBuilder = ClientRecipeLookupIndex.begin(builder.catalog());
         if (lookupBuilder != null && !lookupBuilder.complete() && System.nanoTime() < deadline)
-            lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime()));
+        {
+            long lookupStarted = System.nanoTime();
+            try
+            {
+                lookupBuilder.advance(Math.max(1L, deadline - System.nanoTime()));
+                if (lookupBuilder.complete()) lookupBuilder.install();
+            }
+            finally
+            {
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "lookup_index", System.nanoTime() - lookupStarted,
+                        "<catalog>", "<all>", ClientRecipeLookupIndex.class, -1, -1);
+            }
+        }
         long elapsed = System.nanoTime() - sliceStarted;
         maxMainSliceNanos = Math.max(maxMainSliceNanos, elapsed);
         logMetricsIfDue();
@@ -209,16 +229,24 @@ public final class ClientPlanningCatalogWarmup
     }
 
     public static synchronized void invalidate()
-    { invalidateCapture(); }
+    {
+        invalidateCapture();
+    }
 
-    /** Recheck a new client recipe manager while retaining a completed catalog until IDs differ. */
+    /** Explicitly discards the persistent catalog as well as any in-flight capture. */
+    public static synchronized void reload() throws java.io.IOException
+    {
+        ClientPlanningCatalogCache.invalidateDisk();
+        ClientJeiRecipeCache.invalidateDisk();
+        invalidateCapture();
+        RecipePlanningService.clearRecipeCache();
+        JeiCatalystIndex.refresh();
+    }
+
+    /** A recipe sync can change contents without changing any IDs. */
     public static synchronized void refresh()
     {
-        if (!complete()) { invalidateCapture(); return; }
-        snapshotBuilder = null;
-        cancelSnapshot();
-        recipeSource = null;
-        observedVirtualRevision = -1;
+        invalidate();
     }
 
     public static synchronized void clear()
@@ -257,7 +285,7 @@ public final class ClientPlanningCatalogWarmup
         ClientRecipeLookupIndex.clear();
         startedNanos = 0L;
         completionLogged = false;
-        cachePersisted = false;
+        cacheSaveRequestedOrRestored = false;
         snapshotNanos = 0L;
     }
 
@@ -292,8 +320,9 @@ public final class ClientPlanningCatalogWarmup
         LOGGER.info("{} client planning progress stage={} completed={}/{} queueDepth={} maxMainSliceMs={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 snapshotBuilder != null ? "recipe_snapshot"
-                        : loadJob != null ? "cache_decode" : "recipe_capture", HANDLE.completedRecipes(),
-                HANDLE.totalRecipes(), loadJob == null ? 0 : loadJob.queueDepth(), maxMainSliceNanos / 1_000_000L);
+                        : loadJob != null ? "cache_decode"
+                        : lookupBuilder != null ? "lookup_index" : "recipe_capture", HANDLE.progressCompleted(),
+                HANDLE.progressTotal(), loadJob == null ? 0 : loadJob.queueDepth(), maxMainSliceNanos / 1_000_000L);
         maxMainSliceNanos = 0L;
     }
 
@@ -301,14 +330,16 @@ public final class ClientPlanningCatalogWarmup
     {
         if (!complete() || completionLogged) return;
         completionLogged = true;
-        if (!cachePersisted)
+        ClientJeiRecipeCache.releaseIdMigrations();
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.summarize("catalog_ready");
+        if (!cacheSaveRequestedOrRestored)
         {
             Level level = Minecraft.getInstance().level;
             if (level != null) ClientPlanningCatalogCache.save(level, holderIds, builder.catalog());
-            cachePersisted = true;
+            cacheSaveRequestedOrRestored = true;
         }
-        LOGGER.info("{} client planning catalog ready holders={} elapsedMs={} snapshotMs={} candidateMs={} candidateSteps={} mergeMs={} maxMainSliceMs={}",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, holderIds.size(),
+        LOGGER.info("{} client planning catalog ready holders={} recipes={} elapsedMs={} snapshotMs={} candidateMs={} candidateSteps={} mergeMs={} maxMainSliceMs={}",
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX, holderIds.size(), builder.catalog().recipes().size(),
                 (System.nanoTime() - startedNanos) / 1_000_000L, snapshotNanos / 1_000_000L,
                 builder.captureMillis(), builder.captureSteps(), builder.mergeMillis(),
                 maxMainSliceNanos / 1_000_000L);
@@ -325,6 +356,7 @@ public final class ClientPlanningCatalogWarmup
         private final java.util.ArrayList<RecipeHolder<?>> holders = new java.util.ArrayList<>();
         private final java.util.ArrayList<String> holderIds = new java.util.ArrayList<>();
         private volatile int scanned;
+        private int nativeFallbacks;
         private volatile boolean complete;
 
         private RecipeSnapshotBuilder(Level level, Set<String> availableFamilies)
@@ -363,13 +395,31 @@ public final class ClientPlanningCatalogWarmup
 
         private void accept(RecipeHolder<?> holder)
         {
-            scanned++;
-            String family = RecipePlanningService.family(holder);
-            boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
-            if (RecipePlanningService.supported(holder)
-                    && RecipeIndexVisibility.includesPlanningRecipe(
-                            family, virtual, availableFamilies))
-                selected.putIfAbsent(holder.id().toString(), holder);
+            long started = System.nanoTime();
+            String family = "<unavailable>";
+            try
+            {
+                scanned++;
+                family = RecipePlanningService.family(holder);
+                boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
+                boolean nativeFallback = !virtual && com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                        .allowsNativeFallback(holder.value());
+                if (RecipePlanningService.supported(holder)
+                        && RecipeIndexVisibility.includesPlanningRecipe(family, virtual, nativeFallback, availableFamilies))
+                {
+                    selected.putIfAbsent(holder.id().toString(), holder);
+                    if (nativeFallback && nativeFallbacks++ < 16)
+                        LOGGER.info("{} client native fallback indexed recipe={} family={} recipeClass={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                holder.id(), family, holder.value().getClass().getName());
+                }
+            }
+            finally
+            {
+                long elapsed = System.nanoTime() - started;
+                com.amicbeam.beyondcraftlines.common.crafting.RecipeIndexDiagnostics.record(
+                        "recipe_snapshot", elapsed, holder.id(), family, holder.value().getClass(), -1, -1);
+            }
         }
 
         private boolean complete() { return complete; }
@@ -388,6 +438,30 @@ public final class ClientPlanningCatalogWarmup
             if (level != null) ClientPlanningCatalogWarmup.advance(level, timeBudgetNanos);
         }
         public boolean complete() { return ClientPlanningCatalogWarmup.complete(); }
+        public boolean loadingCache() { return loadJob != null && !loadJob.terminalWithoutCatalog(); }
+        public String progressTranslationKey()
+        {
+            if (snapshotBuilder != null) return "gui.beyond_craftlines.checking_recipe_ids";
+            if (loadJob != null) return loadJob.buildingLookup()
+                    ? "gui.beyond_craftlines.building_recipe_lookup" : "gui.beyond_craftlines.loading_recipe_cache";
+            if (builder != null && !builder.complete()) return builder.reusedRecipes() > 0
+                    ? "gui.beyond_craftlines.updating_recipe_index" : "gui.beyond_craftlines.capturing_recipes";
+            return "gui.beyond_craftlines.building_recipe_lookup";
+        }
+        public int progressCompleted()
+        {
+            if (loadJob != null && loadJob.buildingLookup()) return loadJob.restoredLookup().completedRecipes();
+            if (lookupBuilder != null) return lookupBuilder.completedRecipes();
+            return completedRecipes() - (loadJob == null && snapshotBuilder == null && builder != null
+                    ? builder.reusedRecipes() : 0);
+        }
+        public int progressTotal()
+        {
+            if (loadJob != null && loadJob.buildingLookup()) return loadJob.restoredLookup().totalRecipes();
+            if (lookupBuilder != null) return lookupBuilder.totalRecipes();
+            return totalRecipes() - (loadJob == null && snapshotBuilder == null && builder != null
+                    ? builder.reusedRecipes() : 0);
+        }
         public ClientRecipePlanner.Catalog catalog()
         {
             if (!complete()) throw new IllegalStateException("planning catalog is not ready");

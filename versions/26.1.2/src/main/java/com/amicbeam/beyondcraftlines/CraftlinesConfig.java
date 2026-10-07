@@ -47,6 +47,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
 
+    public static final ModConfigSpec.BooleanValue PRELOAD_ALL_RECIPE_TYPES = CLIENT_BUILDER
+            .comment("Preload all supported recipe types when entering a world and reuse the persistent catalog on later logins. Disable to preload only the current network's enabled types. Changing this setting switches the catalog scope.")
+            .translation("config.beyond_craftlines.preload_all_recipe_types")
+            .define("preloadAllRecipeTypes", true);
+
     public static final ModConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .comment("Show only the occurrence closest to the root for an identical component-aware resource in the recipe tree; later occurrences become clickable jump references.")
             .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")

@@ -78,8 +78,14 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
     public record Step(Identifier recipe, String family, IStackKey<?> outputKey,
                        long outputPerCraft, long crafts, List<Material> inputs,
                        List<IngredientSelection> ingredientSelections, List<Integer> dependencies,
-                       long selfIncrementSeed)
+                       long selfIncrementSeed, List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts)
     {
+        public Step(Identifier recipe, String family, IStackKey<?> outputKey,
+                    long outputPerCraft, long crafts, List<Material> inputs,
+                    List<IngredientSelection> ingredientSelections, List<Integer> dependencies, long selfIncrementSeed)
+        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs, ingredientSelections,
+                dependencies, selfIncrementSeed, List.of()); }
+
         public Step(Identifier recipe, String family, IStackKey<?> outputKey,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections, List<Integer> dependencies)
@@ -107,6 +113,7 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
             inputs = List.copyOf(inputs);
             ingredientSelections = List.copyOf(ingredientSelections);
             dependencies = List.copyOf(dependencies);
+            byproducts = List.copyOf(byproducts);
             if (dependencies.stream().anyMatch(index -> index == null || index < 0))
                 throw new IllegalArgumentException("invalid recipe dependency");
         }

@@ -1,0 +1,20 @@
+{
+  "jei_type": "botania:runic_altar",
+  "recipe_classes": [
+    "vazkii.botania.common.crafting.RunicAltarRecipe"
+  ],
+  "input_sections": [
+    {
+      "group": "livingrock",
+      "cardinality": "fixed",
+      "count": 1
+    },
+    {
+      "group": "ingredients",
+      "cardinality": "collection",
+      "members": [
+        "getIngredients"
+      ]
+    }
+  ]
+}

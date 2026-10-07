@@ -10,6 +10,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 final class RecipeIndexVisibilityTest
 {
     @Test
+    void boundFurnacesKeepTheirNativeRecipesInThePlanningCatalog()
+    {
+        for (String family : Set.of("smelting", "blasting", "smoking"))
+        {
+            assertTrue(RecipeIndexVisibility.includesPlanningRecipe(family, false, Set.of(family)));
+            assertFalse(RecipeIndexVisibility.includesPlanningRecipe(family, false, Set.of()));
+        }
+    }
+
+    @Test
     void sharedIndexStillFiltersEachNetworksFamilies()
     {
         Set<String> available = Set.of("example:crusher", "minecraft:smithing", "minecraft:stonecutting");

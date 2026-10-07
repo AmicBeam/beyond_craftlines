@@ -31,19 +31,102 @@ public final class VirtualProvisionerRecipeRegistry
                 @Override protected boolean removeEldestEntry(Map.Entry<Identifier, RecipeHolder<?>> eldest)
                 { return size() > MAX_RECIPES; }
             });
+    // Client category warmup is a complete catalog, not an evictable request cache.
+    private static final Map<Identifier, RecipeHolder<?>> CLIENT_CATALOG = Collections.synchronizedMap(
+            new LinkedHashMap<>());
     private static final Map<Recipe<?>, Descriptor> DESCRIPTORS = Collections.synchronizedMap(
             new java.util.WeakHashMap<>());
     private static final java.util.concurrent.atomic.AtomicLong REVISION =
             new java.util.concurrent.atomic.AtomicLong();
 
+    private static long clientEpoch;
+
+    public record CachedDescriptor(Identifier id, Descriptor descriptor) {}
+
+    public static void cancelClientRestore()
+    { synchronized (CLIENT_CATALOG) { clientEpoch++; } }
+
+    public static long clientEpoch()
+    { synchronized (CLIENT_CATALOG) { return clientEpoch; } }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot()
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            List<CachedDescriptor> result = new ArrayList<>(CLIENT_CATALOG.size());
+            CLIENT_CATALOG.forEach((id, holder) -> {
+                Descriptor descriptor = DESCRIPTORS.get(holder.value());
+                if (descriptor != null) result.add(new CachedDescriptor(id, descriptor));
+            });
+            return List.copyOf(result);
+        }
+    }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot(long epoch)
+    {
+        synchronized (CLIENT_CATALOG)
+        { return epoch == clientEpoch ? clientCatalogSnapshot() : null; }
+    }
+
+    /** An old disk reader cannot add recipes after a world/runtime reset. */
+    public static boolean restoreForClientCatalog(long epoch, Identifier id, Descriptor descriptor)
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            if (epoch != clientEpoch) return false;
+            if (CLIENT_CATALOG.containsKey(id)) return true;
+            Recipe<?> recipe = proxy(descriptor);
+            RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
+            CLIENT_CATALOG.put(id, holder);
+            DESCRIPTORS.put(recipe, descriptor);
+            REVISION.incrementAndGet();
+            return true;
+        }
+    }
+
     private VirtualProvisionerRecipeRegistry() {}
+
+    public static int discardRestoredFamilies(long epoch, java.util.Set<String> families)
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            if (epoch != clientEpoch) return 0;
+            int before = CLIENT_CATALOG.size();
+            CLIENT_CATALOG.entrySet().removeIf(entry -> {
+                Descriptor descriptor = DESCRIPTORS.get(entry.getValue().value());
+                if (descriptor == null || !families.contains(descriptor.family())) return false;
+                DESCRIPTORS.remove(entry.getValue().value());
+                return true;
+            });
+            int removed = before - CLIENT_CATALOG.size();
+            if (removed > 0) REVISION.incrementAndGet();
+            return removed;
+        }
+    }
 
     public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
                                            List<InputSlot> inputs)
     {
-        Descriptor descriptor = new Descriptor(family, output, outputAmount, inputs);
+        return register(family, output, outputAmount, inputs, List.of());
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts)
+    {
+        return register(family, output, outputAmount, inputs, byproducts, byproducts);
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts,
+                                           List<KeyAmount> guaranteedByproducts)
+    {
+        return register(new Descriptor(family, output, outputAmount, inputs, byproducts, guaranteedByproducts));
+    }
+
+    public static RecipeHolder<?> register(Descriptor descriptor)
+    {
         Identifier id = descriptor.id();
-        RecipeHolder<?> existing = RECIPES.get(id);
+        RecipeHolder<?> existing = find(id).orElse(null);
         if (existing != null) return existing;
         Recipe<?> recipe = proxy(descriptor);
         RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
@@ -54,10 +137,24 @@ public final class VirtualProvisionerRecipeRegistry
     }
 
     public static Optional<RecipeHolder<?>> find(Identifier id)
-    { return Optional.ofNullable(RECIPES.get(id)); }
+    {
+        RecipeHolder<?> retained = CLIENT_CATALOG.get(id);
+        return Optional.ofNullable(retained != null ? retained : RECIPES.get(id));
+    }
+
+    public static RecipeHolder<?> retainForClientCatalog(RecipeHolder<?> holder)
+    {
+        CLIENT_CATALOG.put(holder.id().identifier(), holder);
+        return holder;
+    }
 
     public static List<RecipeHolder<?>> recipes()
-    { synchronized (RECIPES) { return List.copyOf(RECIPES.values()); } }
+    {
+        Map<Identifier, RecipeHolder<?>> snapshot;
+        synchronized (RECIPES) { snapshot = new LinkedHashMap<>(RECIPES); }
+        synchronized (CLIENT_CATALOG) { snapshot.putAll(CLIENT_CATALOG); }
+        return List.copyOf(snapshot.values());
+    }
 
     public static Descriptor descriptor(Recipe<?> recipe)
     { return DESCRIPTORS.get(recipe); }
@@ -66,9 +163,15 @@ public final class VirtualProvisionerRecipeRegistry
 
     public static void clear()
     {
-        RECIPES.clear();
-        DESCRIPTORS.clear();
-        REVISION.incrementAndGet();
+        synchronized (CLIENT_CATALOG)
+        {
+            clientEpoch++;
+            VirtualRecipeIdentity.clear();
+            RECIPES.clear();
+            CLIENT_CATALOG.clear();
+            DESCRIPTORS.clear();
+            REVISION.incrementAndGet();
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -123,7 +226,7 @@ public final class VirtualProvisionerRecipeRegistry
         public InputSlot
         {
             if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
-                    || candidates.size() > 64 || candidates.stream().anyMatch(value -> value == null
+                    || candidates.size() > VirtualRecipeLimits.CANDIDATES || candidates.stream().anyMatch(value -> value == null
                     || value.isEmpty() || value.amount() < 1) || use == null)
                 throw new IllegalArgumentException("invalid virtual provisioner ingredient");
             candidates = List.copyOf(candidates);
@@ -131,28 +234,50 @@ public final class VirtualProvisionerRecipeRegistry
     }
 
     public record Descriptor(String family, IStackKey<?> output, long outputAmount,
-                             List<InputSlot> inputs)
+                             List<InputSlot> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
     {
+        public Descriptor(String family, IStackKey<?> output, long outputAmount, List<InputSlot> inputs)
+        { this(family, output, outputAmount, inputs, List.of(), List.of()); }
+
         public Descriptor
         {
             if (Identifier.tryParse(family) == null || family.length() > 256
                     || output == null || output.isEmpty() || outputAmount < 1
-                    || inputs == null || inputs.isEmpty() || inputs.size() > 32)
+                    || inputs == null || inputs.isEmpty() || inputs.size() > VirtualRecipeLimits.INPUTS)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");
             inputs = List.copyOf(inputs);
+            VirtualRecipeLimits.requireInputs(inputs.size(), inputs.stream().mapToLong(slot -> slot.candidates().size()).sum());
+            if (byproducts == null || byproducts.size() >= VirtualRecipeLimits.OUTPUTS
+                    || byproducts.stream().anyMatch(value -> value == null || value.isEmpty()
+                    || value.amount() < 1 || StackKeyMatch.exact(output, value.key())))
+                throw new IllegalArgumentException("invalid virtual recipe byproducts");
+            byproducts = List.copyOf(byproducts);
+            guaranteedByproducts = List.copyOf(guaranteedByproducts);
+            if (byproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key())).distinct().count()
+                    != byproducts.size() || guaranteedByproducts.stream()
+                    .map(value -> VirtualRecipeIdentity.key(value.key())).distinct().count() != guaranteedByproducts.size())
+                throw new IllegalArgumentException("duplicate virtual recipe byproduct");
+            for (KeyAmount guaranteed : guaranteedByproducts)
+                if (byproducts.stream().noneMatch(actual -> StackKeyMatch.exact(actual.key(), guaranteed.key())
+                        && actual.amount() == guaranteed.amount()))
+                    throw new IllegalArgumentException("guaranteed output is not a declared byproduct");
         }
 
         public Identifier id()
         {
             StringBuilder canonical = new StringBuilder(family).append('|')
-                    .append(RecipeResourceResolver.resolutionKey(output)).append('@').append(outputAmount);
+                    .append(VirtualRecipeIdentity.key(output)).append('@').append(outputAmount);
             for (InputSlot slot : inputs)
             {
                 canonical.append('|').append(slot.inputGroup()).append(':')
                         .append(slot.use().kind()).append('@').append(slot.use().damagePerCraft()).append(':');
-                slot.candidates().stream().map(value -> RecipeResourceResolver.resolutionKey(value.key()) + '@' + value.amount())
+                slot.candidates().stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
                         .sorted().forEach(value -> canonical.append(value).append(','));
             }
+            byproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|byproduct:").append(value));
+            guaranteedByproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|guaranteed:").append(value));
             UUID uuid = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));
             return Identifier.fromNamespaceAndPath("beyond_craftlines", "jei_virtual/" + uuid);
         }

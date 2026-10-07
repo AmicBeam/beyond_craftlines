@@ -9,6 +9,9 @@ displayName="${mod_name}"
 authors="${mod_authors}"
 description='''${mod_description}'''
 
+[[mixins]]
+config="beyond_craftlines.mixins.json"
+
 [[dependencies.${mod_id}]]
 modId="neoforge"
 type="required"
@@ -26,7 +29,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="beyonddimensions"
 type="required"
-versionRange="[0.7.24,)"
+versionRange="[0.7.30,)"
 ordering="AFTER"
 side="BOTH"
 

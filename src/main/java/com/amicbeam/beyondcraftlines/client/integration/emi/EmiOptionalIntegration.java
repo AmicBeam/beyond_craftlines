@@ -23,8 +23,17 @@ public final class EmiOptionalIntegration
     private static Method setPreferredRecipe;
     private static Method clearPreferredRecipe;
     private static Method orderRecipeButton;
+    private static Method refreshMetadata;
 
     private EmiOptionalIntegration() {}
+
+    public static void refreshMetadata()
+    {
+        initialize();
+        if (refreshMetadata == null) return;
+        try { refreshMetadata.invoke(null); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+    }
 
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY)
     {
@@ -121,6 +130,7 @@ public final class EmiOptionalIntegration
         {
             Class<?> type = Class.forName(CLIENT, false, EmiOptionalIntegration.class.getClassLoader());
             orderHovered = type.getMethod("orderIngredientUnderMouse", double.class, double.class);
+            refreshMetadata = type.getMethod("refreshMetadata");
             preferredRecipe = type.getMethod("preferredRecipe", IStackKey.class);
             recipeTypesFor = type.getMethod("recipeTypesFor", net.minecraft.world.item.ItemStack.class);
             recipeTypeTitle = type.getMethod("recipeTypeTitle", ResourceLocation.class);
@@ -134,6 +144,7 @@ public final class EmiOptionalIntegration
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored)
         {
             orderHovered = null;
+            refreshMetadata = null;
             preferredRecipe = null;
             recipeTypesFor = null;
             recipeTypeTitle = null;

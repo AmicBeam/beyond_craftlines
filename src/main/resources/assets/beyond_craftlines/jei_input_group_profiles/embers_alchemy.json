@@ -1,0 +1,22 @@
+{
+  "jei_type": "embers:alchemy",
+  "recipe_classes": [
+    "com.rekindled.embers.recipe.AlchemyRecipeBase"
+  ],
+  "input_sections": [
+    {
+      "group": "center",
+      "cardinality": "single",
+      "members": [
+        "getCenterInput"
+      ]
+    },
+    {
+      "group": "ingredients",
+      "cardinality": "collection",
+      "members": [
+        "getInputs"
+      ]
+    }
+  ]
+}

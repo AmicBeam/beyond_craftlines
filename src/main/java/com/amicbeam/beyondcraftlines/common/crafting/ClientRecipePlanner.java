@@ -39,6 +39,9 @@ public final class ClientRecipePlanner
     public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders)
     { return new CatalogBuilder(level, holders); }
 
+    public static CatalogBuilder beginCapture(Level level, List<RecipeHolder<?>> holders, Catalog cached)
+    { return new CatalogBuilder(level, holders, cached); }
+
     public static CatalogBuilder restored(Catalog catalog, int total)
     { return new CatalogBuilder(catalog, total); }
 
@@ -88,7 +91,7 @@ public final class ClientRecipePlanner
     {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
-        Map<IStackKey<?>, List<Recipe>> byOutput = catalog.byOutput();
+        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput = catalog::lookup;
         State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
                 new LinkedHashMap<>(), new LinkedHashMap<>());
@@ -100,10 +103,10 @@ public final class ClientRecipePlanner
         boolean exhausted = budget.exhausted();
         return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock,
                 exhausted, PlanningOutcome.completed(!state.missing.isEmpty(),
-                state.rootNoRecipe, state.cyclic, exhausted));
+                state.rootNoRecipe, state.cyclicDependencies > 0, exhausted));
     }
 
-    private static void resolve(IStackKey<?> resource, long needed, Map<IStackKey<?>, List<Recipe>> byOutput,
+    private static void resolve(IStackKey<?> resource, long needed, java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
                                 Set<IStackKey<?>> visiting, State state,
                                 Map<String, ResourceLocation> manualRecipes,
                                 Map<IngredientKey, String> manualIngredients,
@@ -128,7 +131,7 @@ public final class ClientRecipePlanner
         String resourceId = RecipeResourceResolver.resolutionKey(resource);
         try
         {
-            List<Recipe> candidates = recipesFor(byOutput, resource);
+            List<Recipe> candidates = byOutput.apply(resource);
             ResourceLocation selected = manualRecipes.get(resourceId);
             if (selected == null) selected = manualRecipes.get(RecipeResourceResolver.sortKey(resource));
             if (selected == null) selected = state.recipes.get(resourceId);
@@ -165,11 +168,10 @@ public final class ClientRecipePlanner
             State best = null;
             Recipe bestRecipe = null;
             State cyclicFallback = null;
-            boolean triedCandidate = false;
+            boolean foundViableCandidate = false;
             for (Recipe recipe : candidates)
             {
-                if (!PlanningBranches.shouldTryCandidate(triedCandidate, budget)) break;
-                triedCandidate = true;
+                if (!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget)) break;
                 State branch = state.copy();
                 ResourceLocation previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id())) continue;
@@ -180,11 +182,12 @@ public final class ClientRecipePlanner
                     return attempted;
                 }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
                 branch = evaluated.state();
-                if (evaluated.cyclic())
+                if (evaluated.cyclic() || branch.cyclicDependencies > state.cyclicDependencies)
                 {
                     if (cyclicFallback == null) cyclicFallback = branch;
                     continue;
                 }
+                foundViableCandidate |= branch.missing.equals(state.missing);
                 if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
                 {
                     best = branch;
@@ -200,7 +203,7 @@ public final class ClientRecipePlanner
     }
 
     private static void resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe,
-                                      Map<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
+                                      java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
                                       State state, Map<String, ResourceLocation> manualRecipes,
                                       Map<IngredientKey, String> manualIngredients,
                                       int depth, int maxDepth, ClientPlanningBudget budget)
@@ -225,7 +228,7 @@ public final class ClientRecipePlanner
                 candidates = slot.candidates().stream().sorted(Comparator
                         .<Candidate>comparingLong(candidate -> available(
                                 state.stock, candidate.key(), slot.use())).reversed()
-                        .thenComparing(candidate -> !recipesFor(byOutput, candidate.key()).isEmpty() ? 0 : 1)
+                        .thenComparing(candidate -> !byOutput.apply(candidate.key()).isEmpty() ? 0 : 1)
                         .thenComparing(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))).toList();
             }
             options.add(candidates);
@@ -241,11 +244,10 @@ public final class ClientRecipePlanner
 
         State best = null;
         String bestKey = null;
-        boolean triedCandidate = false;
+        boolean foundViableCandidate = false;
         for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
         {
-            if (!PlanningBranches.shouldTryCandidate(triedCandidate, budget)) break;
-            triedCandidate = true;
+            if (!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget)) break;
             State branch = state.copy();
             try
             {
@@ -253,6 +255,8 @@ public final class ClientRecipePlanner
                         manualIngredients, depth, maxDepth, budget, variant)) continue;
             }
             catch (PlanningCycleBranch.Cycle ignored) { continue; }
+            if (branch.cyclicDependencies > state.cyclicDependencies) continue;
+            foundViableCandidate |= branch.missing.equals(state.missing);
             String key = variant.stream().map(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))
                     .collect(java.util.stream.Collectors.joining("|"));
             if (best == null || compare(branch, recipe, best, recipe) < 0
@@ -268,7 +272,7 @@ public final class ClientRecipePlanner
     }
 
     private static boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe,
-                                        Map<IStackKey<?>, List<Recipe>> byOutput,
+                                        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
                                         Set<IStackKey<?>> visiting, State state,
                                         Map<String, ResourceLocation> manualRecipes,
                                         Map<IngredientKey, String> manualIngredients,
@@ -337,6 +341,8 @@ public final class ClientRecipePlanner
         state.steps++;
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         if (produced > remainder) state.stock.add(output, produced - remainder);
+        for (KeyAmount byproduct : recipe.byproducts())
+            state.stock.add(byproduct.key(), SaturatingLongMath.multiply(byproduct.amount(), crafts));
         return true;
     }
 
@@ -374,7 +380,7 @@ public final class ClientRecipePlanner
         // Reject only this candidate. The cycle may close over an ancestor,
         // but sibling recipes for the current resource can still be viable.
         State rejected = baseline.copy();
-        rejected.cyclic = true;
+        rejected.cyclicDependencies++;
         rejected.missing.merge(resource, remainder, SaturatingLongMath::add);
         return rejected;
     }
@@ -382,27 +388,73 @@ public final class ClientRecipePlanner
     public static final class Catalog
     {
         private final List<Recipe> recipes;
-        private final Map<IStackKey<?>, List<Recipe>> byOutput;
+        private final OutputRecipeMap byOutput;
+        private final Set<String> availableFamilies;
 
         public Catalog(List<Recipe> recipes)
         {
-            this.recipes = List.copyOf(recipes);
-            OutputRecipeMap index = new OutputRecipeMap();
-            for (Recipe recipe : this.recipes)
-                index.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
-            index.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
-            index.finish();
-            this.byOutput = index;
+            long started = System.nanoTime();
+            try
+            {
+                this.recipes = List.copyOf(recipes);
+                OutputRecipeMap index = new OutputRecipeMap();
+                for (Recipe recipe : this.recipes)
+                    index.computeIfAbsent(recipe.output(), ignored -> new ArrayList<>()).add(recipe);
+                index.values().forEach(values -> values.sort(Comparator.comparing(recipe -> recipe.id().toString())));
+                index.finish();
+                this.byOutput = index;
+                this.availableFamilies = null;
+            }
+            finally
+            {
+                RecipeIndexDiagnostics.record("catalog_index", System.nanoTime() - started,
+                        "<catalog>", "<all>", Catalog.class, -1, -1);
+            }
         }
 
-        public List<Recipe> recipes() { return recipes; }
-        private Map<IStackKey<?>, List<Recipe>> byOutput() { return byOutput; }
+        private Catalog(Catalog source, Set<String> availableFamilies)
+        {
+            this.recipes = source.recipes;
+            this.byOutput = source.byOutput;
+            this.availableFamilies = Set.copyOf(availableFamilies);
+        }
+
+        /** Shares captured recipes and indexes; only candidate lookup is scoped to the network. */
+        public Catalog forFamilies(Set<String> availableFamilies)
+        { return new Catalog(this, availableFamilies); }
+
+        public List<Recipe> recipes()
+        {
+            return availableFamilies == null ? recipes : recipes.stream()
+                    .filter(recipe -> com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                            .includes(recipe.family(), availableFamilies)).toList();
+        }
+
+        private List<Recipe> lookup(IStackKey<?> resource)
+        { return byOutput.lookup(resource, availableFamilies); }
+    }
+
+    private static void logSlowInputs(String stage, long elapsedNanos, RecipeHolder<?> holder, String family,
+                                      List<RecipeResourceResolver.ResourceIngredient> ingredients)
+    {
+        if (elapsedNanos < RecipeIndexDiagnostics.SLOW_NANOS) return;
+        logSlowCapture(stage, elapsedNanos, holder, family, ingredients == null ? -1 : ingredients.size(),
+                ingredients == null ? -1 : ingredients.stream().mapToLong(input -> input.candidates().size()).sum());
+    }
+
+    private static void logSlowCapture(String stage, long elapsedNanos, RecipeHolder<?> holder, String family,
+                                       int slots, long candidates)
+    {
+        if (elapsedNanos < RecipeIndexDiagnostics.SLOW_NANOS) return;
+        RecipeIndexDiagnostics.record(stage, elapsedNanos, holder.id(), family,
+                holder.value().getClass(), slots, candidates);
     }
 
     /** Main-thread cursor that yields after each output, slot, or ingredient candidate. */
     private static final class CaptureCursor
     {
         private final RecipeHolder<?> holder;
+        private final String family;
         private final List<KeyAmount> outputs;
         private final List<Recipe> captured;
         private int outputIndex;
@@ -411,14 +463,21 @@ public final class ClientRecipePlanner
         private CaptureCursor(Level level, RecipeHolder<?> holder)
         {
             this.holder = holder;
-            this.outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess());
+            // Resolve once and reuse it; diagnostic formatting must not call mod accessors again.
+            String resolvedFamily = "<unavailable>";
+            long started = System.nanoTime();
+            try { this.family = resolvedFamily = RecipePlanningService.family(holder); }
+            finally { logSlowCapture("recipe_type", System.nanoTime() - started, holder, resolvedFamily, -1, -1); }
+            started = System.nanoTime();
+            try { this.outputs = RecipeOutputResolver.outputs(holder.value(), level.registryAccess()); }
+            finally { logSlowCapture("recipe_outputs", System.nanoTime() - started, holder, family, -1, -1); }
             this.captured = new ArrayList<>(outputs.size());
         }
 
         private boolean advance(Level level)
         {
             if (outputs.isEmpty()) return true;
-            if (direction == null) direction = new DirectionCursor(level, holder, outputs.get(outputIndex));
+            if (direction == null) direction = new DirectionCursor(level, holder, outputs.get(outputIndex), family);
             Recipe recipe = direction.advance(level);
             if (recipe == null) return false;
             captured.add(recipe);
@@ -433,6 +492,7 @@ public final class ClientRecipePlanner
     private static final class DirectionCursor
     {
         private final RecipeHolder<?> holder;
+        private final String family;
         private final KeyAmount output;
         private final List<RecipeResourceResolver.ResourceIngredient> ingredients;
         private final List<ItemStack> baselineSamples;
@@ -441,19 +501,44 @@ public final class ClientRecipePlanner
         private int candidateIndex;
         private LinkedHashMap<String, Candidate> candidates;
 
-        private DirectionCursor(Level level, RecipeHolder<?> holder, KeyAmount output)
+        private DirectionCursor(Level level, RecipeHolder<?> holder, KeyAmount output, String family)
         {
             this.holder = holder;
+            this.family = family;
             this.output = output;
-            this.ingredients = RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
-            List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
-                    .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
-                    .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
-                            IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
-            this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+            List<RecipeResourceResolver.ResourceIngredient> resolved = null;
+            long started = System.nanoTime();
+            try
+            {
+                resolved = RecipeResourceResolver.ingredientsForOutput(holder.value(), output.key());
+                this.ingredients = resolved;
+            }
+            finally { logSlowInputs("recipe_inputs", System.nanoTime() - started, holder, family, resolved); }
+            started = System.nanoTime();
+            try
+            {
+                if (holder.value() instanceof net.minecraft.world.item.crafting.CraftingRecipe)
+                {
+                    List<RecipePlan.IngredientSelection> baseline = ingredients.stream()
+                            .filter(ingredient -> ingredient.candidates().getFirst().key() instanceof ItemStackKey)
+                            .map(ingredient -> new RecipePlan.IngredientSelection(ingredient.slot(),
+                                    IngredientSelectionKey.exact(ingredient.candidates().getFirst().key()))).toList();
+                    this.baselineSamples = SimulatedCrafting.selectedSamples(holder, baseline);
+                }
+                else this.baselineSamples = List.of();
+            }
+            finally { logSlowInputs("recipe_samples", System.nanoTime() - started, holder, family, ingredients); }
         }
 
         private Recipe advance(Level level)
+        {
+            String stage = ingredientIndex < ingredients.size() ? "recipe_candidate" : "recipe_finalize";
+            long started = System.nanoTime();
+            try { return advanceCurrent(level); }
+            finally { logSlowInputs(stage, System.nanoTime() - started, holder, family, ingredients); }
+        }
+
+        private Recipe advanceCurrent(Level level)
         {
             if (ingredientIndex < ingredients.size())
             {
@@ -493,9 +578,10 @@ public final class ClientRecipePlanner
             List<Slot> completedSlots = slots.stream().map(slot -> new Slot(slot.index(), slot.candidates(),
                     VirtualInputUse.forRecipeSlot(holder.value(), slot.index(),
                             slot.index() < inputUses.length ? inputUses[slot.index()] : VirtualInputUse.CONSUMED))).toList();
-            return new Recipe(holder.id(), RecipePlanningService.family(holder), output.key(),
+            return new Recipe(holder.id(), family, output.key(),
                     Math.max(1, output.amount()), RecipeIoProfileRegistry.outputMatchSemantics(
-                    holder.value(), holder.id().toString()), completedSlots);
+                    holder.value(), holder.id().toString()), completedSlots, VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null ? List.of()
+                    : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).guaranteedByproducts());
         }
     }
 
@@ -525,6 +611,31 @@ public final class ClientRecipePlanner
             if (this.holders.isEmpty()) advanceMerge(Long.MAX_VALUE);
         }
 
+        private int reused;
+        private int removed;
+
+        /** Runs on the cache worker: only unchanged IDs seed the new capture. */
+        private CatalogBuilder(Level level, List<RecipeHolder<?>> current, Catalog cached)
+        {
+            this.level = level;
+            this.allHolders = List.copyOf(current);
+            this.total = current.size();
+            Set<ResourceLocation> ids = current.stream().map(holder -> holder.id())
+                    .collect(java.util.stream.Collectors.toSet());
+            Set<ResourceLocation> removedIds = new HashSet<>();
+            for (Recipe recipe : cached.recipes())
+            {
+                if (ids.contains(recipe.id()))
+                    captures.computeIfAbsent(recipe.id(), ignored -> new ArrayList<>()).add(recipe);
+                else removedIds.add(recipe.id());
+            }
+            this.holders = current.stream().filter(holder -> !captures.containsKey(holder.id())).toList();
+            this.completed = current.size() - this.holders.size();
+            this.reused = completed;
+            this.removed = removedIds.size();
+            if (this.holders.isEmpty()) advanceMerge(Long.MAX_VALUE);
+        }
+
         private CatalogBuilder(Catalog catalog, int total)
         {
             this.level = null;
@@ -543,8 +654,14 @@ public final class ClientRecipePlanner
             while (next < holders.size() && (processed < 1 || System.nanoTime() - started < timeBudgetNanos))
             {
                 long captureStarted = System.nanoTime();
-                if (cursor == null) cursor = new CaptureCursor(level, holders.get(next));
-                boolean holderComplete = cursor.advance(level);
+                boolean holderComplete;
+                try
+                {
+                    if (cursor == null) cursor = new CaptureCursor(level, holders.get(next));
+                    holderComplete = cursor.advance(level);
+                }
+                finally { logSlowCapture("recipe_step", System.nanoTime() - captureStarted, holders.get(next),
+                        cursor == null ? "<unavailable>" : cursor.family, -1, -1); }
                 captureSteps++;
                 captureNanos += System.nanoTime() - captureStarted;
                 if (holderComplete)
@@ -586,6 +703,9 @@ public final class ClientRecipePlanner
         public boolean complete() { return catalog != null; }
         public int completedRecipes() { return completed; }
         public int totalRecipes() { return total; }
+        public int reusedRecipes() { return reused; }
+        public int removedRecipes() { return removed; }
+        public int missingRecipes() { return total - reused; }
         public long captureMillis() { return captureNanos / 1_000_000L; }
         public long captureSteps() { return captureSteps; }
         public long mergeMillis() { return mergeNanos / 1_000_000L; }
@@ -596,14 +716,18 @@ public final class ClientRecipePlanner
         }
     }
     public record Recipe(ResourceLocation id, String family, IStackKey<?> output, long outputCount,
-                         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots)
+                         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots, List<KeyAmount> byproducts)
     {
+        public Recipe(ResourceLocation id, String family, IStackKey<?> output, long outputCount,
+                      RecipeIoProfileRegistry.OutputMatchSemantics outputMatch, List<Slot> slots)
+        { this(id, family, output, outputCount, outputMatch, slots, List.of()); }
         public Recipe
         {
             Objects.requireNonNull(id); Objects.requireNonNull(family); Objects.requireNonNull(output);
             Objects.requireNonNull(outputMatch);
             if (outputCount < 1) throw new IllegalArgumentException("invalid recipe output");
             slots = List.copyOf(slots);
+            byproducts = List.copyOf(byproducts);
         }
     }
     public record Slot(int index, List<Candidate> candidates, VirtualInputUse use)
@@ -686,7 +810,7 @@ public final class ClientRecipePlanner
         private Map<String, ResourceLocation> recipes;
         private Map<IngredientKey, String> ingredients;
         private boolean rootNoRecipe;
-        private boolean cyclic;
+        private int cyclicDependencies;
         private State(MatchingStock<IStackKey<?>, ResourceLocation> stock,
                       Map<IStackKey<?>, Long> missing,
                       Map<IStackKey<?>, Long> reusableRequirements,
@@ -700,12 +824,12 @@ public final class ClientRecipePlanner
         { State result = new State(stock.copy(), new LinkedHashMap<>(missing),
                 new LinkedHashMap<>(reusableRequirements), new LinkedHashMap<>(usedStock), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients));
-            result.rootNoRecipe = rootNoRecipe; result.cyclic = cyclic; return result; }
+            result.rootNoRecipe = rootNoRecipe; result.cyclicDependencies = cyclicDependencies; return result; }
         private void replaceWith(State state)
         { stock = state.stock; missing = state.missing; reusableRequirements = state.reusableRequirements;
             usedStock = state.usedStock;
             steps = state.steps; recipes = state.recipes; ingredients = state.ingredients;
-            rootNoRecipe = state.rootNoRecipe; cyclic = state.cyclic; }
+            rootNoRecipe = state.rootNoRecipe; cyclicDependencies = state.cyclicDependencies; }
     }
 
     private static ResourceLocation itemId(IStackKey<?> key)
@@ -764,16 +888,29 @@ public final class ClientRecipePlanner
         }
 
         private List<Recipe> lookup(IStackKey<?> resource)
+        { return lookup(resource, null); }
+
+        private List<Recipe> lookup(IStackKey<?> resource, Set<String> availableFamilies)
         {
             List<Recipe> exact = byResolution.getOrDefault(
                     RecipeResourceResolver.resolutionKey(resource), List.of()).stream()
+                    .filter(recipe -> availableFamilies == null
+                            || com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                    .includes(recipe.family(), availableFamilies))
                     .filter(recipe -> StackKeyMatch.exact(resource, recipe.output())).toList();
             if (!exact.isEmpty()) return exact;
             List<Map.Entry<IStackKey<?>, List<Recipe>>> candidates = byCoarse.getOrDefault(
                     RecipeResourceResolver.sortKey(resource), List.of());
+            if (availableFamilies != null) candidates = candidates.stream()
+                    .filter(entry -> entry.getValue().stream().anyMatch(recipe ->
+                            com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                    .includes(recipe.family(), availableFamilies))).toList();
             for (var entry : candidates)
             {
-                List<Recipe> configured = entry.getValue().stream().filter(recipe ->
+                List<Recipe> configured = entry.getValue().stream()
+                        .filter(recipe -> availableFamilies == null
+                                || com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility
+                                        .includes(recipe.family(), availableFamilies)).filter(recipe ->
                         RecipeIoProfileRegistry.outputMatches(recipe.outputMatch(), resource, entry.getKey(),
                                 StackKeyMatch::exact,
                                 (left, right) -> left.isSame(right) || right.isSame(left))).toList();

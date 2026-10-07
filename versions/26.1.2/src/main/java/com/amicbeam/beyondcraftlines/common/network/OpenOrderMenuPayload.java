@@ -5,7 +5,6 @@ import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.data.DeviceBindingRegistry;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
 import com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet;
-import com.wintercogs.beyonddimensions.common.menu.DimensionsNetMenu;
 import io.netty.buffer.ByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -22,7 +21,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.NotNull;
 
 public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType,
-                                   java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount)
+                                   java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount,
+                                   java.util.List<KeyAmount> virtualByproducts, java.util.List<KeyAmount> guaranteedByproducts)
         implements CustomPacketPayload
 {
     public static final Type<OpenOrderMenuPayload> TYPE = new Type<>(
@@ -33,7 +33,13 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
     public OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType)
     { this(target, recipeId, jeiRecipeType, java.util.List.of(), 0); }
 
-    public OpenOrderMenuPayload { virtualInputs = java.util.List.copyOf(virtualInputs); }
+    public OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType,
+                                java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount)
+    { this(target, recipeId, jeiRecipeType, virtualInputs, virtualOutputAmount, java.util.List.of(), java.util.List.of()); }
+
+    public OpenOrderMenuPayload { virtualInputs = java.util.List.copyOf(virtualInputs);
+        virtualByproducts = java.util.List.copyOf(virtualByproducts);
+        guaranteedByproducts = java.util.List.copyOf(guaranteedByproducts); }
 
     private static void encode(RegistryFriendlyByteBuf buffer, OpenOrderMenuPayload payload)
     {
@@ -54,6 +60,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
         }
         buffer.writeVarLong(payload.virtualOutputAmount());
+        VirtualRecipeOutputs.write(buffer, payload.virtualByproducts());
+        VirtualRecipeOutputs.write(buffer, payload.guaranteedByproducts());
     }
 
     private static OpenOrderMenuPayload decode(RegistryFriendlyByteBuf buffer)
@@ -62,8 +70,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         String recipe = buffer.readUtf(256);
         String type = buffer.readUtf(256);
         int slots = buffer.readVarInt();
-        if (slots < 0 || slots > 32) throw new IllegalArgumentException("invalid virtual input count");
+        if (slots < 0 || slots > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.INPUTS) throw new IllegalArgumentException("invalid virtual input count");
         java.util.List<VirtualInput> inputs = new java.util.ArrayList<>();
+        int totalCandidates = 0;
         for (int slot = 0; slot < slots; slot++)
         {
             String inputGroup = buffer.readUtf(64);
@@ -72,14 +81,17 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             if (useKind < 0 || useKind >= kinds.length) throw new IllegalArgumentException("invalid virtual input use");
             var use = new com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse(kinds[useKind], damagePerCraft);
             int candidates = buffer.readVarInt();
-            if (candidates < 1 || candidates > 64)
+            if (candidates < 1 || candidates > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.CANDIDATES)
                 throw new IllegalArgumentException("invalid virtual candidate count");
+            totalCandidates += candidates;
+            if (totalCandidates > com.amicbeam.beyondcraftlines.common.crafting.VirtualRecipeLimits.TOTAL_CANDIDATES)
+                throw new IllegalArgumentException("virtual recipe candidate budget exceeded");
             java.util.List<KeyAmount> values = new java.util.ArrayList<>();
             for (int candidate = 0; candidate < candidates; candidate++)
                 values.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
             inputs.add(new VirtualInput(inputGroup, values, use));
         }
-        return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong());
+        return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong(), VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer));
     }
 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
@@ -104,14 +116,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             }
             boolean malformedRequest=!payload.jeiRecipeType().isBlank()&&requestedType==null
                     ||!payload.recipeId().isBlank()&&requestedRecipe==null;
-            DimensionsNet network;
-            if (player.containerMenu instanceof CraftlineOrderMenu orderMenu)
-                network = orderMenu.canAccessNetwork(player)
-                        ? DimensionsNet.getNetFromId(orderMenu.networkId()) : null;
-            else network = player.containerMenu instanceof DimensionsNetMenu dimensionsMenu
-                    ? DimensionsNet.getAllNetFromPlayer(player).stream()
-                            .filter(net -> net.getUnifiedStorage() == dimensionsMenu.storage).findFirst().orElse(null)
-                    : DimensionsNet.getPrimaryNetFromPlayer(player);
+            DimensionsNet network = com.amicbeam.beyondcraftlines.common.data
+                    .CraftlineNetworkContext.resolve(player);
             if (network == null)
             {
                 openOrderMenu(player, -1, target, null, false, java.util.Set.of(), "network unavailable");
@@ -138,14 +144,15 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     if (!com.amicbeam.beyondcraftlines.common.crafting.VanillaRecipeBatching
                             .validUploadedOutputAmount(executionFamily, payload.virtualOutputAmount()))
                         throw new IllegalArgumentException("invalid virtual recipe output amount");
-                    var holder = com.amicbeam.beyondcraftlines.common.crafting
-                            .VirtualProvisionerRecipeRegistry.register(executionFamily, target,
+                    var descriptor = new com.amicbeam.beyondcraftlines.common.crafting
+                            .VirtualProvisionerRecipeRegistry.Descriptor(executionFamily, target,
                             payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->
                                     new com.amicbeam.beyondcraftlines.common.crafting
                                             .VirtualProvisionerRecipeRegistry.InputSlot(
-                                            input.inputGroup(), input.candidates(), input.use())).toList());
-                    if (requestedRecipe == null || !holder.id().identifier().equals(requestedRecipe))
+                                            input.inputGroup(), input.candidates(), input.use())).toList(), payload.virtualByproducts(), payload.guaranteedByproducts());
+                    if (requestedRecipe == null || !descriptor.id().equals(requestedRecipe))
                         throw new IllegalArgumentException("virtual recipe id mismatch");
+                    com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.register(descriptor);
                 }
                 catch (IllegalArgumentException exception)
                 {
@@ -168,9 +175,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
                                     .forLevel(player.level()).stream()
                                     .filter(holder -> holder.id().identifier().equals(requestedRecipe))
-                                    .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting
-                                            .VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(
-                                                    RecipePlanningService.family(holder))),
+                                    .filter(holder -> RecipePlanningService.isNativeExecutable(holder)),
                             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
                                     .find(requestedRecipe).stream()).limit(1).toList();
             var recipe = candidates.stream()
@@ -202,9 +207,9 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                                       java.util.Set<String> families, String initialError)
     {
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
-                "{} server open menu network={} recipe={} pinned={} families={} error={} target={}",
+                "{} server open menu network={} recipe={} pinned={} families={} familyIds={} error={} target={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
-                networkId, recipe, pinned, families.size(), initialError,
+                networkId, recipe, pinned, families.size(), families.stream().sorted().limit(128).toList(), initialError,
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
         player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                 new CraftlineOrderMenu(id, inventory, networkId, target, recipe, pinned, families),

@@ -20,6 +20,9 @@ public final class RecipeIngredientResolver
 {
     private static final Map<Recipe<?>, List<Ingredient>> CACHE =
             Collections.synchronizedMap(new WeakHashMap<>());
+    // Resource capture and remainder/sample capture must share the expensive workstation scan.
+    private static final Map<Recipe<?>, List<Ingredient>> VANILLA_CACHE =
+            Collections.synchronizedMap(new WeakHashMap<>());
 
     private RecipeIngredientResolver() {}
 
@@ -34,6 +37,9 @@ public final class RecipeIngredientResolver
     }
 
     static List<Ingredient> vanillaIngredients(Recipe<?> recipe)
+    { return VANILLA_CACHE.computeIfAbsent(recipe, RecipeIngredientResolver::resolveVanillaIngredients); }
+
+    private static List<Ingredient> resolveVanillaIngredients(Recipe<?> recipe)
     {
         List<Ingredient> workstation = VanillaWorkstationRecipeIngredients.ingredients(recipe);
         return workstation.isEmpty() ? safeGet(recipe::getIngredients) : workstation;
@@ -56,6 +62,7 @@ public final class RecipeIngredientResolver
     public static void clearCache()
     {
         CACHE.clear();
+        VANILLA_CACHE.clear();
         RecipeResourceResolver.clearCache();
     }
 

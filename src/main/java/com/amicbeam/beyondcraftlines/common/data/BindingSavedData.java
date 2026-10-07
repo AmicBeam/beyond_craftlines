@@ -23,6 +23,7 @@ public final class BindingSavedData extends SavedData
 {
     private static final String NAME = "beyond_craftlines_bindings";
     private final List<BindingRecord> records = new ArrayList<>();
+    private final Map<UUID, Integer> lastUsedNetworks = new HashMap<>();
     private final Map<UUID, List<BindingRecord>> byPlayer = new HashMap<>();
     private final Map<Integer, List<BindingRecord>> byNetwork = new HashMap<>();
     private final Map<BindingKey, BindingRecord> byPosition = new HashMap<>();
@@ -31,6 +32,15 @@ public final class BindingSavedData extends SavedData
     public static BindingSavedData load(CompoundTag tag, HolderLookup.Provider registries)
     {
         BindingSavedData data = new BindingSavedData();
+        CompoundTag remembered = tag.getCompound("last_used_networks");
+        for (String player : remembered.getAllKeys())
+            try
+            {
+                if (!remembered.contains(player, Tag.TAG_INT)) continue;
+                int id = remembered.getInt(player);
+                if (id >= 0) data.lastUsedNetworks.put(UUID.fromString(player), id);
+            }
+            catch (IllegalArgumentException ignored) {}
         ListTag list = tag.getList("bindings", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++)
         {
@@ -49,6 +59,19 @@ public final class BindingSavedData extends SavedData
     }
 
     public List<BindingRecord> records() { return List.copyOf(records); }
+
+    public Integer lastUsedNetwork(UUID player) { return lastUsedNetworks.get(player); }
+
+    public void rememberNetwork(UUID player, int networkId)
+    {
+        if (networkId < 0) return;
+        if (!java.util.Objects.equals(lastUsedNetworks.put(player, networkId), networkId)) setDirty();
+    }
+
+    public void forgetNetwork(UUID player)
+    {
+        if (lastUsedNetworks.remove(player) != null) setDirty();
+    }
     public List<BindingRecord> forPlayer(UUID player) { return List.copyOf(byPlayer.getOrDefault(player, List.of())); }
     public List<BindingRecord> forNetwork(int networkId) { return List.copyOf(byNetwork.getOrDefault(networkId, List.of())); }
     public Set<ResourceLocation> recipeTypesForProvisioner(ResourceKey<Level> dimension, BlockPos position)
@@ -173,6 +196,9 @@ public final class BindingSavedData extends SavedData
         ListTag list = new ListTag();
         for (BindingRecord record : records) list.add(writeRecord(record));
         tag.put("bindings", list);
+        CompoundTag remembered = new CompoundTag();
+        lastUsedNetworks.forEach((player, network) -> remembered.putInt(player.toString(), network));
+        tag.put("last_used_networks", remembered);
         return tag;
     }
 

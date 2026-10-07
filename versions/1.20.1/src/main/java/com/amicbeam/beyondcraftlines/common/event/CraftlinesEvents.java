@@ -24,6 +24,15 @@ public final class CraftlinesEvents {
     private CraftlinesEvents() {}
 
     @SubscribeEvent
+    public static void onContainerOpen(net.minecraftforge.event.entity.player.PlayerContainerEvent.Open event)
+    {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)
+            com.amicbeam.beyondcraftlines.common.data.CraftlineNetworkContext
+                    .rememberMenu(player, event.getContainer());
+    }
+
+
+    @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase == TickEvent.Phase.END) {
             NativeFurnaceRegistry.tick(event.getServer());

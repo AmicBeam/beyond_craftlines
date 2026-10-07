@@ -18,8 +18,12 @@ public final class RecipeIndexVisibility
      */
     public static boolean includesPlanningRecipe(String family, boolean virtual,
                                                  Set<String> availableFamilies)
+    { return includesPlanningRecipe(family, virtual, false, availableFamilies); }
+
+    public static boolean includesPlanningRecipe(String family, boolean virtual, boolean nativeProfileAllowed,
+                                                 Set<String> availableFamilies)
     {
-        return (virtual || VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family))
+        return (virtual || nativeProfileAllowed || VanillaProvisionerRecipeTypes.isPotentialNetworkExecutable(family))
                 && includes(family, availableFamilies);
     }
 }

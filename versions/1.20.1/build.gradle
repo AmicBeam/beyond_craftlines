@@ -19,6 +19,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
     exclude 'com/amicbeam/beyondcraftlines/common/event/CraftlinesEvents.java'
     exclude 'com/amicbeam/beyondcraftlines/common/block/CraftlineProvisionerBlock.java'
     exclude 'com/amicbeam/beyondcraftlines/client/integration/jade/CraftlinesJadePlugin.java'
+    exclude 'com/amicbeam/beyondcraftlines/client/BindingVisualBuffers.java'
     exclude 'com/amicbeam/beyondcraftlines/common/network/CraftlinesNetwork.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/CraftlineProvisionerBlockEntity.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceRegistry.java'
@@ -84,17 +85,23 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace(', HolderLookup.Provider registries', '')
             .replace(', registries)', ')')
             .replace('serializeNBT(registries)', 'serializeNBT()')
+            .replace('var registries = com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve();', '')
             .replace('serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())', 'serializeNBT()')
-            .replace('NbtAccounter.create(MAX_TOTAL_NBT_BYTES)', 'new NbtAccounter(MAX_TOTAL_NBT_BYTES)')
+            .replace('NbtAccounter.unlimitedHeap()', 'new NbtAccounter(Long.MAX_VALUE)')
             .replace('serializeNBT(level.registryAccess())', 'serializeNBT()')
+            .replace('serializeNBT(registryAccess)', 'serializeNBT()')
+            .replace('deserializeNBT(encoded.nbt(), registryAccess)', 'deserializeNBT(encoded.nbt())')
             .replace('deserializeNBT(encoded, level.registryAccess())', 'deserializeNBT(encoded)')
             .replace('deserializeNBT(encoded.nbt(), level.registryAccess())', 'deserializeNBT(encoded.nbt())')
             .replace('player.registryAccess()', '')
             .replace('new Factory<>(RecipeOrderSavedData::new, RecipeOrderSavedData::load), NAME', 'RecipeOrderSavedData::load, RecipeOrderSavedData::new, NAME')
             .replace('new Factory<>(BindingSavedData::new, BindingSavedData::load), NAME', 'BindingSavedData::load, BindingSavedData::new, NAME')
-            .replace('storage.getNet()', 'com.amicbeam.beyondcraftlines.compat.BeyondDimensionsCompat.networkFor(player, storage)')
+            // BD 0.7.30 exposes UnifiedStorage.getNet() on Forge too. Keep the open menu's
+            // network, which can differ from the player's primary network after sharing a save.
             .replace('DimensionsNet.getPrimaryNetFromPlayer(player)', 'DimensionsNet.getNetFromPlayer(player)')
             .replace('net.minecraftforge.fml.common.EventBusSubscriber', 'net.minecraftforge.fml.common.Mod.EventBusSubscriber')
+            // BD overrides Screen.init: accept both the development and Forge runtime names.
+            .replace('@Inject(method = "init",', '@Inject(method = {"init", "m_7856_"},')
             .replace('@Inject(method = "render",', '@Inject(method = "m_88315_",')
             .replace('@Inject(method = "mouseClicked", at = @At("HEAD")',
                     '@Inject(method = "m_6375_", at = @At("HEAD")')

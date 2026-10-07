@@ -45,12 +45,12 @@ public final class JeiInputGroupProfileRegistry
 
     public static List<String> resolve(String jeiType, Object displayedRecipe, int inputSlotCount)
     {
-        if (jeiType == null || displayedRecipe == null || inputSlotCount < 1 || inputSlotCount > 32)
+        if (jeiType == null || displayedRecipe == null || inputSlotCount < 1 || inputSlotCount > VirtualRecipeLimits.INPUTS)
             return List.of();
         Object recipe = unwrap(displayedRecipe);
         for (Profile profile : profiles)
         {
-            if (!profile.jeiType().equals(jeiType) || !profile.matches(recipe)) continue;
+            if (!profile.matchesType(jeiType) || !profile.matches(recipe)) continue;
             List<String> groups = resolve(profile, recipe, inputSlotCount);
             if (!groups.isEmpty()) return groups;
         }
@@ -80,10 +80,13 @@ public final class JeiInputGroupProfileRegistry
             try { cardinality = Cardinality.valueOf(raw.get("cardinality").getAsString().toUpperCase()); }
             catch (IllegalArgumentException exception) { return null; }
             List<String> members = List.copyOf(strings(raw.getAsJsonArray("members"), MEMBER_NAME, 8));
-            if (members.isEmpty()) return null;
-            sections.add(new Section(group, members, cardinality));
+            int fixedCount = raw.has("count") ? raw.get("count").getAsInt() : 0;
+            if (cardinality == Cardinality.FIXED ? fixedCount < 1 || fixedCount > VirtualRecipeLimits.INPUTS
+                    : members.isEmpty()) return null;
+            sections.add(new Section(group, members, cardinality, fixedCount));
         }
-        return new Profile(jeiType, recipeClasses, List.copyOf(sections));
+        return new Profile(jeiType, recipeClasses, List.copyOf(sections),
+                strings(object.getAsJsonArray("jei_type_prefixes"), RESOURCE_ID, 32));
     }
 
     static List<String> resolve(Profile profile, Object displayedRecipe, int inputSlotCount)
@@ -93,6 +96,12 @@ public final class JeiInputGroupProfileRegistry
         List<String> groups = new ArrayList<>();
         for (Section section : profile.sections())
         {
+            if (section.cardinality() == Cardinality.FIXED)
+            {
+                if (groups.size() + section.fixedCount() > inputSlotCount) return List.of();
+                for (int i = 0; i < section.fixedCount(); i++) groups.add(section.group());
+                continue;
+            }
             Object value = null;
             for (String member : section.members())
             {
@@ -123,7 +132,7 @@ public final class JeiInputGroupProfileRegistry
         if (value.getClass().isArray()) return Array.getLength(value);
         if (!(value instanceof Iterable<?> iterable)) return -1;
         int count = 0;
-        for (Object ignored : iterable) if (++count > 32) return -1;
+        for (Object ignored : iterable) if (++count > VirtualRecipeLimits.INPUTS) return -1;
         return count;
     }
 
@@ -140,14 +149,18 @@ public final class JeiInputGroupProfileRegistry
         return java.util.Collections.unmodifiableSet(result);
     }
 
-    enum Cardinality { SINGLE, COLLECTION }
+    enum Cardinality { SINGLE, COLLECTION, FIXED }
 
-    record Section(String group, List<String> members, Cardinality cardinality) {}
+    record Section(String group, List<String> members, Cardinality cardinality, int fixedCount) {}
 
-    record Profile(String jeiType, Set<String> recipeClasses, List<Section> sections)
+    record Profile(String jeiType, Set<String> recipeClasses, List<Section> sections, Set<String> jeiTypePrefixes)
     {
+        Profile(String jeiType, Set<String> recipeClasses, List<Section> sections)
+        { this(jeiType, recipeClasses, sections, Set.of()); }
+        boolean matchesType(String type)
+        { return jeiType.equals(type) || jeiTypePrefixes.stream().anyMatch(type::startsWith); }
         boolean matches(Object recipe)
-        { return recipe != null && (recipeClasses.isEmpty() || recipeClasses.contains(recipe.getClass().getName())); }
+        { return recipe != null && (recipeClasses.isEmpty() || RecipeIoProfileRegistry.matchesClass(recipe, recipeClasses, Set.of())); }
     }
 
     private static final class Logging

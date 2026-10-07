@@ -27,6 +27,7 @@ public final class RecipeTypeWarmupTracker<T>
     public boolean ready(Collection<T> types) { return complete.containsAll(types); }
     public int completedCount(Collection<T> types)
     { return (int) types.stream().filter(complete::contains).count(); }
+    public Set<T> completedTypes() { return Set.copyOf(complete); }
     public Set<T> activeTypes() { return Set.copyOf(active); }
 
     public void clear()

@@ -12,13 +12,26 @@ sourceSets.main.resources.srcDir '../../src/main/resources'
 def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', Sync) {
     from '../../src/main/java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogCache.java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientJeiRecipeCache.java'
+    include 'com/amicbeam/beyondcraftlines/client/JeiRecipeSourceFingerprint.java'
     include 'com/amicbeam/beyondcraftlines/client/ClientPlanningCatalogWarmup.java'
+    include 'com/amicbeam/beyondcraftlines/client/ClientRecipeCacheCommands.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheIdentity.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheFiles.java'
+    include 'com/amicbeam/beyondcraftlines/client/PlanningCatalogCacheCounts.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeCatalogScope.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/VirtualRecipeIdentity.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/NativeRecipeFallbackPolicy.java'
     into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
     filteringCharset = 'UTF-8'
     filter { line -> line
             .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
             .replace('ResourceLocation', 'Identifier')
             .replace('level.getRecipeManager()', 'level')
+            .replace('elapsed, holder.id(), family,', 'elapsed, holder.id().identifier(), family,')
+            .replace('SharedConstants.getCurrentVersion().getName()', 'SharedConstants.getCurrentVersion().name()')
     }
 }
 sourceSets.main.java.srcDir preparePlanningCatalogCache
@@ -53,6 +66,7 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'com.google.code.gson:gson:2.11.0'
     testImplementation "net.neoforged:testframework:${neo_version}"
+    testImplementation "maven.modrinth:jei:${jei_version}"
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -80,7 +94,10 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 tasks.named('processResources', ProcessResources) {
-    exclude 'beyond_craftlines.mixins.json'
+    filesMatching('beyond_craftlines.mixins.json') {
+        // JEI layout links apply to all versions; EMI is not available on 26.1.2.
+        filter { String line -> line.contains('"emi.') ? '' : line }
+    }
     from('../../LICENSE') { into 'META-INF' }
     from('../../THIRD_PARTY_NOTICES.md') { into 'META-INF' }
 }
@@ -91,3 +108,17 @@ tasks.withType(JavaCompile).configureEach {
 }
 tasks.withType(Jar).configureEach { includeEmptyDirs = false }
 tasks.named('test', Test) { useJUnitPlatform() }
+
+// Interface-only JEI fixtures need one class loader for both JEI API and Minecraft classes.
+// Run them separately from the FML unit-test bootstrap, and keep them in the build's check task.
+def testJeiSources = tasks.register('testJeiSources', Test) {
+    dependsOn tasks.named('testClasses')
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath.filter { !it.name.startsWith('junit-fml-') }
+    workingDir = layout.buildDirectory.dir('jeiSourceTestRun').get().asFile
+    doFirst { workingDir.mkdirs() }
+    include '**/SourceFingerprintStabilityTest.class'
+    useJUnitPlatform()
+}
+tasks.named('test', Test) { exclude '**/SourceFingerprintStabilityTest.class' }
+tasks.named('check') { dependsOn testJeiSources }

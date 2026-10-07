@@ -59,6 +59,7 @@ public final class ClientBindingVisuals
 
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event)
     {
+        BindingVisualBuffers.release();
         BY_CHUNK.clear();
         dimension = null;
         snapshotReady = false;
@@ -111,7 +112,11 @@ public final class ClientBindingVisuals
         double renderDistanceSquared = (double) renderDistance * renderDistance;
         int renderChunkRadius = (renderDistance + 15) / 16 + 1;
         RenderType frameType = RenderTypes.entityCutout(FRAME_TEXTURE);
-        VertexConsumer frame = minecraft.renderBuffers().bufferSource().getBuffer(frameType);
+        // Oculus/Iris replace the global buffer and ignore endBatch(RenderType).
+        // These vertices already contain this frame's camera transform, so draw
+        // them now using our reusable immediate buffer instead of deferring them.
+        var buffers = BindingVisualBuffers.get();
+        VertexConsumer frame = buffers.getBuffer(frameType);
         int cameraChunkX = net.minecraft.util.Mth.floor(camera.x) >> 4;
         int cameraChunkZ = net.minecraft.util.Mth.floor(camera.z) >> 4;
         if (CraftlinesConfig.SHOW_BOUND_MACHINE_FRAMES.get())
@@ -137,11 +142,11 @@ public final class ClientBindingVisuals
                         .equals(connection.blockId()))
                     drawBoundFace(event.getPoseStack().last(), frame, bounds(minecraft, connection.position()),
                             camera, connection.face());
-        minecraft.renderBuffers().bufferSource().endBatch(frameType);
+        buffers.endBatch(frameType);
         if (holdingLinker && selectedProvisioner != null)
         {
             RenderType highlightType = RenderTypes.lines();
-            VertexConsumer highlight = minecraft.renderBuffers().bufferSource().getBuffer(highlightType);
+            VertexConsumer highlight = buffers.getBuffer(highlightType);
             if (minecraft.level.isLoaded(selectedProvisioner))
                 drawHighlightBox(event.getPoseStack().last(), highlight,
                         bounds(minecraft, selectedProvisioner), camera, 255, 255, 0);
@@ -169,7 +174,7 @@ public final class ClientBindingVisuals
                 drawFaceHighlight(event.getPoseStack().last(), highlight,
                         bounds(minecraft, hit.getBlockPos()), camera, hit.getDirection(),
                         SURFACE_OFFSET, 255, 255, 0);
-            minecraft.renderBuffers().bufferSource().endBatch(highlightType);
+            buffers.endBatch(highlightType);
         }
     }
 

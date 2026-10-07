@@ -6,17 +6,13 @@ import com.amicbeam.beyondcraftlines.common.init.CraftlinesMenus;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesItems;
 import com.amicbeam.beyondcraftlines.common.network.OpenBoundMachineConfigPayload;
-import com.amicbeam.beyondcraftlines.common.network.OpenOrderStatusMenuPayload;
-import com.amicbeam.beyondcraftlines.common.network.OpenDashboardStatusMenuPayload;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
 import com.amicbeam.beyondcraftlines.client.tooltip.ClientRecipePreviewTooltip;
 import com.amicbeam.beyondcraftlines.client.tooltip.RecipePreviewTooltip;
 import com.wintercogs.beyonddimensions.client.gui.DimensionsNetGUI;
-import com.wintercogs.beyonddimensions.client.gui.widget.shared.IconButton;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.wintercogs.beyonddimensions.common.menu.widget.slot.AbstractStackTypedSlot;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.api.distmarker.Dist;
@@ -32,6 +28,7 @@ import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
+import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -104,6 +101,9 @@ public final class CraftlinesClientEvents
     public static final class GameBus
     {
         private static PendingBoundConfig pendingBoundConfig;
+
+        @SubscribeEvent public static void registerCommands(RegisterClientCommandsEvent event)
+        { ClientRecipeCacheCommands.register(event.getDispatcher()); }
 
         @SubscribeEvent public static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event)
         {
@@ -193,27 +193,6 @@ public final class CraftlinesClientEvents
         }
 
         private record PendingBoundConfig(net.minecraft.core.BlockPos position, Set<ResourceLocation> types) {}
-
-        @SubscribeEvent public static void addStatusButton(ScreenEvent.Init.Post event)
-        {
-            if (!(event.getScreen() instanceof DimensionsNetGUI<?> screen)) return;
-            IconButton button = new IconButton(
-                    screen.getGuiLeft() - 18, screen.getGuiTop() + 6 + 18 * 8, 16, 16,
-                    ResourceLocation.fromNamespaceAndPath(
-                            BeyondCraftlines.MOD_ID, "widget/crafting_status"),
-                    ignored -> PacketDistributor.sendToServer(new OpenOrderStatusMenuPayload()));
-            button.setTooltip(Tooltip.create(Component.translatable(
-                    "tooltip.beyond_craftlines.open_crafting_status")));
-            event.addListener(button);
-            IconButton dashboards = new IconButton(
-                    screen.getGuiLeft() - 18, screen.getGuiTop() + 6 + 18 * 9, 16, 16,
-                    ResourceLocation.fromNamespaceAndPath(
-                            BeyondCraftlines.MOD_ID, "widget/crafting_dashboard"),
-                    ignored -> PacketDistributor.sendToServer(new OpenDashboardStatusMenuPayload()));
-            dashboards.setTooltip(Tooltip.create(Component.translatable(
-                    "tooltip.beyond_craftlines.open_dashboard_status")));
-            event.addListener(dashboards);
-        }
 
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)

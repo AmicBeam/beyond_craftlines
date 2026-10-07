@@ -20,9 +20,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -33,19 +30,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-/** Versioned, bounded client cache for immutable planning catalogs. */
+/** Versioned client cache with streaming I/O and no catalog-size cap. */
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
-    static final int VERSION = 2;
-    private static final long MAX_FILE_BYTES = 1024L * 1024L * 1024L;
-    private static final long MAX_TOTAL_NBT_BYTES = 1024L * 1024L * 1024L;
-    private static final long MAX_TOTAL_STRING_BYTES = 512L * 1024L * 1024L;
-    private static final long MAX_TOTAL_ENTRIES = 8_000_000L;
-    private static final int MAX_RECIPES = 200_000;
-    private static final int MAX_SLOTS = 128;
-    private static final int MAX_CANDIDATES = 200_000;
-    private static final int MAX_STRING_BYTES = 1_048_576;
+    static final int VERSION = 4;
+    // Stable across logins. Same-ID content changes are explicitly refreshed with /craftlines reload.
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(2), runnable -> {
@@ -57,104 +47,158 @@ final class ClientPlanningCatalogCache
 
     private ClientPlanningCatalogCache() {}
 
+    static void invalidateDisk() throws IOException
+    { invalidate(path()); }
+
+    static void invalidate(Path cachePath) throws IOException
+    {
+        PlanningCatalogCacheFiles.invalidate(cachePath);
+    }
+
     static LoadJob loadAsync(List<String> holderIds, long generation)
     { return loadAsync(path(), holderIds, generation); }
 
     static LoadJob loadAsync(Level level, List<String> holderIds, long generation)
     {
-        LoadJob job = new LoadJob(path(), generation, List.copyOf(holderIds), level);
+        LoadJob job = new LoadJob(path(), generation, List.copyOf(holderIds), level, null);
+        job.start();
+        return job;
+    }
+
+    static LoadJob loadAsync(Level level, List<String> holderIds, long generation,
+                             List<net.minecraft.world.item.crafting.RecipeHolder<?>> holders)
+    {
+        LoadJob job = new LoadJob(path(), generation, List.copyOf(holderIds), level, List.copyOf(holders));
         job.start();
         return job;
     }
 
     static LoadJob loadAsync(Path cachePath, List<String> holderIds, long generation)
     {
-        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds), null);
+        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds), null, null);
+        job.start();
+        return job;
+    }
+
+    static LoadJob loadAsync(Path cachePath, List<String> holderIds, long generation,
+                             java.util.Map<ResourceLocation, ResourceLocation> migrations)
+    {
+        LoadJob job = new LoadJob(cachePath, generation, List.copyOf(holderIds), null, null, java.util.Map.copyOf(migrations));
         job.start();
         return job;
     }
 
     static void save(Level level, List<String> holderIds, ClientRecipePlanner.Catalog catalog)
     {
-        if (!cacheable(catalog)) return;
-        String fingerprint = fingerprint(holderIds);
-        try { IO.execute(() -> write(level, fingerprint, catalog)); }
-        catch (RejectedExecutionException exception)
-        { LOGGER.warn("{} client planning cache save skipped because the bounded I/O queue is full",
-                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX); }
+        saveAsync(level, path(), holderIds, catalog);
     }
 
-    private static boolean cacheable(ClientRecipePlanner.Catalog catalog)
+    static Future<?> saveAsync(Level level, Path cachePath, List<String> holderIds,
+                               ClientRecipePlanner.Catalog catalog)
     {
-        if (catalog.recipes().size() > MAX_RECIPES) return false;
-        long entries = catalog.recipes().size();
-        for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
+        return saveWithRegistryAsync(level == null ? net.minecraft.core.RegistryAccess.EMPTY : level.registryAccess(),
+                cachePath, holderIds, catalog);
+    }
+
+    static Future<?> saveWithRegistryAsync(net.minecraft.core.RegistryAccess registryAccess, Path cachePath,
+                                          List<String> holderIds, ClientRecipePlanner.Catalog catalog)
+    {
+        List<String> stableIds = List.copyOf(holderIds);
+        long revision = PlanningCatalogCacheFiles.revision(cachePath);
+        try
         {
-            if (recipe.slots().size() > MAX_SLOTS) return false;
-            entries += recipe.slots().size();
-            for (ClientRecipePlanner.Slot slot : recipe.slots())
-            {
-                if (slot.candidates().size() > MAX_CANDIDATES) return false;
-                entries += slot.candidates().size();
-                if (entries > MAX_TOTAL_ENTRIES) return false;
-            }
+            return IO.submit(() -> write(registryAccess, cachePath, revision, stableIds, catalog));
         }
-        return true;
+        catch (RejectedExecutionException exception)
+        {
+            LOGGER.warn("{} client planning cache save skipped reason=io_queue_full path={} recipes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    cachePath, catalog.recipes().size());
+            return null;
+        }
     }
 
-    private static void write(Level level, String fingerprint, ClientRecipePlanner.Catalog catalog)
+    private static void write(net.minecraft.core.RegistryAccess registryAccess, Path path, long revision, List<String> holderIds,
+                              ClientRecipePlanner.Catalog catalog)
     {
-        Path path = path();
+        long started = System.nanoTime();
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
         {
+            PlanningCatalogCacheCounts budget = new PlanningCatalogCacheCounts();
+            budget.addRecipes(catalog.recipes().size());
             Files.createDirectories(path.getParent());
+            LOGGER.info("{} client planning cache save started path={} recipes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    path, catalog.recipes().size());
             try (DataOutputStream output = new DataOutputStream(new BufferedOutputStream(
                     new GZIPOutputStream(Files.newOutputStream(temporary)))))
             {
                 output.writeInt(MAGIC);
                 output.writeInt(VERSION);
-                writeString(output, fingerprint);
+                writeString(output, fingerprint(holderIds), budget);
                 output.writeInt(catalog.recipes().size());
-                for (ClientRecipePlanner.Recipe recipe : catalog.recipes()) writeRecipe(output, level, recipe);
+                for (ClientRecipePlanner.Recipe recipe : catalog.recipes())
+                    writeRecipe(output, registryAccess, recipe, budget);
             }
-            if (Files.size(temporary) > MAX_FILE_BYTES) Files.deleteIfExists(temporary);
-            else moveReplacing(temporary, path);
+            long bytes = Files.size(temporary);
+            var result = PlanningCatalogCacheFiles.install(path, temporary, revision);
+            if (result == PlanningCatalogCacheFiles.InstallResult.INSTALLED)
+                LOGGER.info("{} client planning cache saved path={} recipes={} entries={} bytes={} elapsedMs={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        path, catalog.recipes().size(), budget.entries(), bytes,
+                        (System.nanoTime() - started) / 1_000_000L);
+            else LOGGER.warn("{} client planning cache save skipped reason={} path={} recipes={} bytes={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    result, path, catalog.recipes().size(), bytes);
         }
         catch (IOException | RuntimeException | LinkageError exception)
         {
+            LOGGER.warn("{} client planning cache save failed path={} recipes={} elapsedMs={} error={}",
+                    com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                    path, catalog.recipes().size(), (System.nanoTime() - started) / 1_000_000L,
+                    exception.toString());
             try { Files.deleteIfExists(temporary); }
             catch (IOException ignored) {}
         }
     }
 
-    private static void writeRecipe(DataOutputStream output, Level level,
-                                    ClientRecipePlanner.Recipe recipe) throws IOException
+    private static void writeRecipe(DataOutputStream output, net.minecraft.core.RegistryAccess registryAccess,
+                                    ClientRecipePlanner.Recipe recipe, PlanningCatalogCacheCounts budget) throws IOException
     {
-        writeString(output, recipe.id().toString());
-        writeString(output, recipe.family());
-        writeKey(output, level, recipe.output());
+        writeString(output, recipe.id().toString(), budget);
+        writeString(output, recipe.family(), budget);
+        writeKey(output, registryAccess, recipe.output(), budget);
         output.writeLong(recipe.outputCount());
-        writeString(output, recipe.outputMatch().name());
+        writeString(output, recipe.outputMatch().name(), budget);
+        budget.addByproducts(recipe.byproducts().size());
+        output.writeInt(recipe.byproducts().size());
+        for (var byproduct : recipe.byproducts())
+        {
+            writeKey(output, registryAccess, byproduct.key(), budget);
+            output.writeLong(byproduct.amount());
+        }
+        budget.addSlots(recipe.slots().size());
         output.writeInt(recipe.slots().size());
         for (ClientRecipePlanner.Slot slot : recipe.slots())
         {
             output.writeInt(slot.index());
-            writeString(output, slot.use().kind().name());
+            writeString(output, slot.use().kind().name(), budget);
             output.writeInt(slot.use().damagePerCraft());
+            budget.addCandidates(slot.candidates().size());
             output.writeInt(slot.candidates().size());
             for (ClientRecipePlanner.Candidate candidate : slot.candidates())
             {
-                writeKey(output, level, candidate.key());
+                writeKey(output, registryAccess, candidate.key(), budget);
                 output.writeLong(candidate.count());
                 writeString(output, candidate.explicitSelectionItem() == null
-                        ? "" : candidate.explicitSelectionItem().toString());
-                writeString(output, candidate.explicitSelection() == null ? "" : candidate.explicitSelection());
+                        ? "" : candidate.explicitSelectionItem().toString(), budget);
+                writeString(output, candidate.explicitSelection() == null ? "" : candidate.explicitSelection(), budget);
             }
         }
     }
 
-    private static EncodedRecipe readEncodedRecipe(DataInputStream input, ReadBudget budget,
+    private static EncodedRecipe readEncodedRecipe(DataInputStream input, PlanningCatalogCacheCounts budget,
                                                    NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation id = ResourceLocation.tryParse(readString(input, budget));
@@ -163,17 +207,22 @@ final class ClientPlanningCatalogCache
         long outputCount = input.readLong();
         RecipeIoProfileRegistry.OutputMatchSemantics outputMatch =
                 RecipeIoProfileRegistry.OutputMatchSemantics.valueOf(readString(input, budget));
-        int slotCount = bounded(input.readInt(), MAX_SLOTS);
-        budget.addEntries(slotCount);
-        List<EncodedSlot> slots = new ArrayList<>(slotCount);
+        int byproductCount = nonNegative(input.readInt());
+        budget.addByproducts(byproductCount);
+        List<EncodedYield> byproducts = new ArrayList<>();
+        for (int i = 0; i < byproductCount; i++)
+            byproducts.add(new EncodedYield(readEncodedKey(input, budget, nbtBudget), input.readLong()));
+        int slotCount = nonNegative(input.readInt());
+        budget.addSlots(slotCount);
+        List<EncodedSlot> slots = new ArrayList<>();
         for (int i = 0; i < slotCount; i++)
         {
             int slotIndex = input.readInt();
             VirtualInputUse.Kind kind = VirtualInputUse.Kind.valueOf(readString(input, budget));
             VirtualInputUse use = new VirtualInputUse(kind, input.readInt());
-            int candidateCount = bounded(input.readInt(), MAX_CANDIDATES);
-            budget.addEntries(candidateCount);
-            List<EncodedCandidate> candidates = new ArrayList<>(candidateCount);
+            int candidateCount = nonNegative(input.readInt());
+            budget.addCandidates(candidateCount);
+            List<EncodedCandidate> candidates = new ArrayList<>();
             for (int candidate = 0; candidate < candidateCount; candidate++)
             {
                 EncodedKey key = readEncodedKey(input, budget, nbtBudget);
@@ -185,16 +234,22 @@ final class ClientPlanningCatalogCache
             slots.add(new EncodedSlot(slotIndex, List.copyOf(candidates), use));
         }
         if (id == null) throw new IOException("invalid cached recipe");
-        return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots));
+        return new EncodedRecipe(id, family, output, outputCount, outputMatch, List.copyOf(slots), List.copyOf(byproducts));
     }
 
-    private static void writeKey(DataOutputStream output, Level level, IStackKey<?> key) throws IOException
+    static void writeKey(DataOutputStream output, Level level, IStackKey<?> key, PlanningCatalogCacheCounts budget) throws IOException
     {
-        writeString(output, key.getTypeId().toString());
-        NbtIo.write(key.serializeNBT(level.registryAccess()), output);
+        writeKey(output, level.registryAccess(), key, budget);
     }
 
-    private static EncodedKey readEncodedKey(DataInputStream input, ReadBudget budget,
+    static void writeKey(DataOutputStream output, net.minecraft.core.RegistryAccess registryAccess,
+                         IStackKey<?> key, PlanningCatalogCacheCounts budget) throws IOException
+    {
+        writeString(output, key.getTypeId().toString(), budget);
+        NbtIo.write(key.serializeNBT(registryAccess), output);
+    }
+
+    static EncodedKey readEncodedKey(DataInputStream input, PlanningCatalogCacheCounts budget,
                                              NbtAccounter nbtBudget) throws IOException
     {
         ResourceLocation type = ResourceLocation.tryParse(readString(input, budget));
@@ -203,23 +258,23 @@ final class ClientPlanningCatalogCache
         return new EncodedKey(type, encoded);
     }
 
-    private static int bounded(int value, int maximum) throws IOException
+    static int nonNegative(int value) throws IOException
     {
-        if (value < 0 || value > maximum) throw new IOException("invalid cache collection size");
+        if (value < 0) throw new IOException("negative cache length/count value=" + value);
         return value;
     }
 
-    private static void writeString(DataOutputStream output, String value) throws IOException
+    static void writeString(DataOutputStream output, String value, PlanningCatalogCacheCounts budget) throws IOException
     {
         byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > MAX_STRING_BYTES) throw new IOException("cache string is too large");
+        budget.addStringBytes(bytes.length);
         output.writeInt(bytes.length);
         output.write(bytes);
     }
 
-    private static String readString(DataInputStream input, ReadBudget budget) throws IOException
+    static String readString(DataInputStream input, PlanningCatalogCacheCounts budget) throws IOException
     {
-        int length = bounded(input.readInt(), MAX_STRING_BYTES);
+        int length = nonNegative(input.readInt());
         budget.addStringBytes(length);
         byte[] bytes = input.readNBytes(length);
         if (bytes.length != length) throw new java.io.EOFException("truncated cache string");
@@ -227,30 +282,22 @@ final class ClientPlanningCatalogCache
     }
 
     static String fingerprint(List<String> holderIds)
+    { return PlanningCatalogCacheIdentity.fingerprint(holderIds); }
+
+    static Path path()
     {
-        try
-        {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            holderIds.forEach(id -> {
-                digest.update(id.getBytes(StandardCharsets.UTF_8));
-                digest.update((byte) 0);
-            });
-            return java.util.HexFormat.of().formatHex(digest.digest());
-        }
-        catch (NoSuchAlgorithmException impossible)
-        { throw new IllegalStateException(impossible); }
+        Minecraft minecraft = Minecraft.getInstance();
+        var server = minecraft.getSingleplayerServer();
+        var remote = minecraft.getCurrentServer();
+        String scope = server != null ? "world:" + server.getWorldPath(
+                net.minecraft.world.level.storage.LevelResource.ROOT).toAbsolutePath().normalize()
+                : "server:" + (remote != null ? remote.ip : "unknown");
+        return cachePath(minecraft.gameDirectory.toPath(),
+                net.minecraft.SharedConstants.getCurrentVersion().getName(), scope);
     }
 
-    private static Path path()
-    { return Minecraft.getInstance().gameDirectory.toPath().resolve("config")
-            .resolve("beyond_craftlines-planning-catalog-v2.dat"); }
-
-    private static void moveReplacing(Path source, Path target) throws IOException
-    {
-        try { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
-        catch (java.nio.file.AtomicMoveNotSupportedException ignored)
-        { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
-    }
+    static Path cachePath(Path gameDirectory, String gameVersion, String scope)
+    { return PlanningCatalogCacheIdentity.cachePath(gameDirectory, gameVersion, scope); }
 
     static final class LoadJob
     {
@@ -258,10 +305,18 @@ final class ClientPlanningCatalogCache
         private final Path cachePath;
         private final List<String> holderIds;
         private final Level backgroundLevel;
+        private final List<net.minecraft.world.item.crafting.RecipeHolder<?>> currentHolders;
+        private volatile boolean exactMatch = true;
+        private volatile ClientRecipePlanner.CatalogBuilder reconciled;
+        private volatile com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.Builder restoredLookup;
+        private volatile boolean buildingLookup;
+        private volatile int removedRecipeIds;
+        private final java.util.Map<ResourceLocation, ResourceLocation> idMigrations;
         private final ArrayBlockingQueue<EncodedRecipe> queue = new ArrayBlockingQueue<>(2);
         private final List<ClientRecipePlanner.Recipe> decoded = new ArrayList<>();
         private final java.util.Map<IStackKey<?>, IStackKey<?>> decodedKeys = new java.util.HashMap<>();
         private volatile State state = State.QUEUED;
+        private volatile String reason = "pending";
         private volatile int totalRecipes;
         private volatile int decodedRecipes;
         private volatile Future<?> future;
@@ -273,14 +328,20 @@ final class ClientPlanningCatalogCache
         private DecodeCursor decoder;
         private volatile ClientRecipePlanner.Catalog catalog;
 
-        private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel)
+        private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel,
+                        List<net.minecraft.world.item.crafting.RecipeHolder<?>> currentHolders)
+        { this(cachePath, generation, holderIds, backgroundLevel, currentHolders, ClientJeiRecipeCache.idMigrations()); }
+
+        private LoadJob(Path cachePath, long generation, List<String> holderIds, Level backgroundLevel,
+                        List<net.minecraft.world.item.crafting.RecipeHolder<?>> currentHolders,
+                        java.util.Map<ResourceLocation, ResourceLocation> idMigrations)
         { this.cachePath = cachePath; this.generation = generation; this.holderIds = holderIds;
-            this.backgroundLevel = backgroundLevel; }
+            this.backgroundLevel = backgroundLevel; this.currentHolders = currentHolders; this.idMigrations = idMigrations; }
 
         private void start()
         {
             try { future = IO.submit(this::read); }
-            catch (RejectedExecutionException exception) { state = State.MISS; }
+            catch (RejectedExecutionException exception) { miss("io_queue_full"); }
         }
 
         private void read()
@@ -288,24 +349,52 @@ final class ClientPlanningCatalogCache
             long started = System.nanoTime();
             try
             {
-                if (!Files.isRegularFile(cachePath) || Files.size(cachePath) > MAX_FILE_BYTES)
-                { state = State.MISS; return; }
+                if (!Files.isRegularFile(cachePath)) { miss("file_missing"); return; }
                 try (DataInputStream input = new DataInputStream(new BufferedInputStream(
                         new GZIPInputStream(Files.newInputStream(cachePath)))))
                 {
-                    ReadBudget budget = new ReadBudget();
-                    NbtAccounter nbtBudget = NbtAccounter.create(MAX_TOTAL_NBT_BYTES);
-                    if (input.readInt() != MAGIC || input.readInt() != VERSION
-                            || !fingerprint(holderIds).equals(readString(input, budget)))
-                    { state = State.MISS; return; }
-                    totalRecipes = bounded(input.readInt(), MAX_RECIPES);
-                    budget.addEntries(totalRecipes);
+                    PlanningCatalogCacheCounts budget = new PlanningCatalogCacheCounts();
+                    NbtAccounter nbtBudget = NbtAccounter.unlimitedHeap();
+                    if (input.readInt() != MAGIC) { miss("invalid_magic"); return; }
+                    if (input.readInt() != VERSION) { miss("format_version_changed"); return; }
+                    String savedFingerprint = readString(input, budget);
+                    String currentFingerprint = fingerprint(holderIds);
+                    if (!currentFingerprint.equals(savedFingerprint))
+                    {
+                        exactMatch = false;
+                        reason = "recipe_ids_changed";
+                        LOGGER.info("{} client planning cache fingerprint changed; reconciling by recipe id path={} saved={} current={} holders={}",
+                                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                                cachePath, savedFingerprint, currentFingerprint, holderIds.size());
+                    }
+                    java.util.Set<String> currentIds = !exactMatch
+                            ? new java.util.HashSet<>(holderIds) : null;
+                    java.util.Set<ResourceLocation> removedIds = new java.util.HashSet<>();
+                    java.util.Set<ResourceLocation> migratedRecords = new java.util.HashSet<>();
+                    totalRecipes = nonNegative(input.readInt());
+                    budget.addRecipes(totalRecipes);
                     headerNanos = System.nanoTime() - started;
                     state = State.READING;
                     for (int i = 0; i < totalRecipes && !cancelled; i++)
                     {
                         long parseStarted = System.nanoTime();
                         EncodedRecipe encoded = readEncodedRecipe(input, budget, nbtBudget);
+                        ResourceLocation migratedId = idMigrations.get(encoded.id());
+                        if (migratedId != null)
+                        {
+                            // Canonical virtual IDs define one output. Old aliases can collapse to the same recipe.
+                            // Native IDs are never migrated here, so their multiple output directions stay intact.
+                            if (!migratedRecords.add(migratedId)) { decodedRecipes = i + 1; continue; }
+                            encoded = new EncodedRecipe(migratedId, encoded.family(), encoded.output(),
+                                    encoded.outputCount(), encoded.outputMatch(), encoded.slots(), encoded.byproducts());
+                        }
+                        if (currentIds != null && !currentIds.contains(encoded.id().toString()))
+                        {
+                            removedIds.add(encoded.id());
+                            removedRecipeIds = removedIds.size();
+                            decodedRecipes = i + 1;
+                            continue;
+                        }
                         parseNanos += System.nanoTime() - parseStarted;
                         if (backgroundLevel == null) queue.put(encoded);
                         else
@@ -313,20 +402,34 @@ final class ClientPlanningCatalogCache
                             long decodeStarted = System.nanoTime();
                             DecodeCursor cursor = new DecodeCursor(encoded);
                             ClientRecipePlanner.Recipe recipe = null;
-                            while (recipe == null && !cancelled) recipe = cursor.advance(backgroundLevel);
+                            while (recipe == null && !cancelled) recipe = cursor.advance(backgroundLevel.registryAccess());
                             if (recipe != null)
                             {
                                 decoded.add(recipe);
-                                decodedRecipes = decoded.size();
+                                decodedRecipes = i + 1;
                             }
                             decodeNanos += System.nanoTime() - decodeStarted;
                         }
                     }
+                    if (!cancelled && input.read() != -1) throw new IOException("trailing planning cache data");
                     if (cancelled) state = State.CANCELLED;
                     else if (backgroundLevel != null)
                     {
                         long decodeStarted = System.nanoTime();
-                        catalog = new ClientRecipePlanner.Catalog(decoded);
+                        ClientRecipePlanner.Catalog loaded = new ClientRecipePlanner.Catalog(decoded);
+                        if (!exactMatch && currentHolders != null)
+                            reconciled = ClientRecipePlanner.beginCapture(backgroundLevel, currentHolders, loaded);
+                        ClientRecipePlanner.Catalog readyCatalog = exactMatch ? loaded
+                                : reconciled != null && reconciled.complete() ? reconciled.catalog() : null;
+                        if (readyCatalog != null)
+                        {
+                            restoredLookup = com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.begin(readyCatalog);
+                            buildingLookup = true;
+                            while (!restoredLookup.complete() && !cancelled) restoredLookup.advance(10_000_000L);
+                            buildingLookup = false;
+                        }
+                        if (cancelled) { state = State.CANCELLED; return; }
+                        catalog = loaded;
                         decodedKeys.clear();
                         decodeNanos += System.nanoTime() - decodeStarted;
                         state = State.EOF;
@@ -341,6 +444,7 @@ final class ClientPlanningCatalogCache
             }
             catch (IOException | RuntimeException | LinkageError exception)
             {
+                reason = exception.toString();
                 state = State.FAILED;
                 LOGGER.warn("{} client planning cache read failed path={} error={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
@@ -363,7 +467,7 @@ final class ClientPlanningCatalogCache
                     if (encoded == null) break;
                     decoder = new DecodeCursor(encoded);
                 }
-                ClientRecipePlanner.Recipe recipe = decoder.advance(level);
+                ClientRecipePlanner.Recipe recipe = decoder.advance(level == null ? net.minecraft.core.RegistryAccess.EMPTY : level.registryAccess());
                 if (recipe != null)
                 {
                     decoded.add(recipe);
@@ -373,17 +477,18 @@ final class ClientPlanningCatalogCache
                 processed++;
             }
             decodeNanos += System.nanoTime() - started;
-            if (state == State.EOF && queue.isEmpty() && decoder == null && decoded.size() == totalRecipes)
+            // Header counts include removed IDs and legacy aliases collapsed during migration.
+            if (state == State.EOF && queue.isEmpty() && decoder == null)
             {
                 catalog = new ClientRecipePlanner.Catalog(decoded);
                 decodedKeys.clear();
             }
         }
 
-        private IStackKey<?> decodeKey(EncodedKey encoded, Level level)
+        private IStackKey<?> decodeKey(EncodedKey encoded, net.minecraft.core.RegistryAccess registryAccess)
         {
             IStackKey<?> key = StackKeyRegistry.getType(encoded.type())
-                    .deserializeNBT(encoded.nbt(), level.registryAccess());
+                    .deserializeNBT(encoded.nbt(), registryAccess);
             if (key == null || key.isEmpty()) throw new IllegalArgumentException("invalid cached stack key");
             IStackKey<?> existing = decodedKeys.putIfAbsent(key, key);
             return existing == null ? key : existing;
@@ -420,6 +525,15 @@ final class ClientPlanningCatalogCache
         long headerMillis() { return headerNanos / 1_000_000L; }
         long parseMillis() { return parseNanos / 1_000_000L; }
         long decodeMillis() { return decodeNanos / 1_000_000L; }
+        private void miss(String reason) { this.reason = reason; state = State.MISS; }
+        boolean exactMatch() { return exactMatch; }
+        int removedRecipeIds() { return removedRecipeIds; }
+        boolean buildingLookup() { return buildingLookup; }
+        com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.Builder restoredLookup()
+        { return restoredLookup; }
+        ClientRecipePlanner.CatalogBuilder reconciled() { return reconciled; }
+        String reason() { return reason; }
+        Path cachePath() { return cachePath; }
         String stateName() { return state.name().toLowerCase(java.util.Locale.ROOT); }
 
         private final class DecodeCursor
@@ -427,6 +541,8 @@ final class ClientPlanningCatalogCache
             private final EncodedRecipe encoded;
             private final List<ClientRecipePlanner.Slot> slots;
             private IStackKey<?> output;
+            private int byproductIndex;
+            private final List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts = new ArrayList<>();
             private int slotIndex;
             private int candidateIndex;
             private List<ClientRecipePlanner.Candidate> candidates;
@@ -434,11 +550,18 @@ final class ClientPlanningCatalogCache
             private DecodeCursor(EncodedRecipe encoded)
             { this.encoded = encoded; this.slots = new ArrayList<>(encoded.slots().size()); }
 
-            private ClientRecipePlanner.Recipe advance(Level level)
+            private ClientRecipePlanner.Recipe advance(net.minecraft.core.RegistryAccess registryAccess)
             {
                 if (output == null)
                 {
-                    output = decodeKey(encoded.output(), level);
+                    output = decodeKey(encoded.output(), registryAccess);
+                    return null;
+                }
+                if (byproductIndex < encoded.byproducts().size())
+                {
+                    EncodedYield byproduct = encoded.byproducts().get(byproductIndex++);
+                    byproducts.add(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
+                            decodeKey(byproduct.key(), registryAccess), byproduct.amount()));
                     return null;
                 }
                 if (slotIndex < encoded.slots().size())
@@ -448,7 +571,7 @@ final class ClientPlanningCatalogCache
                     if (candidateIndex < slot.candidates().size())
                     {
                         EncodedCandidate candidate = slot.candidates().get(candidateIndex++);
-                        IStackKey<?> key = decodeKey(candidate.key(), level);
+                        IStackKey<?> key = decodeKey(candidate.key(), registryAccess);
                         candidates.add(candidate.selection().isEmpty()
                                 ? new ClientRecipePlanner.Candidate(key, candidate.count())
                                 : new ClientRecipePlanner.Candidate(key, candidate.count(),
@@ -462,32 +585,18 @@ final class ClientPlanningCatalogCache
                     return null;
                 }
                 return new ClientRecipePlanner.Recipe(encoded.id(), encoded.family(), output,
-                        encoded.outputCount(), encoded.outputMatch(), slots);
+                        encoded.outputCount(), encoded.outputMatch(), slots, byproducts);
             }
         }
     }
 
     private enum State { QUEUED, READING, EOF, MISS, FAILED, CANCELLED }
-    private record EncodedKey(ResourceLocation type, CompoundTag nbt) {}
+    record EncodedKey(ResourceLocation type, CompoundTag nbt) {}
     private record EncodedCandidate(EncodedKey key, long count, ResourceLocation selectionItem, String selection) {}
+    private record EncodedYield(EncodedKey key, long amount) {}
     private record EncodedSlot(int index, List<EncodedCandidate> candidates, VirtualInputUse use) {}
     private record EncodedRecipe(ResourceLocation id, String family, EncodedKey output, long outputCount,
                                  RecipeIoProfileRegistry.OutputMatchSemantics outputMatch,
-                                 List<EncodedSlot> slots) {}
+                                 List<EncodedSlot> slots, List<EncodedYield> byproducts) {}
 
-    private static final class ReadBudget
-    {
-        private long stringBytes;
-        private long entries;
-        void addStringBytes(int count) throws IOException
-        {
-            stringBytes += count;
-            if (stringBytes > MAX_TOTAL_STRING_BYTES) throw new IOException("cache text budget exceeded");
-        }
-        void addEntries(int count) throws IOException
-        {
-            entries += count;
-            if (entries > MAX_TOTAL_ENTRIES) throw new IOException("cache entry budget exceeded");
-        }
-    }
 }

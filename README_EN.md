@@ -27,7 +27,7 @@ Version 0.6.1 prevents JEI page crashes caused by exceptions while Craftlines re
 
 To investigate indexing stalls, search the instance’s `logs/latest.log` or `logs/debug.log` for `slow recipe index`. Calls taking at least 20ms produce WARN entries with the stage, recipe ID, type, implementation class, duration, known input size, and thread. Details are deduplicated per recipe and stage and capped at 128 per JEI runtime, with a slowest-call summary. Run `/craftlines reload` to collect a fresh set.
 
-Craftlines isolates JEI extension failures per recipe. If reading a third-party display recipe throws, only that recipe's order button or index entry is skipped; other valid recipes retain their usual buttons, and the category stays enabled. `Unable to extend JEI recipe` logs identify the stage, JEI category, implementation class, and exception. Equivalent diagnostics are deduplicated and capped at 128 per indexing cycle. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, and 26.2 / NeoForge.
+Craftlines isolates JEI extension failures per recipe. If reading a third-party display recipe throws, only that recipe's order button or index entry is skipped; other valid recipes retain their usual buttons, and the category stays enabled. `Unable to extend JEI recipe` logs identify the stage, JEI category, implementation class, and exception. Equivalent diagnostics are deduplicated and capped at 128 per indexing cycle. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, 26.2 / NeoForge, and 26.3 / NeoForge.
 
 ## Reloading recipe caches
 
@@ -43,12 +43,15 @@ See the [detailed cache guide (Chinese)](docs/RECIPE_CACHE.md) and [Wiki](https:
 - Minecraft 1.21.1 / NeoForge 21.1 / Java 21
 - Minecraft 26.1.2 / NeoForge 26.1.2 / Java 25
 - Minecraft 26.2 / NeoForge 26.2 / Java 25
+- Minecraft 26.3 / NeoForge 26.3 beta / Java 25
 
-Unless explicitly scoped to one version, feature descriptions and development changes apply to all four versions above.
+Unless explicitly scoped to one version, feature descriptions and development changes apply to all five versions above.
 
 - `mod_id`: `beyond_craftlines`
-- Required dependencies: Beyond Dimensions (0.7.30 or newer for 1.20.1, 1.21.1, and 26.1.2; 0.7.31 or newer for 26.2) and JEI (for all four Minecraft versions above)
-- Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2 and 26.2 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
+- Required dependencies: Beyond Dimensions (0.7.30 or newer for 1.20.1, 1.21.1, and 26.1.2; 0.7.31 or newer for 26.2 and 26.3) and JEI (for all five Minecraft versions above)
+- Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2, 26.2, and 26.3 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
+
+Server configuration paths: 1.20.1, 1.21.1, 26.1.2, and 26.2 use `serverconfig/beyond_craftlines-server.toml` inside the world directory. Minecraft 26.3 uses NeoForge synced configuration: the global default is `config/beyond_craftlines-server.toml`, with a per-world override at `syncedconfig/beyond_craftlines-server.toml`, synchronized to clients on connection. When upgrading a world, copy any previous world-specific file from `serverconfig` into that world’s `syncedconfig`; the filename and settings remain unchanged.
 
 This mod is focused exclusively on the ordering system: a JEI recipe-page entry point, an EMI-style recursive recipe tree, AE2/RS-style order confirmation, BD network resource extraction and crafting, vanilla and third-party machine recipe-type bindings, persistent order status and cancellation, and configurable Craftline Provisioners.
 
@@ -56,7 +59,7 @@ Structure capture, sandbox trial production, reports, steady-state production li
 
 ## Building
 
-Unless a version is explicitly scoped, changes, verification, and packaging cover all four supported versions. Build them with Java 17, 21, 25, and 25 respectively:
+Unless a version is explicitly scoped, changes, verification, and packaging cover all five supported versions. Build them with Java 17, 21, 25, 25, and 25 respectively:
 
 ```bash
 # Minecraft 1.20.1 / Forge
@@ -70,18 +73,22 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 # Minecraft 26.2 / NeoForge
 cd ../26.2 && ../../gradlew --no-daemon build
+
+# Minecraft 26.3 / NeoForge beta / Java 25
+cd ../26.3 && ../../gradlew --no-daemon build
 ```
 
-The four artifacts are written to:
+The five artifacts are written to:
 
 - `versions/1.20.1/build/libs/beyond_craftlines-0.6.1+1.20.1.jar`
 - `build/libs/beyond_craftlines-0.6.1+1.21.1.jar`
 - `versions/26.1.2/build/libs/beyond_craftlines-0.6.1+26.1.2.jar`
 - `versions/26.2/build/libs/beyond_craftlines-0.6.1+26.2.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.6.1+26.3.jar`
 
 ## Usage Overview
 
-After receiving a world save or joining a shared network, Craftlines orders, order status, and dashboard status opened from the BD network screen use that screen's network. Opening Craftlines directly from JEI/EMI first uses the last accessible network that player actually opened, falling back to the primary network when no valid memory exists. The last network is saved per player UUID in the world; deleted networks or revoked access clear that memory. Granting manager permissions does not switch the primary network; provisioners and machines must belong to the network used for the order. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, and 26.2 / NeoForge.
+After receiving a world save or joining a shared network, Craftlines orders, order status, and dashboard status opened from the BD network screen use that screen's network. Opening Craftlines directly from JEI/EMI first uses the last accessible network that player actually opened, falling back to the primary network when no valid memory exists. The last network is saved per player UUID in the world; deleted networks or revoked access clear that memory. Granting manager permissions does not switch the primary network; provisioners and machines must belong to the network used for the order. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, 26.2 / NeoForge, and 26.3 / NeoForge.
 
 For the `0.4.0`/`0.5.0` furnace binding policy, JEI UID mapping, ordering conditions,
 execution flow, and acceptance matrix, see the Chinese
@@ -95,7 +102,7 @@ execution flow, and acceptance matrix, see the Chinese
 6. Enable AE2-style blocking mode when ordering to send one recipe batch at a time. Craftlines waits until the previous batch is complete and collected before sending another, and also waits if the target machine already contains inputs for that recipe.
 7. Craftline Provisioners accept only order-produced resources and cannot be filled by pipes. Right-click one to open its configuration screen; left-clicking it with the linker opens the same GUI. After assigning recipe types, right-click the provisioner with the linker to enter wireless binding mode. Right-click a device face to set or move its supply connection; sneak-right-click a face to set or move its extraction connection. Repeating the matching action on its bound face disconnects only that role. One device may have both roles and still counts as one of the default 16 distinct-device limit. While editing, supply faces and their lines to the provisioner are blue, extraction faces and lines are deep orange, and the crosshair candidate is yellow. Outside editing, every connected face uses the persistent blue-black dimensional pixel frame. Client option `binding.showProvisionerBoundFaceFrames` independently controls these wireless face frames; it does not affect direct-machine frames controlled by `binding.showBoundMachineFrames`, nor edit-mode colored highlights and lines. Extraction runs only while this provisioner actually participates in the active request and transfers directly from the selected face into the BD network without using provisioner storage. The GUI shows `Supply: x, Extract: y`; its single right-side button cycles round-robin, nearest-first, farthest-first, and even-split supply. The server option `provisioner.resetRoundRobinOnRecipeActivation`, enabled by default, restarts round-robin from the first binding for each independent recipe activation and for every feeding round in blocking mode; disabling it preserves continuous polling across requests. A rejecting supply target is skipped so the next target is attempted. Jade shows the same split counts. Clearing recipe types also clears every connection. Sneak-right-click scanning remains the recipe-candidate workflow; outside wireless editing, sneak-right-clicking a machine still removes its direct binding. Recipe groups, side target icons, external extraction, and “Return all to network” retain their previous behavior.
 
-Even Split divides each resource in each batch among available supply targets in binding order. Remainders always favor earlier targets, without a saved cursor. Capacity-limited shares are redistributed; undeliverable resources stay in the provisioner. This splits outgoing amounts, not existing inventories or complete recipe sets. Supported on Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, and 26.2 / NeoForge.
+Even Split divides each resource in each batch among available supply targets in binding order. Remainders always favor earlier targets, without a saved cursor. Capacity-limited shares are redistributed; undeliverable resources stay in the provisioner. This splits outgoing amounts, not existing inventories or complete recipe sets. Supported on Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, 26.2 / NeoForge, and 26.3 / NeoForge.
 8. Crafting-grid recipes are simulated with their original server implementations, retaining dynamic components, damageable tools, container remainders, and custom `assemble/getRemainingItems` behavior. Stable inputs sharing the same BD component key are processed in batches according to availability, while tools whose damage or components change are advanced one craft at a time. Order quantities are positive `long` values and support up to `Long.MAX_VALUE`.
 9. Client-side recipe search, stock consumption, and shortage summaries use versioned inventory snapshots issued by the server. Only after Submit is clicked does the server linearly recompute the fixed choices against current stock; any missing material rejects the request without creating an order. Output defaults to the BD network, can be toggled below the quantity controls to the player inventory, and the client remembers that choice.
 

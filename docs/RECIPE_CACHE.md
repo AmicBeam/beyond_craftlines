@@ -1,6 +1,6 @@
 # 配方缓存与 `/craftlines reload`
 
-适用于 Minecraft 1.20.1 Forge、1.21.1 NeoForge、26.1.2 NeoForge 和 26.2 NeoForge，命令自 Craftlines 0.6.0 起提供。
+适用于 Minecraft 1.20.1 Forge、1.21.1 NeoForge、26.1.2 NeoForge、26.2 NeoForge 和 26.3 NeoForge，命令自 Craftlines 0.6.0 起提供。
 
 ## 怎样执行
 

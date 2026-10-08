@@ -1,0 +1,285 @@
+package com.amicbeam.beyondcraftlines.common.crafting;
+
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
+import net.minecraft.core.NonNullList;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.Recipe;
+import net.minecraft.world.item.crafting.RecipeHolder;
+
+import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/** Bounded runtime recipes uploaded from JEI for vanilla categories with no server RecipeHolder. */
+public final class VirtualProvisionerRecipeRegistry
+{
+    private static final int MAX_RECIPES = 16_384;
+    private static final Map<Identifier, RecipeHolder<?>> RECIPES = Collections.synchronizedMap(
+            new LinkedHashMap<>(64, 0.75F, true)
+            {
+                @Override protected boolean removeEldestEntry(Map.Entry<Identifier, RecipeHolder<?>> eldest)
+                { return size() > MAX_RECIPES; }
+            });
+    // Client category warmup is a complete catalog, not an evictable request cache.
+    private static final Map<Identifier, RecipeHolder<?>> CLIENT_CATALOG = Collections.synchronizedMap(
+            new LinkedHashMap<>());
+    private static final Map<Recipe<?>, Descriptor> DESCRIPTORS = Collections.synchronizedMap(
+            new java.util.WeakHashMap<>());
+    private static final java.util.concurrent.atomic.AtomicLong REVISION =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    private static long clientEpoch;
+
+    public record CachedDescriptor(Identifier id, Descriptor descriptor) {}
+
+    public static void cancelClientRestore()
+    { synchronized (CLIENT_CATALOG) { clientEpoch++; } }
+
+    public static long clientEpoch()
+    { synchronized (CLIENT_CATALOG) { return clientEpoch; } }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot()
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            List<CachedDescriptor> result = new ArrayList<>(CLIENT_CATALOG.size());
+            CLIENT_CATALOG.forEach((id, holder) -> {
+                Descriptor descriptor = DESCRIPTORS.get(holder.value());
+                if (descriptor != null) result.add(new CachedDescriptor(id, descriptor));
+            });
+            return List.copyOf(result);
+        }
+    }
+
+    public static List<CachedDescriptor> clientCatalogSnapshot(long epoch)
+    {
+        synchronized (CLIENT_CATALOG)
+        { return epoch == clientEpoch ? clientCatalogSnapshot() : null; }
+    }
+
+    /** An old disk reader cannot add recipes after a world/runtime reset. */
+    public static boolean restoreForClientCatalog(long epoch, Identifier id, Descriptor descriptor)
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            if (epoch != clientEpoch) return false;
+            if (CLIENT_CATALOG.containsKey(id)) return true;
+            Recipe<?> recipe = proxy(descriptor);
+            RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
+            CLIENT_CATALOG.put(id, holder);
+            DESCRIPTORS.put(recipe, descriptor);
+            REVISION.incrementAndGet();
+            return true;
+        }
+    }
+
+    private VirtualProvisionerRecipeRegistry() {}
+
+    public static int discardRestoredFamilies(long epoch, java.util.Set<String> families)
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            if (epoch != clientEpoch) return 0;
+            int before = CLIENT_CATALOG.size();
+            CLIENT_CATALOG.entrySet().removeIf(entry -> {
+                Descriptor descriptor = DESCRIPTORS.get(entry.getValue().value());
+                if (descriptor == null || !families.contains(descriptor.family())) return false;
+                DESCRIPTORS.remove(entry.getValue().value());
+                return true;
+            });
+            int removed = before - CLIENT_CATALOG.size();
+            if (removed > 0) REVISION.incrementAndGet();
+            return removed;
+        }
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs)
+    {
+        return register(family, output, outputAmount, inputs, List.of());
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts)
+    {
+        return register(family, output, outputAmount, inputs, byproducts, byproducts);
+    }
+
+    public static RecipeHolder<?> register(String family, IStackKey<?> output, long outputAmount,
+                                           List<InputSlot> inputs, List<KeyAmount> byproducts,
+                                           List<KeyAmount> guaranteedByproducts)
+    {
+        return register(new Descriptor(family, output, outputAmount, inputs, byproducts, guaranteedByproducts));
+    }
+
+    public static RecipeHolder<?> register(Descriptor descriptor)
+    {
+        Identifier id = descriptor.id();
+        RecipeHolder<?> existing = find(id).orElse(null);
+        if (existing != null) return existing;
+        Recipe<?> recipe = proxy(descriptor);
+        RecipeHolder<?> holder = new RecipeHolder<>(ResourceKey.create(Registries.RECIPE, id), recipe);
+        RECIPES.put(id, holder);
+        DESCRIPTORS.put(recipe, descriptor);
+        REVISION.incrementAndGet();
+        return holder;
+    }
+
+    public static Optional<RecipeHolder<?>> find(Identifier id)
+    {
+        RecipeHolder<?> retained = CLIENT_CATALOG.get(id);
+        return Optional.ofNullable(retained != null ? retained : RECIPES.get(id));
+    }
+
+    public static RecipeHolder<?> retainForClientCatalog(RecipeHolder<?> holder)
+    {
+        CLIENT_CATALOG.put(holder.id().identifier(), holder);
+        return holder;
+    }
+
+    public static List<RecipeHolder<?>> recipes()
+    {
+        Map<Identifier, RecipeHolder<?>> snapshot;
+        synchronized (RECIPES) { snapshot = new LinkedHashMap<>(RECIPES); }
+        synchronized (CLIENT_CATALOG) { snapshot.putAll(CLIENT_CATALOG); }
+        return List.copyOf(snapshot.values());
+    }
+
+    public static Descriptor descriptor(Recipe<?> recipe)
+    { return DESCRIPTORS.get(recipe); }
+
+    public static long revision() { return REVISION.get(); }
+
+    public static void clear()
+    {
+        synchronized (CLIENT_CATALOG)
+        {
+            clientEpoch++;
+            VirtualRecipeIdentity.clear();
+            RECIPES.clear();
+            CLIENT_CATALOG.clear();
+            DESCRIPTORS.clear();
+            REVISION.incrementAndGet();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Recipe<?> proxy(Descriptor descriptor)
+    {
+        return (Recipe<?>) Proxy.newProxyInstance(Recipe.class.getClassLoader(), new Class<?>[]{Recipe.class},
+                (proxy, method, arguments) -> switch (method.getName())
+                {
+                    case "getIngredients" -> NonNullList.<Ingredient>create();
+                    case "getResultItem", "assemble" -> outputStack(descriptor);
+                    case "isSpecial" -> true;
+                    case "getGroup" -> "";
+                    case "toString" -> "VirtualProvisionerRecipe[" + descriptor.id() + "]";
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    case "equals" -> proxy == (arguments == null ? null : arguments[0]);
+                    default -> defaultValue(method.getReturnType());
+                });
+    }
+
+    private static ItemStack outputStack(Descriptor descriptor)
+    {
+        Object stack = descriptor.output().getReadOnlyStack();
+        if (!(stack instanceof ItemStack item)) return ItemStack.EMPTY;
+        return item.copyWithCount((int) Math.min(item.getMaxStackSize(), descriptor.outputAmount()));
+    }
+
+    private static Object defaultValue(Class<?> type)
+    {
+        if (!type.isPrimitive())
+        {
+            if (type.isEnum())
+            {
+                Object[] constants = type.getEnumConstants();
+                return constants == null || constants.length == 0 ? null : constants[0];
+            }
+            return null;
+        }
+        if (type == boolean.class) return false;
+        if (type == char.class) return '\0';
+        if (type == byte.class) return (byte) 0;
+        if (type == short.class) return (short) 0;
+        if (type == int.class) return 0;
+        if (type == long.class) return 0L;
+        if (type == float.class) return 0F;
+        return 0D;
+    }
+
+    public record InputSlot(String inputGroup, List<KeyAmount> candidates, VirtualInputUse use)
+    {
+        public InputSlot(String inputGroup, List<KeyAmount> candidates)
+        { this(inputGroup, candidates, VirtualInputUse.CONSUMED); }
+        public InputSlot
+        {
+            if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
+                    || candidates.size() > VirtualRecipeLimits.CANDIDATES || candidates.stream().anyMatch(value -> value == null
+                    || value.isEmpty() || value.amount() < 1) || use == null)
+                throw new IllegalArgumentException("invalid virtual provisioner ingredient");
+            candidates = List.copyOf(candidates);
+        }
+    }
+
+    public record Descriptor(String family, IStackKey<?> output, long outputAmount,
+                             List<InputSlot> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
+    {
+        public Descriptor(String family, IStackKey<?> output, long outputAmount, List<InputSlot> inputs)
+        { this(family, output, outputAmount, inputs, List.of(), List.of()); }
+
+        public Descriptor
+        {
+            if (Identifier.tryParse(family) == null || family.length() > 256
+                    || output == null || output.isEmpty() || outputAmount < 1
+                    || inputs == null || inputs.isEmpty() || inputs.size() > VirtualRecipeLimits.INPUTS)
+                throw new IllegalArgumentException("invalid virtual provisioner recipe");
+            inputs = List.copyOf(inputs);
+            VirtualRecipeLimits.requireInputs(inputs.size(), inputs.stream().mapToLong(slot -> slot.candidates().size()).sum());
+            if (byproducts == null || byproducts.size() >= VirtualRecipeLimits.OUTPUTS
+                    || byproducts.stream().anyMatch(value -> value == null || value.isEmpty()
+                    || value.amount() < 1 || StackKeyMatch.exact(output, value.key())))
+                throw new IllegalArgumentException("invalid virtual recipe byproducts");
+            byproducts = List.copyOf(byproducts);
+            guaranteedByproducts = List.copyOf(guaranteedByproducts);
+            if (byproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key())).distinct().count()
+                    != byproducts.size() || guaranteedByproducts.stream()
+                    .map(value -> VirtualRecipeIdentity.key(value.key())).distinct().count() != guaranteedByproducts.size())
+                throw new IllegalArgumentException("duplicate virtual recipe byproduct");
+            for (KeyAmount guaranteed : guaranteedByproducts)
+                if (byproducts.stream().noneMatch(actual -> StackKeyMatch.exact(actual.key(), guaranteed.key())
+                        && actual.amount() == guaranteed.amount()))
+                    throw new IllegalArgumentException("guaranteed output is not a declared byproduct");
+        }
+
+        public Identifier id()
+        {
+            StringBuilder canonical = new StringBuilder(family).append('|')
+                    .append(VirtualRecipeIdentity.key(output)).append('@').append(outputAmount);
+            for (InputSlot slot : inputs)
+            {
+                canonical.append('|').append(slot.inputGroup()).append(':')
+                        .append(slot.use().kind()).append('@').append(slot.use().damagePerCraft()).append(':');
+                slot.candidates().stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
+                        .sorted().forEach(value -> canonical.append(value).append(','));
+            }
+            byproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|byproduct:").append(value));
+            guaranteedByproducts.stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())
+                    .sorted().forEach(value -> canonical.append("|guaranteed:").append(value));
+            UUID uuid = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));
+            return Identifier.fromNamespaceAndPath("beyond_craftlines", "jei_virtual/" + uuid);
+        }
+    }
+}

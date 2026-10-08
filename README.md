@@ -27,7 +27,7 @@
 
 索引卡顿排查：在游戏实例的 `logs/latest.log` 或 `logs/debug.log` 搜索 `slow recipe index`。单次处理达到 20ms 时会以 WARN 输出阶段、配方 ID、类型、实现类、耗时、已知输入规模和线程名；同一配方阶段去重，每个 JEI 运行时最多 128 条明细，并提供最慢调用汇总。`/craftlines reload` 后可重新采集。
 
-Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在读取时抛出异常，仅跳过该配方的下单按钮或索引项，其他正常配方仍按原规则添加按钮；不会禁用整个分类。日志中的 `Unable to extend JEI recipe` 会记录处理阶段、JEI 分类、配方实现类和异常，同类诊断去重且每轮最多记录 128 条。该行为适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge 和 26.2 / NeoForge。
+Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在读取时抛出异常，仅跳过该配方的下单按钮或索引项，其他正常配方仍按原规则添加按钮；不会禁用整个分类。日志中的 `Unable to extend JEI recipe` 会记录处理阶段、JEI 分类、配方实现类和异常，同类诊断去重且每轮最多记录 128 条。该行为适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge、26.2 / NeoForge 和 26.3 / NeoForge。
 
 ## 手动刷新配方缓存
 
@@ -43,12 +43,15 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 - Minecraft 1.21.1 / NeoForge 21.1 / Java 21
 - Minecraft 26.1.2 / NeoForge 26.1.2 / Java 25
 - Minecraft 26.2 / NeoForge 26.2 / Java 25
+- Minecraft 26.3 / NeoForge 26.3 beta / Java 25
 
-除非明确限定版本，功能说明和开发改动均适用于以上四个版本。
+除非明确限定版本，功能说明和开发改动均适用于以上五个版本。
 
 - `mod_id`: `beyond_craftlines`
-- 必需依赖：Beyond Dimensions（1.20.1、1.21.1、26.1.2 为 0.7.30 或更高版本；26.2 为 0.7.31 或更高版本）、JEI（以上四个 Minecraft 版本均适用）
-- 可选依赖：GuideME；EMI（Minecraft 1.20.1 Forge 与 1.21.1 NeoForge）。26.1.2 与 26.2 构建保留显式 no-op EMI 桥，不提供 EMI 运行支持。
+- 必需依赖：Beyond Dimensions（1.20.1、1.21.1、26.1.2 为 0.7.30 或更高版本；26.2 与 26.3 为 0.7.31 或更高版本）、JEI（以上五个 Minecraft 版本均适用）
+- 可选依赖：GuideME；EMI（Minecraft 1.20.1 Forge 与 1.21.1 NeoForge）。26.1.2、26.2 与 26.3 构建保留显式 no-op EMI 桥，不提供 EMI 运行支持。
+
+服务端配置位置：1.20.1、1.21.1、26.1.2 与 26.2 使用世界目录的 `serverconfig/beyond_craftlines-server.toml`。26.3 使用 NeoForge 的同步配置：默认读取全局 `config/beyond_craftlines-server.toml`，单个世界可通过 `syncedconfig/beyond_craftlines-server.toml` 覆盖，并在连接时同步到客户端。升级世界时，应把需要保留的旧 `serverconfig` 文件复制到该世界的 `syncedconfig`；文件名和配置项保持不变。
 
 本模组只负责下单系统：JEI 配方页入口、EMI 风格递归配方树、AE2/RS 风格订单确认、BD 网络扣料与合成、原版及第三方机器配方类型绑定、订单持久化/状态/取消，以及可配置配方类型的合成链供给器。
 
@@ -56,7 +59,7 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 
 ## 构建
 
-未明确限定版本时，改动、验证与打包均同时覆盖四个支持版本。分别使用 Java 17、21、25、25 执行：
+未明确限定版本时，改动、验证与打包均同时覆盖五个支持版本。分别使用 Java 17、21、25、25、25 执行：
 
 ```bash
 # Minecraft 1.20.1 / Forge
@@ -70,14 +73,18 @@ cd versions/26.1.2 && ../../gradlew --no-daemon build
 
 # Minecraft 26.2 / NeoForge
 cd ../26.2 && ../../gradlew --no-daemon build
+
+# Minecraft 26.3 / NeoForge beta / Java 25
+cd ../26.3 && ../../gradlew --no-daemon build
 ```
 
-四个产物分别位于：
+五个产物分别位于：
 
 - `versions/1.20.1/build/libs/beyond_craftlines-0.6.1+1.20.1.jar`
 - `build/libs/beyond_craftlines-0.6.1+1.21.1.jar`
 - `versions/26.1.2/build/libs/beyond_craftlines-0.6.1+26.1.2.jar`
 - `versions/26.2/build/libs/beyond_craftlines-0.6.1+26.2.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.6.1+26.3.jar`
 
 ## 使用概要
 
@@ -92,13 +99,13 @@ cd ../26.2 && ../../gradlew --no-daemon build
 6. 下单时可开启 AE2 风格阻挡模式：每次只推送一次配方输入，上一批完成并回收后才发送下一批；目标机器预存本配方输入时也会等待。
 7. 合成链供给器只接受订单产生的资源，不能由管道写入；右击可随时打开配置界面，手持连接器左击也可打开。配方类型绑定完成后，用连接器右击供给器进入无线绑定模式；普通右击设备目标面设置或移动供应面，潜行右击设置或移动抽取面，对已绑定面重复对应操作会断开该角色的连接。同一设备可同时拥有一个供应面和一个抽取面，且在默认 16 台设备上限中仍只计为一台。编辑时供应面及其与供给器之间的连线为蓝色，抽取面及连线为深橙色，准星候选面为黄色；退出编辑后所有连接面统一显示持续的蓝黑超维像素边框。客户端 `binding.showProvisionerBoundFaceFrames` 可单独关闭这些无线绑定面边框，不影响 `binding.showBoundMachineFrames` 控制的直接绑定机器边框，也不影响编辑态彩色高亮与连线。抽取面仅在该供给器实际参与当前合成请求期间从目标面的能力直接抽入 BD 网络，不经过供给器库存。GUI 计数显示“供应：x，抽取：y”，其右侧单按钮循环切换轮询、最近优先、最远优先和均分；默认开启的服务端配置 `provisioner.resetRoundRobinOnRecipeActivation` 会让轮询在每次独立配方请求激活时从第一条绑定开始，阻挡模式则每轮从头开始，关闭后恢复跨请求连续轮询。某供应目标拒收当前资源时会继续尝试下一个目标。Jade 显示同样的双计数。清空供给器的配方类型时会同时清空全部设备连接。原有的潜行右击供给器后扫描目标机器仍用于建立配方候选；编辑模式外潜行右击目标机器仍用于解除直接绑定。配方类型与材料组选择、侧面目标图标、外部管道提取及“全部送回网络”功能保持不变。
 
-均分模式对每批的每种资源按供应绑定顺序分配，余数始终优先给前面的可用目标，不保留余数起点；容量不足的份额继续均分给其他可接收目标，未能发送的资源留在供给器。该模式均分发送量，不补齐目标库存，也不按整套配方分配。适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge 和 26.2 / NeoForge。
+均分模式对每批的每种资源按供应绑定顺序分配，余数始终优先给前面的可用目标，不保留余数起点；容量不足的份额继续均分给其他可接收目标，未能发送的资源留在供给器。该模式均分发送量，不补齐目标库存，也不按整套配方分配。适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge、26.2 / NeoForge 和 26.3 / NeoForge。
 8. 工作台配方统一通过服务端原配方模拟，保留动态组件、耐久工具、容器返还物和模组自定义 `assemble/getRemainingItems` 行为。相同 BD 组件键的稳定输入会按可用数量一次批量结算；会改变耐久或组件的工具才逐次推进。订单数量使用正 `long`，最大支持 `Long.MAX_VALUE`。
 9. 配方候选搜索、库存抵扣与缺料汇总使用服务端签发的版本化库存快照在客户端后台完成；点击下单后，服务端才以最新库存对固定选择做线性复算，缺少任一材料时拒绝且不创建订单。订单产物默认存入 BD 网络，也可在数量区下方轮切为存入玩家物品栏；该选择由客户端记忆。
 
 ## 设计文档
 
-转交存档或加入共享网络后，从 BD 网络界面进入合成链时，订单、合成状态和监控面板状态使用当前打开的网络；从 JEI／EMI 直接进入时，优先使用该玩家上次实际打开的有效网络，没有记录时使用主网络。记忆按玩家 UUID 保存在当前存档中；网络已删除或玩家失去访问权限时清除记忆并回退主网络。授予管理员权限不会自动切换主网络，原供给器和机器仍需绑定到下单的网络。该规则适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge 和 26.2 / NeoForge。
+转交存档或加入共享网络后，从 BD 网络界面进入合成链时，订单、合成状态和监控面板状态使用当前打开的网络；从 JEI／EMI 直接进入时，优先使用该玩家上次实际打开的有效网络，没有记录时使用主网络。记忆按玩家 UUID 保存在当前存档中；网络已删除或玩家失去访问权限时清除记忆并回退主网络。授予管理员权限不会自动切换主网络，原供给器和机器仍需绑定到下单的网络。该规则适用于 Minecraft 1.20.1 / Forge、1.21.1 / NeoForge、26.1.2 / NeoForge、26.2 / NeoForge 和 26.3 / NeoForge。
 
 当前功能、架构、执行语义、配置与兼容边界统一记录在 [`docs/DESIGN.md`](docs/DESIGN.md)。旧的分散设计稿已经移除，文档只描述当前源码实际实现的内容。
 

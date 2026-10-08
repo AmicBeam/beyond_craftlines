@@ -27,6 +27,8 @@ Version 0.6.0 adds persistent JEI descriptions and planning catalogs, incrementa
 
 To investigate indexing stalls, search the instance’s `logs/latest.log` or `logs/debug.log` for `slow recipe index`. Calls taking at least 20ms produce WARN entries with the stage, recipe ID, type, implementation class, duration, known input size, and thread. Details are deduplicated per recipe and stage and capped at 128 per JEI runtime, with a slowest-call summary. Run `/craftlines reload` to collect a fresh set.
 
+Craftlines isolates JEI extension failures per recipe. If reading a third-party display recipe throws, only that recipe's order button or index entry is skipped; other valid recipes retain their usual buttons, and the category stays enabled. `Unable to extend JEI recipe` logs identify the stage, JEI category, implementation class, and exception. Equivalent diagnostics are deduplicated and capped at 128 per indexing cycle. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, and 26.1.2 / NeoForge.
+
 ## Reloading recipe caches
 
 After joining a world, run `/craftlines reload` in your own client chat; no operator permission is needed. It clears the current world's/server's JEI descriptions and planning catalog, then prepares recipes according to `planning.preloadAllRecipeTypes`. Other scopes, orders, bindings, and saved preferences remain intact.

@@ -27,20 +27,22 @@ public final class JeiVirtualRecipeLayouts
     public static Captured capture(Identifier type, IRecipeLayoutDrawable<?> layout,
                                    com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> target)
     {
-        List<Captured> captures = captures(type, layout);
-        Captured exact = captures.stream().filter(value -> StackKeyMatch.exact(target, value.output().key()))
-                .findFirst().orElse(null);
-        if (exact != null) return exact;
-        var source = CraftlinesJeiPlugin.findRecipeId(layout);
-        if (source == null || !JeiRecipeExecutionSource.usesServerRecipe(layout.getRecipe())) return null;
-        return captures.stream().filter(value -> RecipeIoProfileRegistry.outputMatches(
-                source.toString(), target, value.output().key())).findFirst().orElse(null);
+        return JeiRecipeGuard.get(() -> {
+            List<Captured> captures = captures(type, layout);
+            if (captures.isEmpty()) return null;
+            Captured exact = captures.stream().filter(value -> StackKeyMatch.exact(target, value.output().key()))
+                    .findFirst().orElse(null);
+            if (exact != null) return exact;
+            var source = CraftlinesJeiPlugin.findRecipeId(layout);
+            if (source == null || !JeiRecipeExecutionSource.usesServerRecipe(layout.getRecipe())) return null;
+            return captures.stream().filter(value -> RecipeIoProfileRegistry.outputMatches(
+                    source.toString(), target, value.output().key())).findFirst().orElse(null);
+        }, null, failure -> reportLayoutFailure("focused_capture", type, layout, failure));
     }
 
     public static List<Captured> captures(Identifier type, IRecipeLayoutDrawable<?> layout)
     {
-        try
-        {
+        return JeiRecipeGuard.get(() -> {
             var uncertain = RecipeOutputProbabilities.uncertain(layout.getRecipe());
             var ignored = RecipePresentationOutputs.ignored(layout.getRecipe());
             return captureComplete(type, layout).stream()
@@ -52,24 +54,32 @@ public final class JeiVirtualRecipeLayouts
                     .map(captured -> new Captured(captured.type(), captured.output(), captured.inputs(), captured.byproducts(),
                             captured.byproducts().stream().filter(output -> uncertain.stream()
                                     .noneMatch(key -> StackKeyMatch.exact(key, output.key()))).toList())).toList();
-        }
-        catch (IllegalArgumentException exception)
+        }, List.of(), failure -> reportLayoutFailure("capture", type, layout, failure));
+    }
+
+    static void reportLayoutFailure(String stage, Object type, IRecipeLayoutDrawable<?> layout, Throwable failure)
+    {
+        Object recipe = layout;
+        try
         {
-            String warning = type + "|" + layout.getRecipe().getClass().getName() + "|" + exception.getMessage();
-            synchronized (WARNED)
-            {
-                if (WARNED.size() < 128 && WARNED.add(warning))
-                {
-                    Object recipeId = "<unavailable>";
-                    try { recipeId = CraftlinesJeiPlugin.findRecipeId(layout); }
-                    catch (RuntimeException | LinkageError ignored) {}
-                    org.slf4j.LoggerFactory.getLogger(JeiVirtualRecipeLayouts.class).warn(
-                            "Unsupported JEI recipe category={} recipe={} recipeClass={} layoutClass={} reason={}", type,
-                            recipeId, layout.getRecipe().getClass().getName(), layout.getClass().getName(), exception.getMessage());
-                }
-            }
-            return List.of();
+            recipe = layout.getRecipe();
+            if (type == null) type = layout.getRecipeCategory().getRecipeType().getUid();
         }
+        catch (RuntimeException | LinkageError ignored) {}
+        reportFailure(stage, type, recipe, failure);
+    }
+
+    static void reportFailure(String stage, Object type, Object recipe, Throwable failure)
+    {
+        String recipeClass = recipe == null ? "<unavailable>" : recipe.getClass().getName();
+        String warning = stage + "|" + type + "|" + recipeClass + "|" + failure.getClass().getName();
+        synchronized (WARNED)
+        {
+            if (WARNED.size() >= 128 || !WARNED.add(warning)) return;
+        }
+        org.slf4j.LoggerFactory.getLogger(JeiVirtualRecipeLayouts.class).warn(
+                "Unable to extend JEI recipe stage={} category={} recipeClass={} action=skip_recipe",
+                stage, type, recipeClass, failure);
     }
 
     private static List<Captured> captureComplete(Identifier type, IRecipeLayoutDrawable<?> layout)

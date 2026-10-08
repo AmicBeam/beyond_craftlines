@@ -4,7 +4,7 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.6.0 adds persistent JEI descriptions and planning catalogs, incremental recovery by recipe ID, and manual reloads. It fixes repeated indexing in large modpacks, missing or duplicate Star Altar recipes, and clipped tooltips. Network protocol 27 requires matching client and server updates. See the [0.6.0 changelog](docs/CHANGELOG_0.6.0.md) and the [mod compatibility audit](docs/COMPATIBILITY_0.5.2.md). Players continue to control production-line conditions and actions.
+Version 0.6.1 prevents JEI page crashes caused by exceptions while Craftlines reads third-party display recipes. Only the failing recipe's order button or index entry is skipped; valid recipes keep their usual behavior, with deduplicated diagnostics for failures. See the [0.6.1 changelog](docs/CHANGELOG_0.6.1.md), [0.6.0 cache and incremental recovery notes](docs/CHANGELOG_0.6.0.md), and [mod compatibility audit](docs/COMPATIBILITY_0.5.2.md). Network protocol remains 27. Players continue to control production-line conditions and actions.
 
 ## Features
 

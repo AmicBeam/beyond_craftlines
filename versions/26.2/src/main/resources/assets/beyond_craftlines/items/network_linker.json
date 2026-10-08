@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "beyond_craftlines:item/network_linker"
+  }
+}

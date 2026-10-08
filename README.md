@@ -27,6 +27,14 @@
 
 索引卡顿排查：在游戏实例的 `logs/latest.log` 或 `logs/debug.log` 搜索 `slow recipe index`。单次处理达到 20ms 时会以 WARN 输出阶段、配方 ID、类型、实现类、耗时、已知输入规模和线程名；同一配方阶段去重，每个 JEI 运行时最多 128 条明细，并提供最慢调用汇总。`/craftlines reload` 后可重新采集。
 
+## 手动刷新配方缓存
+
+进入世界后，在自己的客户端聊天框执行 `/craftlines reload`，普通玩家无需 OP。命令清除当前存档／服务器的 JEI 描述与规划目录缓存，并按 `planning.preloadAllRecipeTypes` 重新准备；其他范围缓存、订单、绑定和偏好保留。
+
+修改数据包／IO profile 时先由管理员执行服务端 `/reload` 或按整合包要求重新加载数据，再由需要刷新的玩家分别执行本命令。命令提示成功只表示已清缓存；等待 `client JEI cache save result=INSTALLED` 和 `client planning cache saved` 后再完全退出游戏。
+
+详见 [配方缓存与重载说明](docs/RECIPE_CACHE.md) 和 [Wiki](https://github.com/AmicBeam/beyond_craftlines/wiki/配方缓存与重载)。
+
 ## 支持版本
 
 - Minecraft 1.20.1 / Forge 47 / Java 17

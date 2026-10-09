@@ -461,6 +461,8 @@ Forge/NeoForge 自动生成 client 和 server 配置。服务端配置通常按�
 
 ## 15. 构建与验证
 
+版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 1.20.1、1.21.1、26.1.2 为 `0.6.1`，26.2、26.3 为 `0.6.0`，均属于 `0.6` 功能版本。26.2 与 26.3 沿用当前功能和修复实现。
+
 未明确限定版本时，必须依次完成五个版本的构建与验证：
 
 ```bash
@@ -486,8 +488,8 @@ cd ../26.3 && ../../gradlew --no-daemon build
 versions/1.20.1/build/libs/beyond_craftlines-0.6.1+1.20.1.jar
 build/libs/beyond_craftlines-0.6.1+1.21.1.jar
 versions/26.1.2/build/libs/beyond_craftlines-0.6.1+26.1.2.jar
-versions/26.2/build/libs/beyond_craftlines-0.6.1+26.2.jar
-versions/26.3/build/libs/beyond_craftlines-0.6.1+26.3.jar
+versions/26.2/build/libs/beyond_craftlines-0.6.0+26.2.jar
+versions/26.3/build/libs/beyond_craftlines-0.6.0+26.3.jar
 ```
 
 当前纯单元测试覆盖：

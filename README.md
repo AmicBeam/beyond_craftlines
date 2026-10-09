@@ -47,6 +47,8 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 
 除非明确限定版本，功能说明和开发改动均适用于以上五个版本。
 
+版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 1.20.1、1.21.1、26.1.2 为 `0.6.1`，26.2、26.3 为 `0.6.0`，均属于 `0.6` 功能版本。26.2 与 26.3 沿用当前功能和修复实现。
+
 - `mod_id`: `beyond_craftlines`
 - 必需依赖：Beyond Dimensions（1.20.1、1.21.1、26.1.2 为 0.7.30 或更高版本；26.2 与 26.3 为 0.7.31 或更高版本）、JEI（以上五个 Minecraft 版本均适用）
 - 可选依赖：GuideME；EMI（Minecraft 1.20.1 Forge 与 1.21.1 NeoForge）。26.1.2、26.2 与 26.3 构建保留显式 no-op EMI 桥，不提供 EMI 运行支持。
@@ -83,8 +85,8 @@ cd ../26.3 && ../../gradlew --no-daemon build
 - `versions/1.20.1/build/libs/beyond_craftlines-0.6.1+1.20.1.jar`
 - `build/libs/beyond_craftlines-0.6.1+1.21.1.jar`
 - `versions/26.1.2/build/libs/beyond_craftlines-0.6.1+26.1.2.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.6.1+26.2.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.6.1+26.3.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.6.0+26.2.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.6.0+26.3.jar`
 
 ## 使用概要
 

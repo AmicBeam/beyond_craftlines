@@ -47,6 +47,8 @@ See the [detailed cache guide (Chinese)](docs/RECIPE_CACHE.md) and [Wiki](https:
 
 Unless explicitly scoped to one version, feature descriptions and development changes apply to all five versions above.
 
+Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The current builds are `0.6.1` for 1.20.1, 1.21.1, and 26.1.2, and `0.6.0` for 26.2 and 26.3; all belong to the `0.6` feature version. The 26.2 and 26.3 builds retain the current features and fixes.
+
 - `mod_id`: `beyond_craftlines`
 - Required dependencies: Beyond Dimensions (0.7.30 or newer for 1.20.1, 1.21.1, and 26.1.2; 0.7.31 or newer for 26.2 and 26.3) and JEI (for all five Minecraft versions above)
 - Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2, 26.2, and 26.3 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
@@ -83,8 +85,8 @@ The five artifacts are written to:
 - `versions/1.20.1/build/libs/beyond_craftlines-0.6.1+1.20.1.jar`
 - `build/libs/beyond_craftlines-0.6.1+1.21.1.jar`
 - `versions/26.1.2/build/libs/beyond_craftlines-0.6.1+26.1.2.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.6.1+26.2.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.6.1+26.3.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.6.0+26.2.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.6.0+26.3.jar`
 
 ## Usage Overview
 

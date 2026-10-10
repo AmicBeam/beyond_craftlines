@@ -89,260 +89,337 @@ public final class ClientRecipePlanner
                                 int maxDepth, int maxNodes, long maxSearchNanos,
                                 boolean optimalSearch)
     {
+        return plan(catalog, suppliedStock, target, requested, manualRecipes, manualIngredients,
+                Map.of(), Map.of(), maxDepth, maxNodes, maxSearchNanos, optimalSearch);
+    }
+
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
+                                IStackKey<?> target, long requested,
+                                Map<String, Identifier> lockedRecipes,
+                                Map<IngredientKey, String> lockedIngredients,
+                                Map<String, Identifier> preferredRecipes,
+                                Map<IngredientKey, String> preferredIngredients,
+                                int maxDepth, int maxNodes, long maxSearchNanos,
+                                boolean optimalSearch)
+    {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
-        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput = catalog::lookup;
-        State state = new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
-                new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
-                new LinkedHashMap<>(), new LinkedHashMap<>());
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime,
                 optimalSearch);
-        resolve(target, requested,
-                byOutput, new HashSet<>(), state, manualRecipes, manualIngredients,
-                0, maxDepth, budget);
+        Search search = new Search(catalog, lockedRecipes, lockedIngredients, preferredRecipes,
+                preferredIngredients, suppliedStock, maxDepth, budget, optimalSearch);
+        State state = search.run(target, requested);
         boolean exhausted = budget.exhausted();
+        boolean failed = !state.succeeded || !state.missing.isEmpty();
+        if (failed && state.missing.isEmpty())
+            state.missing.merge(target, requested, SaturatingLongMath::add);
         return new Proposal(state.recipes, state.ingredients, state.missing, state.usedStock,
-                exhausted, PlanningOutcome.completed(!state.missing.isEmpty(),
+                exhausted, PlanningOutcome.completed(failed,
                 state.rootNoRecipe, state.cyclicDependencies > 0, exhausted));
     }
 
-    private static void resolve(IStackKey<?> resource, long needed, java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
-                                Set<IStackKey<?>> visiting, State state,
-                                Map<String, Identifier> manualRecipes,
-                                Map<IngredientKey, String> manualIngredients,
-                                int depth, int maxDepth, ClientPlanningBudget budget)
+    private static final class Search
     {
-        budget.checkCancellation();
-        if(!budget.visit(budgetIdentity(resource))){state.missing.merge(resource,needed,SaturatingLongMath::add);return;}
-        long used = depth == 0 ? 0 : consume(state, resource, needed);
-        long remainder = needed - used;
-        if (remainder == 0) return;
-        if (depth >= maxDepth)
+        private final java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput;
+        private final Map<String, Identifier> lockedRecipes;
+        private final Map<IngredientKey, String> lockedIngredients;
+        private final Map<String, Identifier> preferredRecipes;
+        private final Map<IngredientKey, String> preferredIngredients;
+        private final Map<IStackKey<?>, Long> suppliedStock;
+        private final int maxDepth;
+        private final ClientPlanningBudget budget;
+        private final boolean optimalSearch;
+
+        private Search(Catalog catalog, Map<String, Identifier> lockedRecipes,
+                       Map<IngredientKey, String> lockedIngredients,
+                       Map<String, Identifier> preferredRecipes,
+                       Map<IngredientKey, String> preferredIngredients,
+                       Map<IStackKey<?>, Long> suppliedStock, int maxDepth,
+                       ClientPlanningBudget budget, boolean optimalSearch)
         {
-            state.missing.merge(resource, remainder, SaturatingLongMath::add);
-            return;
+            this.byOutput = catalog::lookup;
+            this.lockedRecipes = lockedRecipes;
+            this.lockedIngredients = lockedIngredients;
+            this.preferredRecipes = preferredRecipes;
+            this.preferredIngredients = preferredIngredients;
+            this.suppliedStock = suppliedStock;
+            this.maxDepth = maxDepth;
+            this.budget = budget;
+            this.optimalSearch = optimalSearch;
         }
-        if (!visiting.add(resource))
-            throw new PlanningCycleBranch.Cycle();
-        String resourceId = RecipeResourceResolver.resolutionKey(resource);
-        try
+
+        private State run(IStackKey<?> target, long requested)
         {
-            List<Recipe> candidates = byOutput.apply(resource);
-            Identifier selected = manualRecipes.get(resourceId);
-            if (selected == null) selected = manualRecipes.get(RecipeResourceResolver.sortKey(resource));
-            if (selected == null) selected = state.recipes.get(resourceId);
-            if (RecipeResolutionOverrides.NO_RECIPE.equals(selected))
+            PlanningChoiceVector choices = new PlanningChoiceVector();
+            State best = null;
+            boolean first = true;
+            while (first || (budget.canSearch() && choices.advance()))
             {
-                state.recipes.put(resourceId, selected);
-                if (depth == 0) state.rootNoRecipe = true;
+                first = false;
+                State state = freshState();
+                choices.beginAttempt();
+                boolean complete;
+                try { complete = resolve(target, requested, 0, new HashSet<>(), state, choices); }
+                catch (SearchBudgetExpired ignored) { complete = false; }
+                if (complete && state.missing.isEmpty())
+                {
+                    state.succeeded = true;
+                    return state;
+                }
+                if (state.missing.isEmpty())
+                    state.missing.merge(target, requested, SaturatingLongMath::add);
+                if (best == null || compareFailed(state, best) < 0) best = state;
+            }
+            if (best == null)
+            {
+                best = freshState();
+                best.missing.merge(target, requested, SaturatingLongMath::add);
+                best.rootNoRecipe = true;
+            }
+            return best;
+        }
+
+        private State freshState()
+        {
+            return new State(new MatchingStock<>(IStackKey::getTypeId, suppliedStock), new LinkedHashMap<>(),
+                    new LinkedHashMap<>(), new LinkedHashMap<>(), 0,
+                    new LinkedHashMap<>(), new LinkedHashMap<>());
+        }
+
+        private boolean resolve(IStackKey<?> resource, long needed, int depth, Set<IStackKey<?>> visiting,
+                                State state, PlanningChoiceVector choices)
+        {
+            budget.checkCancellation();
+            if (!state.missing.isEmpty()) choices.stopRecording();
+            if (!budget.visit(budgetIdentity(resource)))
+            {
+                state.missing.merge(resource, needed, SaturatingLongMath::add);
+                return false;
+            }
+            long used = depth == 0 ? 0 : consume(state, resource, needed);
+            long remainder = needed - used;
+            if (remainder == 0) return true;
+            if (depth >= maxDepth)
+            {
                 state.missing.merge(resource, remainder, SaturatingLongMath::add);
-                return;
+                return false;
             }
-            if (selected != null)
+            if (!visiting.add(resource))
             {
-                Identifier choice = selected;
-                candidates = candidates.stream().filter(recipe -> recipe.id().equals(choice)).toList();
-            }
-            if (candidates.isEmpty())
-            {
-                if (depth == 0) state.rootNoRecipe = true;
+                state.cyclicDependencies++;
                 state.missing.merge(resource, remainder, SaturatingLongMath::add);
-                return;
+                return false;
             }
-            if (!PlanningBranches.recipesRequireBranches(candidates.size()))
+            String resourceId = RecipeResourceResolver.resolutionKey(resource);
+            try
             {
-                Recipe recipe = candidates.getFirst();
-                State branch = state.copy();
-                Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
+                List<Recipe> candidates = byOutput.apply(resource);
+                var selected = lockedRecipes.get(resourceId);
+                if (selected == null) selected = lockedRecipes.get(RecipeResourceResolver.sortKey(resource));
+                if (selected == null) selected = state.recipes.get(resourceId);
+                if (RecipeResolutionOverrides.NO_RECIPE.equals(selected))
+                {
+                    state.recipes.put(resourceId, selected);
+                    if (depth == 0) state.rootNoRecipe = true;
+                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
+                    return false;
+                }
+                if (selected != null)
+                {
+                    var choice = selected;
+                    candidates = candidates.stream().filter(recipe -> recipe.id().equals(choice)).toList();
+                }
+                else candidates = rankRecipes(resource, candidates, state);
+                if (candidates.isEmpty())
+                {
+                    if (depth == 0) state.rootNoRecipe = true;
+                    state.missing.merge(resource, remainder, SaturatingLongMath::add);
+                    return false;
+                }
+                Recipe recipe = candidates.get(choices.choose(candidates.size()));
+                var previous = state.recipes.putIfAbsent(resourceId, recipe.id());
                 if (previous != null && !previous.equals(recipe.id()))
                 {
                     state.missing.merge(resource, remainder, SaturatingLongMath::add);
-                    return;
+                    return false;
                 }
-                State attempted = branch;
-                branch = PlanningCycleBranch.evaluate(state, () -> {
-                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), attempted,
-                            manualRecipes, manualIngredients, depth, maxDepth, budget);
-                    return attempted;
-                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
-                state.replaceWith(branch);
-                return;
+                boolean complete = resolveRecipe(resource, remainder, recipe, depth, visiting, state, choices);
+                if (!complete || !state.missing.isEmpty()) choices.stopRecording();
+                return complete && state.missing.isEmpty();
             }
-            State best = null;
-            Recipe bestRecipe = null;
-            State cyclicFallback=null;boolean foundViableCandidate = false;
-            for (Recipe recipe : candidates)
-            {
-                if(!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget))break;
-                State branch = state.copy();
-                Identifier previous = branch.recipes.putIfAbsent(resourceId, recipe.id());
-                if (previous != null && !previous.equals(recipe.id())) continue;
-                State attempted = branch;
-                var evaluated=PlanningCycleBranch.evaluateWithStatus(state, () -> {
-                    resolveRecipe(resource, remainder, recipe, byOutput, new HashSet<>(visiting), attempted,
-                            manualRecipes, manualIngredients, depth, maxDepth, budget);
-                    return attempted;
-                }, baseline -> rejectCyclicCandidate(baseline, resource, remainder));
-                branch=evaluated.state();
-                if (evaluated.cyclic() || branch.cyclicDependencies > state.cyclicDependencies)
-                {
-                    if (cyclicFallback == null) cyclicFallback = branch;
-                    continue;
-                }
-                foundViableCandidate |= branch.missing.equals(state.missing);
-                if (best == null || compare(branch, recipe, best, bestRecipe) < 0)
-                {
-                    best = branch;
-                    bestRecipe = recipe;
-                }
-                if (missingAmount(branch.missing) == 0) break;
-            }
-            if(best==null&&cyclicFallback!=null)state.replaceWith(cyclicFallback);
-            else if (best == null) state.missing.merge(resource, remainder, SaturatingLongMath::add);
-            else state.replaceWith(best);
+            finally { visiting.remove(resource); }
         }
-        finally { visiting.remove(resource); }
-    }
 
-    private static void resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe,
-                                      java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput, Set<IStackKey<?>> visiting,
-                                      State state, Map<String, Identifier> manualRecipes,
-                                      Map<IngredientKey, String> manualIngredients,
-                                      int depth, int maxDepth, ClientPlanningBudget budget)
-    {
-        List<List<Candidate>> options = new ArrayList<>();
-        for (Slot slot : recipe.slots())
+        private boolean resolveRecipe(IStackKey<?> output, long remainder, Recipe recipe, int depth,
+                                      Set<IStackKey<?>> visiting, State state, PlanningChoiceVector choices)
         {
-            IngredientKey key = new IngredientKey(recipe.id(), slot.index());
-            String fixed = manualIngredients.get(key);
-            if (fixed == null) fixed = state.ingredients.get(key);
-            List<Candidate> candidates;
-            if (fixed != null)
+            List<List<Candidate>> options = new ArrayList<>();
+            for (Slot slot : recipe.slots())
             {
-                String choice = fixed;
-                candidates = slot.candidates().stream().filter(candidate ->
-                        choice.equals(candidate.selection())
-                                || IngredientSelectionKey.matches(choice, candidate.key())).toList();
-                if (candidates.isEmpty()) throw new IllegalArgumentException("invalid ingredient proposal for " + key);
+                IngredientKey key = new IngredientKey(recipe.id(), slot.index());
+                String locked = lockedIngredients.get(key);
+                if (locked == null) locked = state.ingredients.get(key);
+                List<Candidate> candidates;
+                if (locked != null)
+                {
+                    String choice = locked;
+                    candidates = slot.candidates().stream().filter(candidate ->
+                            choice.equals(candidate.selection())
+                                    || IngredientSelectionKey.matches(choice, candidate.key())).toList();
+                    if (candidates.isEmpty())
+                        throw new IllegalArgumentException("invalid ingredient proposal for " + key);
+                }
+                else candidates = rankIngredients(key, slot, state);
+                options.add(candidates);
+            }
+            List<Candidate> variant;
+            if (!state.missing.isEmpty())
+                variant = options.stream().map(List::getFirst).toList();
+            else if (!optimalSearch && PlanningBranches.ingredientsRequireBranches(options))
+            {
+                List<List<Candidate>> variants = SingleSubstitutionVariants.from(options,
+                        (left, right) -> StackKeyMatch.exact(left.key(), right.key())
+                                && left.count() == right.count(),
+                        ignored -> { if (!budget.canSearch()) throw new SearchBudgetExpired(); });
+                variant = variants.get(choices.choose(variants.size()));
             }
             else
             {
-                candidates = slot.candidates().stream().sorted(Comparator
-                        .<Candidate>comparingLong(candidate -> available(state.stock,candidate.key(),slot.use())).reversed()
-                        .thenComparing(candidate -> !byOutput.apply(candidate.key()).isEmpty() ? 0 : 1)
-                        .thenComparing(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))).toList();
+                variant = new ArrayList<>(options.size());
+                for (List<Candidate> candidates : options)
+                    variant.add(candidates.get(choices.choose(candidates.size())));
             }
-            options.add(candidates);
+            return applyVariant(output, remainder, recipe, variant, depth, visiting, state, choices);
         }
 
-        if (!PlanningBranches.ingredientsRequireBranches(options))
+        private boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe, List<Candidate> variant,
+                                     int depth, Set<IStackKey<?>> visiting, State state, PlanningChoiceVector choices)
         {
-            applyVariant(output, remainder, recipe, byOutput, visiting, state, manualRecipes,
-                    manualIngredients, depth, maxDepth, budget,
-                    options.stream().map(List::getFirst).toList());
-            return;
-        }
-
-        State best = null;
-        String bestKey = null;
-        boolean foundViableCandidate = false;
-        for (List<Candidate> variant : SingleSubstitutionVariants.from(options))
-        {
-            if(!PlanningBranches.shouldTryCandidate(foundViableCandidate, budget))break;
-            State branch = state.copy();
-            try{if (!applyVariant(output, remainder, recipe, byOutput, visiting, branch, manualRecipes,
-                    manualIngredients, depth, maxDepth, budget, variant)) continue;}
-            catch (PlanningCycleBranch.Cycle ignored) { continue; }
-            if (branch.cyclicDependencies > state.cyclicDependencies) continue;
-            foundViableCandidate |= branch.missing.equals(state.missing);
-            String key = variant.stream().map(candidate -> RecipeResourceResolver.resolutionKey(candidate.key()))
-                    .collect(java.util.stream.Collectors.joining("|"));
-            if (best == null || compare(branch, recipe, best, recipe) < 0
-                    || compare(branch, recipe, best, recipe) == 0 && key.compareTo(bestKey) < 0)
+            LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
+            LinkedHashMap<IStackKey<?>, Long> durabilityInputs = new LinkedHashMap<>();
+            LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
+            long seedPerCraft = 0;
+            long consumedSeedPerCraft = 0;
+            for (int i = 0; i < variant.size(); i++)
             {
-                best = branch;
-                bestKey = key;
+                Slot slot = recipe.slots().get(i);
+                Candidate candidate = variant.get(i);
+                if (!StackKeyMatch.exact(output, candidate.key())) continue;
+                seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
+                if (!slot.use().sharedReusable())
+                    consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
             }
-            if (missingAmount(branch.missing) == 0) break;
+            SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
+                    recipe.outputCount(), seedPerCraft, consumedSeedPerCraft, remainder);
+            long crafts = shape.crafts();
+            for (int i = 0; i < variant.size(); i++)
+            {
+                Slot slot = recipe.slots().get(i);
+                Candidate candidate = variant.get(i);
+                IngredientKey key = new IngredientKey(recipe.id(), slot.index());
+                if (candidate.selectionItem() != null)
+                {
+                    String candidateItem = candidate.selection();
+                    String previous = state.ingredients.putIfAbsent(key, candidateItem);
+                    if (previous != null && !previous.equals(candidateItem)) return false;
+                }
+                boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(output, candidate.key());
+                long inputAmount = selfInput ? candidate.count()
+                        : slot.use().requiredAmount(crafts, candidate.key(), candidate.count(), state.stock);
+                (slot.use().sharedReusable() ? reusableInputs
+                        : slot.use().kind() == VirtualInputUse.Kind.DURABILITY ? durabilityInputs : inputs)
+                        .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
+            }
+            List<Demand> demands = new ArrayList<>();
+            for (var input : inputs.entrySet())
+                if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
+                    consumeLeaf(state, input.getKey(), input.getValue());
+                else demands.add(new Demand(input.getKey(), input.getValue(), false));
+            for (var input : durabilityInputs.entrySet())
+                demands.add(new Demand(input.getKey(), input.getValue(), true));
+            for (var input : reusableInputs.entrySet())
+            {
+                if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
+                {
+                    consumeLeaf(state, input.getKey(), input.getValue());
+                    continue;
+                }
+                long additional = PlanningDependencyBatcher.additionalReusableAmount(
+                        state.reusableRequirements, input.getKey(), input.getValue());
+                if (additional > 0) demands.add(new Demand(input.getKey(), additional, false));
+            }
+            boolean ok = true;
+            for (Demand demand : demands)
+            {
+                if (demand.durability())
+                {
+                    long used = consumeDurability(state, demand.key(), demand.amount());
+                    if (used >= demand.amount()) continue;
+                    if (!resolve(demand.key(), demand.amount() - used, depth + 1, visiting, state, choices))
+                    {
+                        ok = false;
+                        choices.stopRecording();
+                    }
+                }
+                else if (!resolve(demand.key(), demand.amount(), depth + 1, visiting, state, choices))
+                {
+                    ok = false;
+                    choices.stopRecording();
+                }
+            }
+            if (!ok) return false;
+            state.steps++;
+            long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
+            if (produced > remainder) state.stock.add(output, produced - remainder);
+            for (KeyAmount byproduct : recipe.byproducts())
+                state.stock.add(byproduct.key(), SaturatingLongMath.multiply(byproduct.amount(), crafts));
+            return true;
         }
-        if(best==null)throw new PlanningCycleBranch.Cycle();
-        state.replaceWith(best);
+
+        private List<Recipe> rankRecipes(IStackKey<?> resource, List<Recipe> candidates, State state)
+        {
+            var preferred = preferredRecipes.get(RecipeResourceResolver.resolutionKey(resource));
+            if (preferred == null) preferred = preferredRecipes.get(RecipeResourceResolver.sortKey(resource));
+            String preferredId = preferred == null ? null : preferred.toString();
+            return PlanningRouteOrder.order(candidates, recipe -> recipe.id().toString(), preferredId,
+                    recipe -> unstockedSlots(recipe, state), recipe -> true);
+        }
+
+        private List<Candidate> rankIngredients(IngredientKey key, Slot slot, State state)
+        {
+            String preferred = preferredIngredients.get(key);
+            return PlanningRouteOrder.order(slot.candidates(),
+                    candidate -> preferredIngredientMatches(preferred, candidate) ? preferred : candidate.selection(),
+                    preferred,
+                    candidate -> available(state.stock, candidate.key(), slot.use()) > 0 ? 0
+                            : !byOutput.apply(candidate.key()).isEmpty() ? 1 : 2,
+                    candidate -> true);
+        }
+
+        private int unstockedSlots(Recipe recipe, State state)
+        {
+            int unstocked = 0;
+            for (Slot slot : recipe.slots())
+            {
+                boolean stockedSlot = false;
+                for (Candidate candidate : slot.candidates())
+                    if (available(state.stock, candidate.key(), slot.use()) > 0)
+                    {
+                        stockedSlot = true;
+                        break;
+                    }
+                if (!stockedSlot) unstocked++;
+            }
+            return PlanningRouteOrder.unstockedSlotCount(unstocked);
+        }
     }
 
-    private static boolean applyVariant(IStackKey<?> output, long remainder, Recipe recipe,
-                                        java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput,
-                                        Set<IStackKey<?>> visiting, State state,
-                                        Map<String, Identifier> manualRecipes,
-                                        Map<IngredientKey, String> manualIngredients,
-                                        int depth, int maxDepth, ClientPlanningBudget budget,
-                                        List<Candidate> variant)
+    private static final class SearchBudgetExpired extends RuntimeException
     {
-        LinkedHashMap<IStackKey<?>, Long> inputs = new LinkedHashMap<>();
-        LinkedHashMap<IStackKey<?>, Long> durabilityInputs=new LinkedHashMap<>();
-        LinkedHashMap<IStackKey<?>, Long> reusableInputs = new LinkedHashMap<>();
-        long seedPerCraft = 0;
-        long consumedSeedPerCraft = 0;
-        for (int i = 0; i < variant.size(); i++)
-        {
-            Slot slot = recipe.slots().get(i);
-            Candidate candidate = variant.get(i);
-            if (!StackKeyMatch.exact(output, candidate.key())) continue;
-            seedPerCraft = SaturatingLongMath.add(seedPerCraft, candidate.count());
-            if (!slot.use().sharedReusable())
-                consumedSeedPerCraft = SaturatingLongMath.add(consumedSeedPerCraft, candidate.count());
-        }
-        SelfIncrementRecipe.Shape shape = SelfIncrementRecipe.analyze(
-                recipe.outputCount(), seedPerCraft, consumedSeedPerCraft, remainder);
-        long crafts = shape.crafts();
-        for (int i = 0; i < variant.size(); i++)
-        {
-            Slot slot = recipe.slots().get(i);
-            Candidate candidate = variant.get(i);
-            IngredientKey key = new IngredientKey(recipe.id(), slot.index());
-            if (candidate.selectionItem() != null)
-            {
-                String candidateItem = candidate.selection();
-                String previous = state.ingredients.putIfAbsent(key, candidateItem);
-                if (previous != null && !previous.equals(candidateItem)) return false;
-            }
-            boolean selfInput = shape.selfIncrement() && StackKeyMatch.exact(output, candidate.key());
-            long inputAmount = selfInput ? candidate.count()
-                    : slot.use().requiredAmount(crafts, candidate.key(), candidate.count(),state.stock);
-            (slot.use().sharedReusable()?reusableInputs:slot.use().kind()==VirtualInputUse.Kind.DURABILITY
-                    ?durabilityInputs:inputs)
-                    .merge(candidate.key(), inputAmount, SaturatingLongMath::add);
-        }
-        for (var input : inputs.entrySet())
-            if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
-                consumeLeaf(state, input.getKey(), input.getValue());
-            else resolve(input.getKey(), input.getValue(), byOutput, visiting, state, manualRecipes,
-                        manualIngredients, depth + 1, maxDepth, budget);
-        for(var input:durabilityInputs.entrySet())
-        {
-            long used=consumeDurability(state,input.getKey(),input.getValue());
-            if(used<input.getValue())resolve(input.getKey(),input.getValue()-used,byOutput,visiting,state,
-                    manualRecipes,manualIngredients,depth+1,maxDepth,budget);
-        }
-        for (var input : reusableInputs.entrySet())
-        {
-            if (shape.selfIncrement() && StackKeyMatch.exact(output, input.getKey()))
-            {
-                consumeLeaf(state, input.getKey(), input.getValue());
-                continue;
-            }
-            long additional = PlanningDependencyBatcher.additionalReusableAmount(
-                    state.reusableRequirements, input.getKey(), input.getValue());
-            if (additional > 0)
-                resolve(input.getKey(), additional, byOutput, visiting, state, manualRecipes,
-                        manualIngredients, depth + 1, maxDepth, budget);
-        }
-        state.steps++;
-        long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
-        if (produced > remainder) state.stock.add(output, produced - remainder);
-        for (KeyAmount byproduct : recipe.byproducts())
-            state.stock.add(byproduct.key(), SaturatingLongMath.multiply(byproduct.amount(), crafts));
-        return true;
+        private SearchBudgetExpired() { super(null, null, false, false); }
     }
+
+    private record Demand(IStackKey<?> key, long amount, boolean durability) {}
 
     private static void consumeLeaf(State state, IStackKey<?> key, long amount)
     {
@@ -354,13 +431,14 @@ public final class ClientRecipePlanner
     {return state.stock.consume(requested.getTypeId(),key->VirtualInputUse.matchesDurabilityVariant(requested,key),
             amount,(key,used)->state.usedStock.merge(key,used,SaturatingLongMath::add));}
 
-    private static int compare(State left, Recipe leftRecipe, State right, Recipe rightRecipe)
+    private static int compareFailed(State left, State right)
     {
+        boolean leftCycle = left.cyclicDependencies > 0;
+        boolean rightCycle = right.cyclicDependencies > 0;
+        if (leftCycle != rightCycle) return leftCycle ? 1 : -1;
         int missing = Long.compare(missingAmount(left.missing), missingAmount(right.missing));
         if (missing != 0) return missing;
-        int steps = Integer.compare(left.steps, right.steps);
-        if (steps != 0) return steps;
-        return leftRecipe.id().toString().compareTo(rightRecipe.id().toString());
+        return Integer.compare(left.steps, right.steps);
     }
 
     private static long missingAmount(Map<?, Long> missing)
@@ -368,14 +446,6 @@ public final class ClientRecipePlanner
         long total = 0;
         for (long value : missing.values()) total = SaturatingLongMath.add(total, value);
         return total;
-    }
-
-    private static State rejectCyclicCandidate(State baseline, IStackKey<?> resource, long remainder)
-    {
-        State rejected = baseline.copy();
-        rejected.cyclicDependencies++;
-        rejected.missing.merge(resource, remainder, SaturatingLongMath::add);
-        return rejected;
     }
 
     public static final class Catalog
@@ -747,6 +817,7 @@ public final class ClientRecipePlanner
         private Map<IngredientKey, String> ingredients;
         private boolean rootNoRecipe;
         private int cyclicDependencies;
+        private boolean succeeded;
         private State(MatchingStock<IStackKey<?>, Identifier> stock,
                       Map<IStackKey<?>, Long> missing,
                       Map<IStackKey<?>, Long> reusableRequirements,
@@ -760,12 +831,14 @@ public final class ClientRecipePlanner
         { State result = new State(stock.copy(), new LinkedHashMap<>(missing),
                 new LinkedHashMap<>(reusableRequirements), new LinkedHashMap<>(usedStock), steps,
                 new LinkedHashMap<>(recipes), new LinkedHashMap<>(ingredients));
-            result.rootNoRecipe = rootNoRecipe; result.cyclicDependencies = cyclicDependencies; return result; }
+            result.rootNoRecipe = rootNoRecipe; result.cyclicDependencies = cyclicDependencies;
+            result.succeeded = succeeded; return result; }
         private void replaceWith(State state)
         { stock = state.stock; missing = state.missing; reusableRequirements = state.reusableRequirements;
             usedStock = state.usedStock;
             steps = state.steps; recipes = state.recipes; ingredients = state.ingredients;
-            rootNoRecipe = state.rootNoRecipe; cyclicDependencies = state.cyclicDependencies; }
+            rootNoRecipe = state.rootNoRecipe; cyclicDependencies = state.cyclicDependencies;
+            succeeded = state.succeeded; }
     }
 
     private static Identifier itemId(IStackKey<?> key)
@@ -851,5 +924,12 @@ public final class ClientRecipePlanner
     {
         return state.stock.consume(requested.getTypeId(), key -> StackKeyMatch.exact(requested, key), amount,
                 (key, used) -> state.usedStock.merge(key, used, SaturatingLongMath::add));
+    }
+
+    static boolean preferredIngredientMatches(String preferred, Candidate candidate)
+    {
+        return preferred != null
+                && (preferred.equals(candidate.selection())
+                || IngredientSelectionKey.matches(preferred, candidate.key()));
     }
 }

@@ -47,6 +47,8 @@ For a tag or OR-ingredient, click the candidate marker at the top-left of its it
 
 Manual recipe and ingredient choices are saved as planner preferences and reused in later trees. When the current candidate already has a saved preference, a **Forget** button appears at the top-right of the candidate page; clicking it deletes that preference and restores automatic selection. A missing, unloaded, or no-longer-valid preference is ignored. The server still validates every selected recipe and ingredient when previewing and submitting the order.
 
+With inventory feasibility search enabled, saved preferences are tried first. If a preferred route prevents the complete order from using the available network stock, the search can backtrack and choose another route. Choices explicitly made in the current tree remain fixed. Each resource has one production recipe per plan. Search stops at the first complete craftable plan; a shorter chain is a secondary heuristic, rather than a guarantee of the globally shortest plan. Exhausting a search budget does not prove that no solution exists.
+
 ## Material summary
 
 The panel on the right presents materials as an icon grid with exact quantities in each tooltip. Its views distinguish:

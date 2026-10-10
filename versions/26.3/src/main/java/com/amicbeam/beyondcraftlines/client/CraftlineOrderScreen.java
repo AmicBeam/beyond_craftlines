@@ -2024,6 +2024,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Map<ClientRecipePlanner.IngredientKey, String> forcedIngredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        LinkedHashMap<String, Identifier> savedRecipes = new LinkedHashMap<>(defaultResourceRecipes);
+        defaultRecipes.forEach((output, recipe) -> savedRecipes.put(itemToken(output), recipe));
+        Map<ClientRecipePlanner.IngredientKey, String> savedIngredients = new LinkedHashMap<>();
+        defaultIngredients.forEach((key, value) -> savedIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         Map<String, Identifier> fixedTreeRecipes = new LinkedHashMap<>(visibleTreeRecipes());
         fixedTreeRecipes.putAll(forcedRecipes);
         Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = visibleTreeIngredients();
@@ -2049,8 +2054,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             long searchDeadline = System.nanoTime() + ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS;
             boolean optimalSearch=false;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
-                    stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,optimalSearch); }
+                    stock, target, count, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients,
+                    maxDepth, maxNodes, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch); }
             catch (RuntimeException exception) { failure = exception; }
             boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
@@ -2168,6 +2173,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         showMissingMaterials(completed.missing());
                         previewError=planningOutcomeMessage(planningOutcome,completed.missing());
                         rebuildTree(false);
+                        if (CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())
+                            startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch,
+                                    maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients,
+                                    savedRecipes, savedIngredients);
                         return;
                     }
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -2195,14 +2204,66 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     if (orderButton != null) orderButton.active = true;
                     rebuildTree(false);
                     boolean submitWasQueued=submitWhenReady;
-                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation,nonce,target,count,stockRevision,recipeEpoch,maxDepth,maxNodes,stock,preferredRecipes,preferredIngredients);
+                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch, maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients);
                 });
         });
     }
 
-    private void startOptimalPlanning(long generation,long nonce,IStackKey<?> target,long count,long stockRevision,long recipeEpoch,int maxDepth,int maxNodes,Map<IStackKey<?>,Long> stock,Map<String,Identifier> preferredRecipes,Map<ClientRecipePlanner.IngredientKey,String> preferredIngredients)
+    private void startOptimalPlanning(long generation, long nonce, IStackKey<?> target, long count,
+                                      long stockRevision, long recipeEpoch, int maxDepth, int maxNodes,
+                                      Map<IStackKey<?>, Long> stock,
+                                      Map<String, Identifier> lockedRecipes,
+                                      Map<ClientRecipePlanner.IngredientKey, String> lockedIngredients,
+                                      Map<String, Identifier> preferredRecipes,
+                                      Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients)
     {
-        optimizationTask=OPTIMIZATION_EXECUTOR.submit(()->{ClientRecipePlanner.Proposal improved;try{improved=ClientRecipePlanner.plan(planningCatalog,stock,target,count,preferredRecipes,preferredIngredients,maxDepth,maxNodes,ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS,true);}catch(RuntimeException ignored){minecraft.execute(()->{if(generation==planningGeneration)optimizationTask=null;});return;}minecraft.execute(()->{if(generation!=planningGeneration||nonce!=previewNonce)return;optimizationTask=null;if(!improved.craftable())return;automaticRecipes.clear();automaticResourceRecipes.clear();improved.recipes().forEach((output,recipe)->{automaticResourceRecipes.put(output,recipe);Identifier item=itemOutputForToken(output);if(item!=null)automaticRecipes.put(item,recipe);});automaticIngredients.clear();improved.ingredients().forEach((key,value)->automaticIngredients.put(new IngredientSlotKey(key.recipe(),key.slot()),value));uploadProposal(nonce,target,count,stockRevision,recipeEpoch,improved);rebuildTree(false);com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info("{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,nonce,improved.recipes().size(),improved.ingredients().size(),com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));});});
+        optimizationTask = OPTIMIZATION_EXECUTOR.submit(() -> {
+            ClientRecipePlanner.Proposal improved;
+            try
+            {
+                improved = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
+                        lockedRecipes, lockedIngredients, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
+                        ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, true);
+            }
+            catch (RuntimeException ignored)
+            {
+                minecraft.execute(() -> { if (generation == planningGeneration) optimizationTask = null; });
+                return;
+            }
+            minecraft.execute(() -> {
+                if (generation != planningGeneration || nonce != previewNonce) return;
+                optimizationTask = null;
+                if (!improved.craftable()) return;
+                automaticRecipes.clear();
+                automaticResourceRecipes.clear();
+                improved.recipes().forEach((output, recipe) -> {
+                    automaticResourceRecipes.put(output, recipe);
+                    Identifier item = itemOutputForToken(output);
+                    if (item != null) automaticRecipes.put(item, recipe);
+                });
+                automaticIngredients.clear();
+                improved.ingredients().forEach((key, value) -> automaticIngredients.put(
+                        new IngredientSlotKey(key.recipe(), key.slot()), value));
+                uploadProposal(nonce, target, count, stockRevision, recipeEpoch, improved);
+                clearDisplayMetrics();
+                improved.extraction().entrySet().stream().filter(entry -> !com.amicbeam.beyondcraftlines
+                                .common.crafting.StackKeyMatch.exact(target, entry.getKey()))
+                        .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+                                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
+                        .forEach(entry -> extractionMaterials.put(entry.getKey(), entry.getValue()));
+                materialSummaryReady = true;
+                proposalReady = true;
+                planningOutcome = com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.READY;
+                previewError = "";
+                if (orderButton != null) orderButton.active = true;
+                rebuildTree(false);
+                com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
+                        "{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
+                        nonce, improved.recipes().size(), improved.ingredients().size(),
+                        com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
+            });
+        });
     }
 
     private Map<String, Identifier> visibleTreeRecipes()

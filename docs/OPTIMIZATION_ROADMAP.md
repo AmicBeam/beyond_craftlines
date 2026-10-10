@@ -1,6 +1,6 @@
 # Beyond Craftlines 优化优先级
 
-本路线只从本仓库现有架构、已复现问题和三版本约束推导；外部 ARR 仓库仅用于行为调研，未复制其代码或结构。
+本路线只从本仓库现有架构、已复现问题和五版本约束推导；外部 ARR 仓库仅用于行为调研，未复制其代码或结构。
 
 ## P0：正确性闭环（0.5.0 已实现）
 
@@ -20,5 +20,5 @@
 
 1. 抽出 viewer-neutral 下单入口，逐步把 `SHOW_JEI_ORDER_BUTTON_EVERYWHERE` 等命名迁移为 recipe-viewer 中立名称。
 2. 保持 JEI/EMI 只负责展示与选择，机器执行语义由有界协议和显式 profile/accessor 决定；不支持的 viewer-only 配方不猜测执行方式。
-3. 建立 1.20.1 NBT、1.21.1/26.1.2 Data Component、耐久工具、容器、流体和化学品的跨版本契约测试。
+3. 建立 1.20.1 NBT、1.21.1/26.1.2/26.2/26.3 Data Component、耐久工具、容器、流体和化学品的跨版本契约测试。
 4. 在不扩大运行时扫描的前提下增加配方布局/偏好负缓存，并以配方 reload/runtime generation 精确失效。

@@ -2140,6 +2140,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Map<ClientRecipePlanner.IngredientKey, String> forcedIngredients = new LinkedHashMap<>();
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        LinkedHashMap<String, ResourceLocation> savedRecipes = new LinkedHashMap<>(defaultResourceRecipes);
+        defaultRecipes.forEach((output, recipe) -> savedRecipes.put(itemToken(output), recipe));
+        Map<ClientRecipePlanner.IngredientKey, String> savedIngredients = new LinkedHashMap<>();
+        defaultIngredients.forEach((key, value) -> savedIngredients.put(
+                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         Map<String, ResourceLocation> fixedTreeRecipes = new LinkedHashMap<>(visibleTreeRecipes());
         fixedTreeRecipes.putAll(forcedRecipes);
         Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = visibleTreeIngredients();
@@ -2167,8 +2172,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             // non-blocking pass and must never keep the order button disabled.
             boolean optimalSearch = false;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
-                    stock, target, count, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                    ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch); }
+                    stock, target, count, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients,
+                    maxDepth, maxNodes, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch); }
             catch (RuntimeException exception) { failure = exception; }
             boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
@@ -2286,6 +2291,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         showMissingMaterials(completed.missing());
                         previewError = planningOutcomeMessage(planningOutcome, completed.missing());
                         rebuildTree(false);
+                        if (CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())
+                            startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch,
+                                    maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients,
+                                    savedRecipes, savedIngredients);
                         return;
                     }
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -2316,7 +2325,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     if (submitWasQueued) submit();
                     else if (CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())
                         startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch,
-                                maxDepth, maxNodes, stock, preferredRecipes, preferredIngredients);
+                                maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients,
+                                savedRecipes, savedIngredients);
                 });
         });
     }
@@ -2324,6 +2334,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void startOptimalPlanning(long generation, long nonce, IStackKey<?> target, long count,
                                       long stockRevision, long recipeEpoch, int maxDepth, int maxNodes,
                                       Map<IStackKey<?>, Long> stock,
+                                      Map<String, ResourceLocation> lockedRecipes,
+                                      Map<ClientRecipePlanner.IngredientKey, String> lockedIngredients,
                                       Map<String, ResourceLocation> preferredRecipes,
                                       Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients)
     {
@@ -2332,7 +2344,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             try
             {
                 improved = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
-                        preferredRecipes, preferredIngredients, maxDepth, maxNodes,
+                        lockedRecipes, lockedIngredients, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
                         ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, true);
             }
             catch (RuntimeException ignored)
@@ -2355,6 +2367,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 improved.ingredients().forEach((key, value) -> automaticIngredients.put(
                         new IngredientSlotKey(key.recipe(), key.slot()), value));
                 uploadProposal(nonce, target, count, stockRevision, recipeEpoch, improved);
+                clearDisplayMetrics();
+                improved.extraction().entrySet().stream().filter(entry -> !com.amicbeam.beyondcraftlines
+                                .common.crafting.StackKeyMatch.exact(target, entry.getKey()))
+                        .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(
+                                com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver::sortKey)))
+                        .forEach(entry -> extractionMaterials.put(entry.getKey(), entry.getValue()));
+                materialSummaryReady = true;
+                proposalReady = true;
+                planningOutcome = com.amicbeam.beyondcraftlines.common.crafting.PlanningOutcome.READY;
+                previewError = "";
+                if (orderButton != null) orderButton.active = true;
                 rebuildTree(false);
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                         "{} client optimal plan ready nonce={} recipes={} ingredients={} target={}",

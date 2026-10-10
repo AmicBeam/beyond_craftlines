@@ -25,7 +25,7 @@ public final class CraftlinesConfig {
             .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
     public static final ForgeConfigSpec.BooleanValue ENABLE_OPTIMAL_RECIPE_SEARCH = CLIENT_BUILDER
-            .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
+            .comment("Search alternative recipes and ingredient variants until one complete inventory-feasible plan is found, preferring saved recipe choices. This is a heuristic first-complete search, not a mathematically optimal solver. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
     public static final ForgeConfigSpec.BooleanValue PRELOAD_ALL_RECIPE_TYPES = CLIENT_BUILDER

@@ -228,6 +228,8 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'com.google.code.gson:gson:2.11.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Match the Minecraft logging bridge in the real-planner test classpath.
+    testRuntimeOnly 'org.slf4j:slf4j-api:2.0.9'
 }
 
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
@@ -257,3 +259,7 @@ tasks.withType(Jar).configureEach {
     manifest { attributes 'MixinConfigs': 'beyond_craftlines.mixins.json' }
 }
 tasks.named('test', Test) { useJUnitPlatform() }
+
+// The generated shared planner tests need the same mapped Minecraft types as main sources.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath

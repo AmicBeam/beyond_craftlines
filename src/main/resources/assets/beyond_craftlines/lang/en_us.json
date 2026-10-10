@@ -219,6 +219,8 @@
   "error.beyond_craftlines.planning_protocol_invalid": "Recipe planning data is incomplete; refresh and try again",
   "error.beyond_craftlines.planning_server_budget": "The recipe tree reached the server planning limit",
   "gui.beyond_craftlines.choose_tag_item": "Choose tag ingredient",
+  "config.beyond_craftlines.show_cyclic_tree_nodes": "Show the bottom repeated node of a cyclic branch",
+  "gui.beyond_craftlines.no_recipe": "Do not use a recipe (stock only)",
   "gui.beyond_craftlines.choose_recipe": "Choose recipe",
   "tooltip.beyond_craftlines.recipe_preview": "Recipe preview · %s",
   "tooltip.beyond_craftlines.recipe_type": "Recipe type: %s",

@@ -35,6 +35,11 @@ public final class CraftlinesConfig {
 
     public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .define("collapseDuplicateTreeResources", true);
+    public static final ForgeConfigSpec.BooleanValue SHOW_CYCLIC_TREE_NODES = CLIENT_BUILDER
+            .comment("Show the bottom repeated-ancestor marker of a cyclic recipe branch. This only changes the tree display.")
+            .translation("config.beyond_craftlines.show_cyclic_tree_nodes")
+            .define("showCyclicTreeNodes", false);
+
     public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
             .pop().push("jei").define("showOrderButtonEverywhere", true);
     public static final ForgeConfigSpec.IntValue ORDER_STATUS_REFRESH_INTERVAL_TICKS = CLIENT_BUILDER

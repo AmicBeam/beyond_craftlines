@@ -131,6 +131,13 @@ public final class ClientRecipePlanner
             Identifier selected = manualRecipes.get(resourceId);
             if (selected == null) selected = manualRecipes.get(RecipeResourceResolver.sortKey(resource));
             if (selected == null) selected = state.recipes.get(resourceId);
+            if (RecipeResolutionOverrides.NO_RECIPE.equals(selected))
+            {
+                state.recipes.put(resourceId, selected);
+                if (depth == 0) state.rootNoRecipe = true;
+                state.missing.merge(resource, remainder, SaturatingLongMath::add);
+                return;
+            }
             if (selected != null)
             {
                 Identifier choice = selected;

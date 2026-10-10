@@ -13,6 +13,9 @@ import java.util.Set;
 /** Player-selected recipe and ingredient resolutions, validated again by the server planner. */
 public final class RecipeResolutionOverrides
 {
+    /** Explicitly consume stock without recursively crafting this resource. */
+    public static final ResourceLocation NO_RECIPE = ResourceLocation.fromNamespaceAndPath("beyond_craftlines", "no_recipe");
+
     public static final RecipeResolutionOverrides EMPTY = new RecipeResolutionOverrides(List.of(), List.of());
 
     private final Map<String, ResourceLocation> recipes;

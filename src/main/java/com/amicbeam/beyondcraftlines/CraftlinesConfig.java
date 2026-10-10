@@ -57,6 +57,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")
             .define("collapseDuplicateTreeResources", true);
 
+    public static final ModConfigSpec.BooleanValue SHOW_CYCLIC_TREE_NODES = CLIENT_BUILDER
+            .comment("Show the bottom repeated-ancestor marker of a cyclic recipe branch. This only changes the tree display.")
+            .translation("config.beyond_craftlines.show_cyclic_tree_nodes")
+            .define("showCyclicTreeNodes", false);
+
     public static final ModConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
             .pop()
             .push("jei")

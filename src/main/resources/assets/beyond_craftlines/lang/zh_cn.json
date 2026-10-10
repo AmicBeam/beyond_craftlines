@@ -219,6 +219,8 @@
   "error.beyond_craftlines.planning_protocol_invalid": "配方规划数据不完整，请刷新后重试",
   "error.beyond_craftlines.planning_server_budget": "配方树过于复杂，已达到服务端规划上限",
   "gui.beyond_craftlines.choose_tag_item": "选择 tag 原料",
+  "config.beyond_craftlines.show_cyclic_tree_nodes": "显示成环分支最底下的重复节点",
+  "gui.beyond_craftlines.no_recipe": "不使用配方（仅使用库存）",
   "gui.beyond_craftlines.choose_recipe": "选择配方",
   "tooltip.beyond_craftlines.recipe_preview": "配方预览 · %s",
   "tooltip.beyond_craftlines.recipe_type": "配方类型：%s",

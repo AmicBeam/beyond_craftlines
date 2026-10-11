@@ -22,9 +22,10 @@ available from the repository above.
 
 ## Sky Logistics
 
-The device resource-filter controls reuse adapted pixel glyph rendering from Sky Logistics
+The device resource-filter controls reuse adapted pixel glyph rendering and tinted vanilla
+button chrome from Sky Logistics
 `versions/1.21.1/src/main/java/com/skylogistics/client/FilterListScreen.java`.
 The ghost-slot pickup, container sampling and NBT matching and damage normalization follow its filter list. Ingredient/product target glyphs
 are authored in Beyond: Craftlines.
 Sky Logistics and Beyond: Craftlines are distributed under GNU General Public License version 3.
-The adapted glyph source is included as `FilterControlIcons.java` in each supported source tree.
+The adapted glyph and button-rendering source is included as `FilterControlIcons.java` in each supported source tree.

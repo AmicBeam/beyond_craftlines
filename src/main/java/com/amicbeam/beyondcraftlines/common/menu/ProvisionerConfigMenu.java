@@ -39,7 +39,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         int count = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.SIZE;
         for (int index = 0; index < count; index++)
             addSlot(new net.minecraft.world.inventory.Slot(filterSamples, index,
-                    58 + index % 9 * 18, 53 + index / 9 * 18) {
+                    58 + index % 9 * 18, 32 + index / 9 * 18) {
                 @Override public boolean isActive() { return filterEditing; }
                 @Override public boolean mayPlace(ItemStack stack) { return false; }
                 @Override public boolean mayPickup(Player player) { return false; }

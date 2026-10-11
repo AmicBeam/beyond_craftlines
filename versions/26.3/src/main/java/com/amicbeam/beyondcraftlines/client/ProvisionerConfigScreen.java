@@ -151,7 +151,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     public net.minecraft.client.renderer.Rect2i filterTargetArea(int slot)
     { return new net.minecraft.client.renderer.Rect2i(leftPos + 57 + slot % ResourceFilter.COLUMNS * 18,
-            topPos + 52 + slot / ResourceFilter.COLUMNS * 18, 18, 18); }
+            topPos + 31 + slot / ResourceFilter.COLUMNS * 18, 18, 18); }
 
     public void setFilterEntry(int slot, IStackKey<?> key)
     {
@@ -203,7 +203,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                 };
                 menu.setResourceFilter(filter);
                 sendResourceFilter();
-            }).bounds(x, topPos + 27, option == 6 ? 20 : 21, 20).build());
+            }).bounds(x, topPos + 111, option == 6 ? 20 : 21, 20).build());
             button.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.filter." + labels[option])));
             filterControls.add(button);
         }
@@ -623,7 +623,6 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         if (filterEditing)
         {
             graphics.text(font, Component.translatable("container.inventory"), 57, 139, 0x404040, false);
-            graphics.text(font, Component.translatable("gui.beyond_craftlines.filter.help"), 12, 127, 0x404040, false);
             return;
         }
         Component help = manualFallback

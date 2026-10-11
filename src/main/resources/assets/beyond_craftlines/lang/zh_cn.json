@@ -320,7 +320,6 @@
   "gui.beyond_craftlines.filter.blacklist": "黑名单",
   "gui.beyond_craftlines.filter.whitelist": "白名单",
   "gui.beyond_craftlines.filter.clear": "清空",
-  "gui.beyond_craftlines.filter.help": "拿取物品后点击标记格；Shift 点击快捷添加",
   "gui.beyond_craftlines.order_message.resource_filter_blocked": "资源被端点过滤列表拦截",
   "gui.beyond_craftlines.filter.nbt_ignore": "忽略 NBT／组件",
   "gui.beyond_craftlines.filter.nbt_match": "匹配 NBT／组件",

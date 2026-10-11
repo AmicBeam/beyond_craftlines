@@ -320,7 +320,6 @@
   "gui.beyond_craftlines.filter.blacklist": "Blacklist",
   "gui.beyond_craftlines.filter.whitelist": "Whitelist",
   "gui.beyond_craftlines.filter.clear": "Clear",
-  "gui.beyond_craftlines.filter.help": "Pick up a sample; Shift-click to add",
   "gui.beyond_craftlines.order_message.resource_filter_blocked": "Resource blocked by endpoint filter",
   "gui.beyond_craftlines.filter.nbt_ignore": "Ignore NBT / components",
   "gui.beyond_craftlines.filter.nbt_match": "Match NBT / components",

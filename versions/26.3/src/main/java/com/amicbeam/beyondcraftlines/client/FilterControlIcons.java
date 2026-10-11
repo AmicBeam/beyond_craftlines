@@ -2,27 +2,41 @@ package com.amicbeam.beyondcraftlines.client;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.components.WidgetSprites;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.RenderPipelines;
+
 
 /** Pixel glyphs adapted from Sky Logistics FilterListScreen (GPL-3.0). */
 public final class FilterControlIcons
 {
+    private static final WidgetSprites BUTTON_SPRITES = new WidgetSprites(
+            Identifier.withDefaultNamespace("widget/button"),
+            Identifier.withDefaultNamespace("widget/button_disabled"),
+            Identifier.withDefaultNamespace("widget/button_highlighted"));
+
     private FilterControlIcons() {}
 
     public static void draw(GuiGraphicsExtractor graphics, AbstractButton button, int option, boolean selected)
     {
-        if (selected)
-        {
-            int color = option == 0 ? 0xFF3F8F3F : option == 1 ? 0xFFB84343 : 0xFF2F7F8C;
-            int x = button.getX(), y = button.getY(), w = button.getWidth(), h = button.getHeight();
-            graphics.fill(x, y, x + w, y + 1, color);
-            graphics.fill(x, y + h - 1, x + w, y + h, color);
-            graphics.fill(x, y, x + 1, y + h, color);
-            graphics.fill(x + w - 1, y, x + w, y + h, color);
-        }
+        int tint = !selected ? 0xFFFFFFFF : switch (option) {
+            case 0 -> 0xFF3F8F3F;
+            case 1 -> 0xFFB84343;
+            case 2, 4 -> 0xFF3A8D99;
+            default -> 0xFF2F7F8C;
+        };
+        drawButtonChrome(graphics, button, tint);
         if (option < 2) drawWhitelistIcon(graphics, button, option == 0, selected);
         else if (option < 4) drawNbtIcon(graphics, button, option == 3, selected);
         else if (option < 6) drawFilterTargetIcon(graphics, button, option == 5);
         else drawClearIcon(graphics, button);
+    }
+
+    /** Uses Sky Logistics' tinted vanilla button chrome for every selected/hover state. */
+    private static void drawButtonChrome(GuiGraphicsExtractor graphics, AbstractButton button, int tint)
+    {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BUTTON_SPRITES.get(button.active, button.isHovered()),
+                button.getX(), button.getY(), button.getWidth(), button.getHeight(), tint);
     }
 
     private static void drawWhitelistIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean allow, boolean selected) {

@@ -227,6 +227,8 @@
   "gui.beyond_craftlines.no_recipe": "Do not use a recipe (stock only)",
   "gui.beyond_craftlines.choose_recipe": "Choose recipe",
   "tooltip.beyond_craftlines.recipe_preview": "Recipe preview · %s",
+  "tooltip.beyond_craftlines.materials_and_more": "%s and other materials",
+  "tooltip.beyond_craftlines.no_materials": "No materials",
   "tooltip.beyond_craftlines.recipe_type": "Recipe type: %s",
   "tooltip.beyond_craftlines.recipe_type_localized": "Recipe type: %s (%s)",
   "tooltip.beyond_craftlines.recipe_id": "Recipe ID: %s",

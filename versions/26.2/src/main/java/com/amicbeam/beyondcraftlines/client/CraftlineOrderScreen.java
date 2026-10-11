@@ -1728,13 +1728,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void renderRecipeCandidateTooltip(GuiGraphicsExtractor graphics, RecipeHolder<?> recipe, IStackKey<?> output,
                                               int mouseX, int mouseY)
     {
-        List<Component> lines = List.of(
-                output.getRender().getDisplayName(output),
-                localizedRecipeType(recipe));
         List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> inputs =
                 com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                         .ingredientsForOutput(recipe.value(), output)
                         .stream().map(ingredient -> ingredient.candidates().getFirst()).toList();
+        Component title = Component.translatable("tooltip.beyond_craftlines.no_materials");
+        if (!inputs.isEmpty())
+        {
+            IStackKey<?> firstInput = inputs.getFirst().key();
+            title = firstInput.getRender().getDisplayName(firstInput);
+            if (inputs.size() > 1)
+                title = Component.translatable("tooltip.beyond_craftlines.materials_and_more", title);
+        }
+        List<Component> lines = List.of(title, localizedRecipeType(recipe));
         graphics.setTooltipForNextFrame(font, lines, Optional.<TooltipComponent>of(
                 new RecipePreviewTooltip(inputs,
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver

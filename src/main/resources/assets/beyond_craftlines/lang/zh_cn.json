@@ -227,6 +227,8 @@
   "gui.beyond_craftlines.no_recipe": "不使用配方（仅使用库存）",
   "gui.beyond_craftlines.choose_recipe": "选择配方",
   "tooltip.beyond_craftlines.recipe_preview": "配方预览 · %s",
+  "tooltip.beyond_craftlines.materials_and_more": "%s等材料",
+  "tooltip.beyond_craftlines.no_materials": "无材料",
   "tooltip.beyond_craftlines.recipe_type": "配方类型：%s",
   "tooltip.beyond_craftlines.recipe_type_localized": "配方类型：%s（%s）",
   "tooltip.beyond_craftlines.recipe_id": "配方 ID：%s",

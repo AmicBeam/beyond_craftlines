@@ -13,6 +13,12 @@ public final class ResourceFilterRules
     public static final int SIZE = COLUMNS * ROWS;
     private ResourceFilterRules() {}
 
+    public static boolean matchesItemMetadata(boolean sameNbt, boolean damageable, boolean sameDamage,
+            boolean matchNbt, boolean matchDurability)
+    {
+        return (!matchNbt || sameNbt) && (!matchDurability || !damageable || sameDamage);
+    }
+
     public static <T> boolean accepts(boolean whitelist, List<T> entries, T key,
             Predicate<T> empty, BiPredicate<T, T> same)
     {

@@ -1,6 +1,5 @@
 package com.amicbeam.beyondcraftlines.common.data;
 
-import com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch;
 import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
 import com.wintercogs.beyonddimensions.api.storage.key.StackKeyRegistry;
 import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
@@ -15,12 +14,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Fixed ghost slots; an empty blacklist preserves the behavior of older saves. */
-public record ResourceFilter(boolean whitelist, List<IStackKey<?>> entries)
+public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchDurability, List<IStackKey<?>> entries)
 {
     public static final int COLUMNS = ResourceFilterRules.COLUMNS;
     public static final int ROWS = ResourceFilterRules.ROWS;
     public static final int SIZE = COLUMNS * ROWS;
-    public static final ResourceFilter EMPTY = new ResourceFilter(false, List.of());
+    public static final ResourceFilter EMPTY = new ResourceFilter(false, false, false, List.of());
+
+    /** Legacy constructor retains the component-exact behavior of earlier callers. */
+    public ResourceFilter(boolean whitelist, List<IStackKey<?>> entries)
+    { this(whitelist, true, true, entries); }
+
+    public ResourceFilter withOptions(boolean whitelist, boolean matchNbt, boolean matchDurability)
+    { return new ResourceFilter(whitelist, matchNbt, matchDurability, entries); }
+
+    public ResourceFilter clear()
+    { return new ResourceFilter(whitelist, matchNbt, matchDurability, List.of()); }
 
     public ResourceFilter
     {
@@ -29,34 +38,41 @@ public record ResourceFilter(boolean whitelist, List<IStackKey<?>> entries)
 
     public boolean accepts(IStackKey<?> key)
     {
-        return ResourceFilterRules.accepts(whitelist, entries, key, IStackKey::isEmpty, StackKeyMatch::exact);
+        return ResourceFilterRules.accepts(whitelist, entries, key, IStackKey::isEmpty,
+                (left, right) -> ResourceFilterMatch.matches(left, right, matchNbt, matchDurability));
     }
 
     public ResourceFilter withEntry(int slot, IStackKey<?> key)
     {
         ArrayList<IStackKey<?>> changed = new ArrayList<>(entries);
         changed.set(slot, key == null ? ItemStackKey.EMPTY : key);
-        return new ResourceFilter(whitelist, changed);
+        return new ResourceFilter(whitelist, matchNbt, matchDurability, changed);
     }
 
     public void write(FriendlyByteBuf buffer)
     {
         buffer.writeBoolean(whitelist);
+        buffer.writeBoolean(matchNbt);
+        buffer.writeBoolean(matchDurability);
         for (IStackKey<?> entry : entries) IStackKey.STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, entry);
     }
 
     public static ResourceFilter read(FriendlyByteBuf buffer)
     {
         boolean whitelist = buffer.readBoolean();
+        boolean matchNbt = buffer.readBoolean();
+        boolean matchDurability = buffer.readBoolean();
         ArrayList<IStackKey<?>> entries = new ArrayList<>();
         for (int slot = 0; slot < SIZE; slot++) entries.add(IStackKey.STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
-        return new ResourceFilter(whitelist, entries);
+        return new ResourceFilter(whitelist, matchNbt, matchDurability, entries);
     }
 
     public CompoundTag save(HolderLookup.Provider registries)
     {
         CompoundTag tag = new CompoundTag();
         tag.putBoolean("whitelist", whitelist);
+        tag.putBoolean("match_nbt", matchNbt);
+        tag.putBoolean("match_durability", matchDurability);
         ListTag list = new ListTag();
         for (int slot = 0; slot < SIZE; slot++)
         {
@@ -74,7 +90,9 @@ public record ResourceFilter(boolean whitelist, List<IStackKey<?>> entries)
 
     public static ResourceFilter load(CompoundTag tag, HolderLookup.Provider registries)
     {
-        ResourceFilter filter = new ResourceFilter(tag.getBooleanOr("whitelist", false), List.of());
+        ResourceFilter filter = new ResourceFilter(tag.getBooleanOr("whitelist", false),
+                !tag.contains("match_nbt") || tag.getBooleanOr("match_nbt", false),
+                !tag.contains("match_durability") || tag.getBooleanOr("match_durability", false), List.of());
         ListTag list = tag.getListOrEmpty("entries");
         for (int index = 0; index < Math.min(SIZE, list.size()); index++)
         {

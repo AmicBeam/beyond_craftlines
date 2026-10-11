@@ -37,6 +37,17 @@ final class ResourceFilterTest
         assertFalse(accepts(true, ResourceFilterRules.normalize(List.of(), ""), "chemical:oxygen|normal"));
     }
 
+    @Test void nbtAndDurabilityMatchingAreIndependent()
+    {
+        assertTrue(ResourceFilterRules.matchesItemMetadata(false, true, false, false, false));
+        assertFalse(ResourceFilterRules.matchesItemMetadata(false, true, true, true, false));
+        assertFalse(ResourceFilterRules.matchesItemMetadata(true, true, false, false, true));
+        assertTrue(ResourceFilterRules.matchesItemMetadata(true, true, false, true, false));
+        assertTrue(ResourceFilterRules.matchesItemMetadata(false, true, true, false, true));
+        assertFalse(ResourceFilterRules.matchesItemMetadata(true, true, false, true, true));
+        assertTrue(ResourceFilterRules.matchesItemMetadata(true, false, false, true, true));
+    }
+
     @Test void slotSnapshotIsImmutableAndRejectsOversizeLists()
     {
         var source = new ArrayList<String>();

@@ -25,6 +25,89 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
 {
     private com.amicbeam.beyondcraftlines.common.data.ResourceFilter resourceFilter =
             com.amicbeam.beyondcraftlines.common.data.ResourceFilter.EMPTY;
+    public static final int OPEN_FILTER = 100;
+    public static final int CLOSE_FILTER = 101;
+    private boolean filterEditing;
+    private final net.minecraft.world.SimpleContainer filterSamples = new net.minecraft.world.SimpleContainer(
+            com.amicbeam.beyondcraftlines.common.data.ResourceFilter.SIZE);
+
+    public boolean isFilterEditing() { return filterEditing; }
+    public void setFilterEditing(boolean value) { filterEditing = value; }
+
+    private void addFilterSlots(Inventory inventory)
+    {
+        int count = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.SIZE;
+        for (int index = 0; index < count; index++)
+            addSlot(new net.minecraft.world.inventory.Slot(filterSamples, index,
+                    58 + index % 9 * 18, 53 + index / 9 * 18) {
+                @Override public boolean isActive() { return filterEditing; }
+                @Override public boolean mayPlace(ItemStack stack) { return false; }
+                @Override public boolean mayPickup(Player player) { return false; }
+                @Override public int getMaxStackSize() { return 1; }
+            });
+        for (int row = 0; row < 3; row++)
+            for (int column = 0; column < 9; column++)
+                addSlot(new net.minecraft.world.inventory.Slot(inventory, column + row * 9 + 9,
+                        58 + column * 18, 152 + row * 18) {
+                    @Override public boolean isActive() { return filterEditing; }
+                });
+        for (int column = 0; column < 9; column++)
+            addSlot(new net.minecraft.world.inventory.Slot(inventory, column, 58 + column * 18, 210) {
+                @Override public boolean isActive() { return filterEditing; }
+            });
+    }
+
+    @Override public boolean clickMenuButton(Player player, int action)
+    {
+        if (!stillValid(player)) return false;
+        if (action != OPEN_FILTER && action != CLOSE_FILTER) return false;
+        filterEditing = action == OPEN_FILTER;
+        return true;
+    }
+
+    private void persistFilter(Player player)
+    {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer)
+            com.amicbeam.beyondcraftlines.common.network.ConfigureResourceFilterPayload.apply(
+                    serverPlayer, this, resourceFilter);
+    }
+
+    @Override public void clicked(int slotId, int button, net.minecraft.world.inventory.ContainerInput clickType, Player player)
+    {
+        int count = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.SIZE;
+        if (slotId >= 0 && slotId < count)
+        {
+            if (!filterEditing || !stillValid(player)) return;
+            ItemStack carried = getCarried();
+            var key = com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.mark(carried, false);
+            if (button == 1 && clickType == net.minecraft.world.inventory.ContainerInput.PICKUP && !carried.isEmpty())
+            {
+                var contents = com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.contents(carried);
+                if (!contents.isEmpty()) key = contents;
+            }
+            setResourceFilter(resourceFilter.withEntry(slotId, key));
+            persistFilter(player);
+            return;
+        }
+        if (slotId >= count && !filterEditing) return;
+        super.clicked(slotId, button, clickType, player);
+    }
+
+    @Override public ItemStack quickMoveStack(Player player, int index)
+    {
+        int count = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.SIZE;
+        if (!filterEditing || index < count || index >= slots.size() || !stillValid(player)) return ItemStack.EMPTY;
+        ItemStack stack = slots.get(index).getItem();
+        if (stack.isEmpty()) return ItemStack.EMPTY;
+        int target = 0;
+        for (int slot = 0; slot < count; slot++)
+            if (resourceFilter.entries().get(slot).isEmpty()) { target = slot; break; }
+        setResourceFilter(resourceFilter.withEntry(target,
+                com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.mark(stack, false)));
+        persistFilter(player);
+        return ItemStack.EMPTY;
+    }
+
     private final BlockPos position;
     private final Set<Identifier> candidates;
     private final Set<Identifier> selected;
@@ -40,7 +123,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
         this(id, inventory, readOptions(data), new SimpleContainerData(4));
-        resourceFilter = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.read(data);
+        setResourceFilter(com.amicbeam.beyondcraftlines.common.data.ResourceFilter.read(data));
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
@@ -130,13 +213,24 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         this.manualLoadedFamilies = Set.copyOf(manualLoadedFamilies);
         this.manualRecipeAliases = copyStringGroups(manualRecipeAliases);
         addDataSlots(provisionerData);
+        addFilterSlots(inventory);
         if (inventory.player.level().getServer() != null)
             resourceFilter = BindingSavedData.get(inventory.player.level().getServer())
                     .resourceFilter(inventory.player.level().dimension(), position);
+        setResourceFilter(resourceFilter);
     }
 
     public com.amicbeam.beyondcraftlines.common.data.ResourceFilter resourceFilter() { return resourceFilter; }
-    public void setResourceFilter(com.amicbeam.beyondcraftlines.common.data.ResourceFilter value) { resourceFilter = value; }
+    public void setResourceFilter(com.amicbeam.beyondcraftlines.common.data.ResourceFilter value)
+    {
+        resourceFilter = value;
+        for (int slot = 0; slot < value.entries().size(); slot++)
+        {
+            var key = value.entries().get(slot);
+            filterSamples.setItem(slot, key instanceof com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey item
+                    ? item.getReadOnlyStack().copyWithCount(1) : ItemStack.EMPTY);
+        }
+    }
     public BlockPos position() { return position; }
     public Set<Identifier> candidates() { return candidates; }
     public Set<Identifier> selected() { return selected; }
@@ -331,7 +425,6 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
                            boolean debugRecipeTypeMappings, Set<String> manualLoadedFamilies,
                            Map<String, Set<String>> manualRecipeAliases) {}
 
-    @Override public ItemStack quickMoveStack(Player player, int index) { return ItemStack.EMPTY; }
 
     @Override public boolean stillValid(Player player)
     {

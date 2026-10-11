@@ -43,9 +43,22 @@ final class ResourceFilterPersistenceTest
                     case "fromStackObject", "fromSourceObject" -> null;
                     case "hashCode" -> name.hashCode();
                     case "equals" -> proxy == args[0];
-                    case "toString" -> name;
+                    case "toString", "getSource" -> name;
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    @Test void nbtAndDurabilityOptionsSurviveSavingClearingAndSlotEdits()
+    {
+        ResourceFilter original = new ResourceFilter(true, false, true, List.of());
+        ResourceFilter restored = ResourceFilter.load(original.save(null), null);
+        assertFalse(restored.matchNbt());
+        assertTrue(restored.matchDurability());
+        assertEquals(restored, restored.clear());
+        assertFalse(restored.withEntry(35, null).matchNbt());
+        assertTrue(restored.withEntry(35, null).matchDurability());
+        assertTrue(ResourceFilter.load(new CompoundTag(), null).matchNbt());
+        assertTrue(ResourceFilter.load(new CompoundTag(), null).matchDurability());
     }
 
     @Test void oldSaveWithoutFilterDefaultsToEmptyBlacklist()

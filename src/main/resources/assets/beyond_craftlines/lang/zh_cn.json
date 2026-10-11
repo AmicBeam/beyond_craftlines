@@ -309,5 +309,12 @@
   "command.beyond_craftlines.reload.success": "已清除当前世界或服务器的配方缓存，将重新加载当前网络的配方。",
   "command.beyond_craftlines.reload.failed": "无法清除配方缓存，请查看日志。",
   "gui.beyond_craftlines.loading_recipe_cache": "正在读取配方缓存：%s/%s",
-  "config.beyond_craftlines.preload_all_recipe_types": "首次预热全部配方类型"
+  "config.beyond_craftlines.preload_all_recipe_types": "首次预热全部配方类型",
+  "gui.beyond_craftlines.filter.open": "过滤",
+  "gui.beyond_craftlines.filter.back": "返回",
+  "gui.beyond_craftlines.filter.blacklist": "黑名单",
+  "gui.beyond_craftlines.filter.whitelist": "白名单",
+  "gui.beyond_craftlines.filter.clear": "清空",
+  "gui.beyond_craftlines.filter.help": "左键标记物品，右键标记内容或清除",
+  "gui.beyond_craftlines.order_message.resource_filter_blocked": "资源被端点过滤列表拦截"
 }

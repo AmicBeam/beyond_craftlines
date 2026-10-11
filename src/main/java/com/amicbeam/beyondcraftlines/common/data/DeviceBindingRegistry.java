@@ -638,6 +638,7 @@ public final class DeviceBindingRegistry
     public static void removeAt(MinecraftServer server, ResourceKey<Level> dimension, BlockPos position)
     {
         BindingSavedData data = BindingSavedData.get(server);
+        data.clearResourceFilter(dimension, position);
         BindingRecord record = data.at(dimension, position);
         if (record != null && record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                 && record.provisionerDimension() != null && record.provisionerPosition() != null

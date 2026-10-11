@@ -309,5 +309,12 @@
   "command.beyond_craftlines.reload.success": "Recipe cache cleared for this world or server. Recipes for the current network will be reloaded.",
   "command.beyond_craftlines.reload.failed": "Unable to clear the recipe cache. Check the log.",
   "gui.beyond_craftlines.loading_recipe_cache": "Loading recipe cache: %s/%s",
-  "config.beyond_craftlines.preload_all_recipe_types": "Preload all recipe types"
+  "config.beyond_craftlines.preload_all_recipe_types": "Preload all recipe types",
+  "gui.beyond_craftlines.filter.open": "Filter",
+  "gui.beyond_craftlines.filter.back": "Back",
+  "gui.beyond_craftlines.filter.blacklist": "Blacklist",
+  "gui.beyond_craftlines.filter.whitelist": "Whitelist",
+  "gui.beyond_craftlines.filter.clear": "Clear",
+  "gui.beyond_craftlines.filter.help": "LMB: item · RMB: contents / clear",
+  "gui.beyond_craftlines.order_message.resource_filter_blocked": "Resource blocked by endpoint filter"
 }

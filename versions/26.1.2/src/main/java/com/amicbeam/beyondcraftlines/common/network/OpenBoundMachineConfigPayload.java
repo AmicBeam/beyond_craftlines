@@ -101,9 +101,11 @@ public record OpenBoundMachineConfigPayload(long targetPosition, List<String> je
             player.openMenu(new SimpleMenuProvider((id, inventory, ignored) ->
                     new ProvisionerConfigMenu(id, inventory, position, candidates, selected,
                             availableGroups, selectedGroups, binding.priority()),
-                    Component.translatable("menu.beyond_craftlines.bound_machine")), buffer ->
+                    Component.translatable("menu.beyond_craftlines.bound_machine")), buffer -> {
                     ProvisionerConfigMenu.writeOptions(buffer, position, candidates, selected,
-                            availableGroups, selectedGroups, true, binding.priority()));
+                            availableGroups, selectedGroups, true, binding.priority());
+                    BindingSavedData.get(player.level().getServer()).resourceFilter(level.dimension(), position).write(buffer);
+                });
         });
     }
 

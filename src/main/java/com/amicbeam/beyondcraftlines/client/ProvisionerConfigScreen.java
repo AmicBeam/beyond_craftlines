@@ -1,5 +1,10 @@
 package com.amicbeam.beyondcraftlines.client;
 
+import com.amicbeam.beyondcraftlines.common.data.ResourceFilter;
+import com.amicbeam.beyondcraftlines.common.network.ConfigureResourceFilterPayload;
+import com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker;
+import com.wintercogs.beyonddimensions.api.storage.key.IStackKey;
+import com.wintercogs.beyonddimensions.api.storage.key.impl.ItemStackKey;
 import com.amicbeam.beyondcraftlines.client.integration.jei.JeiCatalystIndex;
 import com.amicbeam.beyondcraftlines.common.menu.ProvisionerConfigMenu;
 import com.amicbeam.beyondcraftlines.common.network.ConfigureProvisionerPayload;
@@ -45,6 +50,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private final Map<ResourceLocation, Set<String>> selectedGroups;
     private final List<Button> rows = new ArrayList<>();
     private final List<List<Button>> groupRows = new ArrayList<>();
+    private boolean filterEditing;
     private int page;
     private Button previous;
     private Button next;
@@ -76,6 +82,14 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         imageWidth = 276;
         imageHeight = 260;
         super.init();
+        search = null;
+        returnAll = null;
+        deliveryStrategyButton = null;
+        if (filterEditing) { dropdownOpen = false; initFilterEditor(); return; }
+        addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.filter.open"), ignored -> {
+            filterEditing = true;
+            rebuildWidgets();
+        }).bounds(leftPos + imageWidth - 76, topPos + 229, 64, 18).build());
         rows.clear();
         groupRows.clear();
         dropdownOpen = manualFallback;
@@ -127,9 +141,139 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                     Component.translatable("gui.beyond_craftlines.provisioner.return_all"), ignored -> {
                         returnAll.active = false;
                         PacketDistributor.sendToServer(new ReturnProvisionerContentPayload(menu.position().asLong()));
-                    }).bounds(leftPos + imageWidth - 132, topPos + 229, 120, 18).build());
+                    }).bounds(leftPos + 80, topPos + 229, 114, 18).build());
         }
         refresh();
+    }
+
+    public boolean isFilterEditing() { return filterEditing; }
+
+    public net.minecraft.client.renderer.Rect2i filterTargetArea(int slot)
+    { return new net.minecraft.client.renderer.Rect2i(leftPos + 57 + slot % ResourceFilter.COLUMNS * 18,
+            topPos + 52 + slot / ResourceFilter.COLUMNS * 18, 18, 18); }
+
+    public void setFilterEntry(int slot, IStackKey<?> key)
+    {
+        if (!filterEditing || slot < 0 || slot >= ResourceFilter.SIZE) return;
+        menu.setResourceFilter(menu.resourceFilter().withEntry(slot, key));
+        sendResourceFilter();
+    }
+
+    public void addFilterEntry(IStackKey<?> key)
+    {
+        if (!filterEditing || key == null || key.isEmpty()) return;
+        for (int slot = 0; slot < ResourceFilter.SIZE; slot++)
+            if (menu.resourceFilter().entries().get(slot).isEmpty()) { setFilterEntry(slot, key); return; }
+        // A full list needs an explicit slot replacement; inventory clicks never overwrite a marker.
+    }
+
+    private void sendResourceFilter()
+    { PacketDistributor.sendToServer(new ConfigureResourceFilterPayload(menu.position(), menu.resourceFilter())); }
+
+    private Component filterModeTitle()
+    { return Component.translatable("gui.beyond_craftlines.filter." +
+            (menu.resourceFilter().whitelist() ? "whitelist" : "blacklist")); }
+
+    private void initFilterEditor()
+    {
+        addRenderableWidget(Button.builder(filterModeTitle(), button -> {
+            menu.setResourceFilter(new ResourceFilter(!menu.resourceFilter().whitelist(), menu.resourceFilter().entries()));
+            button.setMessage(filterModeTitle());
+            sendResourceFilter();
+        }).bounds(leftPos + 12, topPos + 27, 120, 18).build());
+        addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.filter.clear"), ignored -> {
+            menu.setResourceFilter(new ResourceFilter(menu.resourceFilter().whitelist(), List.of()));
+            sendResourceFilter();
+        }).bounds(leftPos + imageWidth - 72, topPos + 27, 60, 18).build());
+        addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.filter.back"), ignored -> {
+            filterEditing = false;
+            rebuildWidgets();
+        }).bounds(leftPos + imageWidth - 76, topPos + 229, 64, 18).build());
+    }
+
+    private int filterSlotAt(double mouseX, double mouseY)
+    {
+        for (int slot = 0; slot < ResourceFilter.SIZE; slot++)
+        {
+            var area = filterTargetArea(slot);
+            if (mouseX >= area.getX() && mouseX < area.getX() + 18
+                    && mouseY >= area.getY() && mouseY < area.getY() + 18) return slot;
+        }
+        return -1;
+    }
+
+    private int filterInventorySlotAt(double mouseX, double mouseY)
+    {
+        if (mouseX < leftPos + 57 || mouseX >= leftPos + 219) return -1;
+        int column = ((int) mouseX - leftPos - 57) / 18;
+        for (int row = 0; row < 3; row++)
+            if (mouseY >= topPos + 151 + row * 18 && mouseY < topPos + 169 + row * 18)
+                return column + row * 9 + 9;
+        return mouseY >= topPos + 209 && mouseY < topPos + 227 ? column : -1;
+    }
+
+    private boolean filterClick(double mouseX, double mouseY, int button)
+    {
+        if (!filterEditing || button < 0 || button > 1) return false;
+        int slot = filterSlotAt(mouseX, mouseY);
+        if (slot >= 0)
+        {
+            var carried = menu.getCarried();
+            if (carried.isEmpty())
+            {
+                if (button == 1) setFilterEntry(slot, ItemStackKey.EMPTY);
+            }
+            else
+            {
+                var key = ContainerResourceMarker.mark(carried, button == 1);
+                if (!key.isEmpty()) setFilterEntry(slot, key);
+            }
+            return true;
+        }
+        int inventorySlot = filterInventorySlotAt(mouseX, mouseY);
+        if (inventorySlot >= 0 && minecraft != null && minecraft.player != null)
+        {
+            addFilterEntry(ContainerResourceMarker.mark(minecraft.player.getInventory().getItem(inventorySlot), button == 1));
+            return true;
+        }
+        return false;
+    }
+
+    private void drawFilterEditor(GuiGraphics graphics, int mouseX, int mouseY)
+    {
+        for (int slot = 0; slot < ResourceFilter.SIZE; slot++)
+        {
+            var area = filterTargetArea(slot);
+            drawFilterSlot(graphics, area.getX(), area.getY());
+            IStackKey<?> key = menu.resourceFilter().entries().get(slot);
+            if (!key.isEmpty()) key.getRender().render(graphics, key, area.getX() + 1, area.getY() + 1);
+        }
+        if (minecraft == null || minecraft.player == null) return;
+        for (int row = 0; row < 4; row++)
+            for (int column = 0; column < 9; column++)
+            {
+                int x = leftPos + 57 + column * 18;
+                int y = topPos + (row == 3 ? 209 : 151 + row * 18);
+                int index = row == 3 ? column : column + row * 9 + 9;
+                drawFilterSlot(graphics, x, y);
+                var stack = minecraft.player.getInventory().getItem(index);
+                graphics.renderItem(stack, x + 1, y + 1);
+                if (!stack.isEmpty()) new ItemStackKey(stack).getRender().renderAmount(
+                        graphics, stack.getCount(), x + 1, y + 1);
+            }
+        int hovered = filterSlotAt(mouseX, mouseY);
+        if (hovered >= 0)
+        {
+            var area = filterTargetArea(hovered);
+            graphics.fill(area.getX() + 1, area.getY() + 1, area.getX() + 17, area.getY() + 17, 0x55FFFFFF);
+        }
+    }
+
+    private static void drawFilterSlot(GuiGraphics graphics, int x, int y)
+    {
+        graphics.fill(x, y, x + 18, y + 18, 0xFF555555);
+        graphics.fill(x + 1, y + 1, x + 18, y + 18, 0xFFFFFFFF);
+        graphics.fill(x + 1, y + 1, x + 17, y + 17, 0xFF8B8B8B);
     }
 
     private Component deliveryStrategyTitle()
@@ -354,7 +498,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     private void renderManualDropdown(GuiGraphics graphics, int mouseX, int mouseY)
     {
-        if (!manualFallback || !dropdownOpen) return;
+        if (filterEditing || !manualFallback || !dropdownOpen) return;
         List<ResourceLocation> options = manualOptions();
         dropdownScroll = Math.max(0, Math.min(dropdownScroll, maxDropdownScroll()));
         int rows = Math.max(1, Math.min(MANUAL_ROWS, options.size()));
@@ -388,6 +532,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
 
     @Override public boolean mouseClicked(double mouseX, double mouseY, int button)
     {
+        if (filterClick(mouseX, mouseY, button)) return true;
         int option = hoveredDropdownOption(mouseX, mouseY);
         if (option >= 0) { selectManualOption(option); return true; }
         boolean clickedSearch = search != null && search.isMouseOver(mouseX, mouseY);
@@ -469,6 +614,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         graphics.fill(leftPos, topPos, leftPos + 2, topPos + imageHeight, 0xFFFFFFFF);
         graphics.fill(leftPos, topPos + imageHeight - 2, leftPos + imageWidth, topPos + imageHeight, 0xFF555555);
         graphics.fill(leftPos + imageWidth - 2, topPos, leftPos + imageWidth, topPos + imageHeight, 0xFF555555);
+        if (filterEditing) { drawFilterEditor(graphics, mouseX, mouseY); return; }
         graphics.fill(leftPos + 144, topPos + 207, leftPos + 186, topPos + 225, 0xFF555555);
         graphics.fill(leftPos + 145, topPos + 208, leftPos + 186, topPos + 225, 0xFFFFFFFF);
         graphics.fill(leftPos + 145, topPos + 208, leftPos + 185, topPos + 224, 0xFF8B8B8B);
@@ -477,6 +623,12 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     @Override protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY)
     {
         graphics.drawString(font, title, 12, 10, 0x404040, false);
+        if (filterEditing)
+        {
+            graphics.drawString(font, Component.translatable("container.inventory"), 57, 139, 0x404040, false);
+            graphics.drawString(font, Component.translatable("gui.beyond_craftlines.filter.help"), 12, 127, 0x404040, false);
+            return;
+        }
         Component help = manualFallback
                 ? Component.translatable("gui.beyond_craftlines.provisioner.manual_help")
                 : candidates.isEmpty()
@@ -500,5 +652,17 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         super.render(graphics, mouseX, mouseY, partialTick);
         renderManualDropdown(graphics, mouseX, mouseY);
         renderTooltip(graphics, mouseX, mouseY);
+        if (filterEditing)
+        {
+            int slot = filterSlotAt(mouseX, mouseY);
+            if (slot >= 0 && !menu.resourceFilter().entries().get(slot).isEmpty())
+            {
+                var key = menu.resourceFilter().entries().get(slot);
+                key.getRender().renderTooltip(graphics, font, key, 1, mouseX, mouseY);
+            }
+            int inventorySlot = filterInventorySlotAt(mouseX, mouseY);
+            if (inventorySlot >= 0 && minecraft != null && minecraft.player != null)
+                graphics.renderTooltip(font, minecraft.player.getInventory().getItem(inventorySlot), mouseX, mouseY);
+        }
     }
 }

@@ -23,6 +23,8 @@ import java.util.Set;
 
 public final class ProvisionerConfigMenu extends AbstractContainerMenu
 {
+    private com.amicbeam.beyondcraftlines.common.data.ResourceFilter resourceFilter =
+            com.amicbeam.beyondcraftlines.common.data.ResourceFilter.EMPTY;
     private final BlockPos position;
     private final Set<ResourceLocation> candidates;
     private final Set<ResourceLocation> selected;
@@ -38,6 +40,7 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
     public ProvisionerConfigMenu(int id, Inventory inventory, FriendlyByteBuf data)
     {
         this(id, inventory, readOptions(data), new SimpleContainerData(4));
+        resourceFilter = com.amicbeam.beyondcraftlines.common.data.ResourceFilter.read(data);
     }
 
     private ProvisionerConfigMenu(int id, Inventory inventory, Options options, ContainerData provisionerData)
@@ -127,7 +130,13 @@ public final class ProvisionerConfigMenu extends AbstractContainerMenu
         this.manualLoadedFamilies = Set.copyOf(manualLoadedFamilies);
         this.manualRecipeAliases = copyStringGroups(manualRecipeAliases);
         addDataSlots(provisionerData);
+        if (inventory.player.getServer() != null)
+            resourceFilter = BindingSavedData.get(inventory.player.getServer())
+                    .resourceFilter(inventory.player.level().dimension(), position);
     }
+
+    public com.amicbeam.beyondcraftlines.common.data.ResourceFilter resourceFilter() { return resourceFilter; }
+    public void setResourceFilter(com.amicbeam.beyondcraftlines.common.data.ResourceFilter value) { resourceFilter = value; }
 
     public BlockPos position() { return position; }
     public Set<ResourceLocation> candidates() { return candidates; }

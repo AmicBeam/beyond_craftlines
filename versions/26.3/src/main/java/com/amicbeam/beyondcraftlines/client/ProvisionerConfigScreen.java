@@ -89,7 +89,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.filter.open"), ignored -> {
             filterEditing = true;
             rebuildWidgets();
-        }).bounds(leftPos + imageWidth - 76, topPos + 229, 64, 18).build());
+        }).bounds(leftPos + imageWidth - 76, topPos + 8, 64, 18).build());
         rows.clear();
         groupRows.clear();
         dropdownOpen = manualFallback;
@@ -142,7 +142,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
                         returnAll.active = false;
                         ClientPacketDistributor.sendToServer(
                                 new ReturnProvisionerContentPayload(menu.position().asLong()));
-                    }).bounds(leftPos + 80, topPos + 229, 114, 18).build());
+                    }).bounds(leftPos + imageWidth - 132, topPos + 229, 120, 18).build());
         }
         refresh();
     }
@@ -189,7 +189,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.filter.back"), ignored -> {
             filterEditing = false;
             rebuildWidgets();
-        }).bounds(leftPos + imageWidth - 76, topPos + 229, 64, 18).build());
+        }).bounds(leftPos + imageWidth - 76, topPos + 8, 64, 18).build());
     }
 
     private int filterSlotAt(double mouseX, double mouseY)

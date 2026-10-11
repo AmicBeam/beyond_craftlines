@@ -27,9 +27,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
-public record RequestOrderStatusPayload(int networkId, UUID sessionId) implements CustomPacketPayload
+public record RequestOrderStatusPayload(int networkId, UUID sessionId, int page) implements CustomPacketPayload
 {
-    private static final int MAX_ORDERS = 20;
     private static final long SESSION_TTL_NANOS = 5L * 60L * 1_000_000_000L;
     private static final Map<SessionKey, SyncSession> SESSIONS = new HashMap<>();
 
@@ -38,6 +37,7 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
     public static final StreamCodec<ByteBuf, RequestOrderStatusPayload> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, RequestOrderStatusPayload::networkId,
             UUIDUtil.STREAM_CODEC, RequestOrderStatusPayload::sessionId,
+            ByteBufCodecs.VAR_INT, RequestOrderStatusPayload::page,
             RequestOrderStatusPayload::new);
 
     public static void handle(RequestOrderStatusPayload payload, IPayloadContext context)
@@ -51,10 +51,12 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
             var server = player.level().getServer();
             RecipeOrderSavedData data = RecipeOrderSavedData.get(server);
             data.removeExpiredDisplayedTerminal(server.overworld().getGameTime());
-            List<RecipeOrderJob> jobs = data.all().stream()
-                    .filter(job -> job.networkId() == payload.networkId())
-                    .sorted(java.util.Comparator.comparingLong(RecipeOrderJob::createdAt).reversed())
-                    .limit(MAX_ORDERS).toList();
+            var page = OrderStatusPagination.select(data.all().stream()
+                            .filter(job -> job.networkId() == payload.networkId()).toList(),
+                    job -> !terminal(job.status()),
+                    java.util.Comparator.comparingLong(RecipeOrderJob::createdAt).reversed()
+                            .thenComparing(RecipeOrderJob::id), payload.page());
+            List<RecipeOrderJob> jobs = page.orders();
 
             long now = System.nanoTime();
             SessionKey sessionKey = new SessionKey(player.getUUID(), payload.sessionId());
@@ -85,6 +87,8 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId) implement
             CompoundTag root = new CompoundTag();
             NbtCompat.putUuid(root, "session", payload.sessionId());
             root.putBoolean("reset", reset);
+            root.putInt("page", page.index());
+            root.putInt("page_count", page.count());
             root.put("index", index);
             root.put("updates", updates);
             PacketDistributor.sendToPlayer(player, new OrderStatusPayload(root));

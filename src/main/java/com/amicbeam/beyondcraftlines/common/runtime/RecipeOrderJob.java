@@ -30,6 +30,20 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         origin = origin == null ? OrderOrigin.MANUAL : origin;
         if (activeStep < -1 || activeStep >= executions.size())
             throw new IllegalArgumentException("invalid active recipe step");
+        java.util.Set<Integer> bundledProducers = new java.util.HashSet<>();
+        for (int consumer = 0; consumer < executions.size(); consumer++)
+        {
+            ExternalWait wait = executions.get(consumer).externalWait();
+            if (wait == null || wait.bundle() == null) continue;
+            MachineRecipeBundle bundle = wait.bundle();
+            if (!bundledProducers.add(bundle.producerStep()) || bundle.producerStep() >= consumer
+                    || executions.get(bundle.producerStep()).complete()
+                    || executions.get(bundle.producerStep()).externalWait() != null
+                    || bundle.producerCrafts() > executions.get(bundle.producerStep()).step().crafts()
+                    || bundle.consumerCrafts() > executions.get(consumer).step().crafts()
+                    || !executions.get(consumer).step().dependencies().contains(bundle.producerStep()))
+                throw new IllegalArgumentException("invalid persisted machine bundle");
+        }
     }
 
     public RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocation target,
@@ -146,7 +160,8 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
 
     public RecipeOrderJob activate(int step)
     {
-        if (activeStep >= 0 || step < 0 || step >= executions.size() || executions.get(step).complete())
+        if (activeStep >= 0 || step < 0 || step >= executions.size() || executions.get(step).complete()
+                || bundledStep(step))
             throw new IllegalStateException("recipe step cannot be activated");
         return copy(executions, step, status, message, createdAt, finishedAt, reserved);
     }
@@ -190,9 +205,64 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
 
+    public boolean bundledStep(int step)
+    {
+        return executions.stream().map(StepExecution::externalWait).filter(java.util.Objects::nonNull)
+                .anyMatch(wait -> wait.bundle() != null && wait.bundle().producerStep() == step);
+    }
+
+    public RecipeOrderJob awaitMachineBundle(int consumerStep, ExternalWait wait)
+    {
+        requireActive();
+        if (wait.bundle() == null || wait.bundle().producerStep() != activeStep
+                || consumerStep <= activeStep || executions.get(consumerStep).complete()
+                || executions.get(consumerStep).externalWait() != null)
+            throw new IllegalArgumentException("invalid machine bundle coordinator");
+        List<StepExecution> updated = new java.util.ArrayList<>(executions);
+        StepExecution producer = updated.get(activeStep);
+        updated.set(activeStep, producer.with(producer.step(), producer.nextCraftingTick(), null));
+        StepExecution consumer = updated.get(consumerStep);
+        updated.set(consumerStep, consumer.with(consumer.step(), consumer.nextCraftingTick(), wait));
+        return copy(updated, consumerStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
+    }
+
+    private RecipeOrderJob completeMachineBundle(MachineRecipeBundle bundle)
+    {
+        List<StepExecution> updated = new java.util.ArrayList<>(executions);
+        completeMachineCrafts(updated, bundle.producerStep(), bundle.producerCrafts());
+        completeMachineCrafts(updated, activeStep, bundle.consumerCrafts());
+        Status next = updated.stream().allMatch(StepExecution::complete) ? Status.COMPLETE : Status.RUNNING;
+        return copy(updated, activeStep, next, "", createdAt, finishedAt, reserved);
+    }
+
+    private static void completeMachineCrafts(List<StepExecution> executions, int index, long crafts)
+    {
+        StepExecution execution = executions.get(index);
+        RecipePlan.Step step = execution.step();
+        if (crafts < 1 || crafts > step.crafts()) throw new IllegalArgumentException("invalid bundle craft count");
+        if (crafts == step.crafts())
+        {
+            executions.set(index, execution.completed(execution.nextCraftingTick()));
+            return;
+        }
+        List<RecipePlan.Material> inputs = new java.util.ArrayList<>();
+        for (RecipePlan.Material input : step.inputs())
+        {
+            long left = input.amount() - MachineRecipeBundle.portion(input.amount(), crafts, step.crafts());
+            if (left > 0) inputs.add(new RecipePlan.Material(input.key(), left,
+                    input.ingredientSlot(), input.inputGroup()));
+        }
+        RecipePlan.Step remaining = new RecipePlan.Step(step.recipe(), step.family(), step.outputKey(),
+                step.outputPerCraft(), step.crafts() - crafts, inputs, step.ingredientSelections(),
+                step.dependencies(), step.selfIncrementSeed(), step.byproducts());
+        executions.set(index, execution.with(remaining, execution.nextCraftingTick(), null));
+    }
+
     public RecipeOrderJob completeExternalBatch()
     {
         requireActive();
+        if (externalWait() != null && externalWait().bundle() != null)
+            return completeMachineBundle(externalWait().bundle());
         RecipePlan.Step current = executions.get(activeStep).step();
         boolean sequential = blockingMode || current.selfIncrementSeed() > 0;
         if (!sequential || current.crafts() <= 1) return advance();
@@ -288,8 +358,18 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                                long amount, long collected,
                                List<RecipePlan.Material> remainingInputs,
                                List<RecipePlan.ReservedMaterial> networkBaselineStacks,
-                               List<MachineLocation> occupiedMachines)
+                               List<MachineLocation> occupiedMachines, MachineRecipeBundle bundle)
     {
+        public ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,
+                            IStackKey<?> outputKey, boolean nativeFurnace, boolean provisioner,
+                            long baseline, long networkBaseline, long networkObserved,
+                            long amount, long collected, List<RecipePlan.Material> remainingInputs,
+                            List<RecipePlan.ReservedMaterial> networkBaselineStacks,
+                            List<MachineLocation> occupiedMachines)
+        { this(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
+                baseline, networkBaseline, networkObserved, amount, collected, remainingInputs,
+                networkBaselineStacks, occupiedMachines, null); }
+
         public ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,
                             IStackKey<?> outputKey, boolean nativeFurnace, boolean provisioner,
                             long baseline, long networkBaseline, long networkObserved,
@@ -319,22 +399,25 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
             networkBaselineStacks = List.copyOf(networkBaselineStacks);
             occupiedMachines = List.copyOf(occupiedMachines);
             if (occupiedMachines.isEmpty()) throw new IllegalArgumentException("external wait has no machine");
+            if (bundle != null && (nativeFurnace || provisioner || occupiedMachines.stream().anyMatch(machine ->
+                    !machine.dimension().equals(machineDimension) || !machine.position().equals(machinePosition))))
+                throw new IllegalArgumentException("machine bundle requires a direct machine");
         }
 
         public ExternalWait withInputs(List<RecipePlan.Material> inputs)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
                 baseline, networkBaseline, networkObserved, amount, collected, inputs, networkBaselineStacks,
-                occupiedMachines); }
+                occupiedMachines, bundle); }
 
         public ExternalWait withCollected(long value)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
                 baseline, networkBaseline, networkObserved, amount, value, remainingInputs, networkBaselineStacks,
-                occupiedMachines); }
+                occupiedMachines, bundle); }
 
         public ExternalWait withProgress(long observed, long value)
         { return new ExternalWait(machineDimension, machinePosition, outputKey, nativeFurnace, provisioner,
                 baseline, networkBaseline, observed, amount, value, remainingInputs, networkBaselineStacks,
-                occupiedMachines); }
+                occupiedMachines, bundle); }
 
         public ResourceLocation output()
         {

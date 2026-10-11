@@ -71,6 +71,44 @@ Beyond: Craftlines 是同时面向 Minecraft 1.20.1 Forge、1.21.1 NeoForge、26
 
 第三方机器配方可能把原版 `Recipe#getIngredients()` 或 `getResultItem()` 保持为空。此时规划器从配方公开的通用输入、输出 accessor 或公共字段读取结构化数据；能力式 I/O 容器中的 `content` / `getContent` 包装无论实现为 record 还是普通 class 都只解包实际资源，不把 chance 等元数据当材料；自定义物品 ingredient 以其实际候选为准，不依赖原版内部空值标记。输入和输出中的 `Ingredient` 均通过编译期映射后的 Minecraft API 展开，不使用会在生产混淆环境失效的方法名反射。input representations 通过 BD `IStackKey` 注册表转换为统一资源。物品、流体以及已加载 Mekanism 联动所注册的化学品等资源共同参与客户端树、库存抵扣、缺料与网络提取汇总、计划签名、服务端校验、订单预留和机器投送。依赖运行时输入才能确定产物的动态配方不作为固定产物机器配方索引。声明 `batch_limit` 或 `output_mappings` 的配方不会固化 JEI 动画当前帧，而是从 JEI 携带的真实 `Recipe` 读取单位输入和全部映射输出，再为每个输出注册一条稳定的 JEI 虚拟描述。
 
+
+### 3.1 原料槽转换配方的 JSON 打包兼容
+
+`recipe_io_profiles` 支持可选的 `input_conversion` 执行声明，用于转换产物直接进入后续配方原料槽的机器。配置示例：
+
+```json
+{
+  "recipe_type": "mekanism:chemical_conversion",
+  "input_fields": ["getInput"],
+  "output_fields": ["getOutputDefinition"],
+  "representation_fields": ["getRepresentations"],
+  "input_conversion": {
+    "mode": "machine_input",
+    "consumer_recipe_types": ["mekanism:purifying"]
+  }
+}
+```
+
+声明必须包含精确的源 `recipe_type` / `recipe_types`、`machine_input` 模式和非空的消费配方族列表。可用 `recipe_id_prefixes` 进一步收窄源配方；运行步骤不携带 Java 配方类，故含 `recipe_classes` / `recipe_class_prefixes` 的声明不会授权打包，避免忽略类选择器后意外扩大范围。未声明、模式未知或没有消费配方族时沿用普通执行。客户端同步使用原有 profile JSON 通道，执行许可始终来自服务端加载的 profile。
+
+玩家仍需分别绑定转换配方和消费配方；转换类型仍显示在绑定与配置界面，也保留独立的化学品配方查询。只有实际输入组路由都指向同一维度、同一坐标的单台直接绑定机器，且转换步骤仅接收物品、匹配中间产物为非物品资源时，服务端才创建双步骤批次。供给器、不同机器、多机路由、缺少绑定和未声明的普通物品配方不会合并。不改变 JEI 配方树、原料预留和缺料判定。
+
+执行时从消费步骤的外部投料中扣除本批转换可提供的中间资源，将转换物料与其他加工物料投给同一台机器。化学品保留在原料槽，不抽回网络，也不虚记为网络预留。两步一直保持未完成，最终产物实际回收后共同推进；阻塞模式按一批消费配方计算所需的转换次数，而非只转换一次。机器持续由同一订单占用；其他依赖未完成时，新转换步骤先等待，避免提前占机。尚未回收产物、已向同一机器投料的旧转换等待可转成打包批次，已经投递的输入不会重复投递。
+
+副产物和超出保留量的可抽取资源仍按真实配方输出白名单回收；完成或取消时解除保留。不能对外抽取的原料槽资源留在机器内，沿用模组能力限制，不绕过能力修改库存。批次的转换步骤索引、两步加工次数、保留资源、未投递输入和机器坐标存入可选 `machine_bundle` NBT，重启后恢复占用及批次；旧存档无此字段时保持原行为。
+
+共享 JSON 为 `mekanism_chemical_conversion.json`、`mekanism_gas_conversion.json` 和 `mekanism_infusion_conversion.json`，覆盖 Minecraft 1.20.1 Forge、1.21.1 NeoForge、26.1.2 NeoForge、26.2 NeoForge 和 26.3 NeoForge：
+
+| Minecraft | 转换 RecipeType / JEI UID | 允许的消费配方 |
+| --- | --- | --- |
+| 1.20.1 | `mekanism:gas_conversion` | 提纯、锇压缩、化学压射、化学溶解、反质子核合成 |
+| 1.20.1 | `mekanism:infusion_conversion` | 冶金灌注 |
+| 1.21.1、26.1.2、26.2、26.3 | `mekanism:chemical_conversion` | 上述六类 |
+
+原生消费 RecipeType 分别是 `purifying`、`compressing`、`injecting`、`dissolution`、`nucleosynthesizing`、`metallurgic_infusing`。1.20.1 的 JEI 虚拟执行族使用对应机器 ID `purification_chamber`、`osmium_compressor`、`chemical_injection_chamber`、`chemical_dissolution_chamber`、`antiprotonic_nucleosynthesizer`、`metallurgic_infuser`，因此旧版两个 JSON 同时列出这些服务端虚拟执行族；源转换 UID 与其注册 RecipeType 相同，不需新增 alias。
+
+上游依据核对了 Mekanism 官方 `1.20.x`、`1.21.x`、`26.1`、`26.2`、`26.3` 分支。旧版 [GasInventorySlot](https://github.com/mekanism/Mekanism/blob/1.20.x/src/main/java/mekanism/common/inventory/slot/chemical/GasInventorySlot.java) 和 [InfusionInventorySlot](https://github.com/mekanism/Mekanism/blob/1.20.x/src/main/java/mekanism/common/inventory/slot/chemical/InfusionInventorySlot.java)，以及新版 [ChemicalInventorySlot](https://github.com/mekanism/Mekanism/blob/1.21.x/src/main/java/mekanism/common/inventory/slot/chemical/ChemicalInventorySlot.java) 的 `fillOrConvert` / `fillTankOrConvert` 证明转换会直接填充原料槽；[旧 JEI UID](https://github.com/mekanism/Mekanism/blob/1.20.x/src/main/java/mekanism/client/jei/MekanismJEIRecipeType.java) 与新版 [RecipeViewerRecipeType](https://github.com/mekanism/Mekanism/blob/1.21.x/src/main/java/mekanism/client/recipe_viewer/type/RecipeViewerRecipeType.java) 确认转换分类和六类催化机器。新版源配方继承 [ItemStackToChemicalRecipe](https://github.com/mekanism/Mekanism/blob/1.21.x/src/api/java/mekanism/api/recipes/ItemStackToChemicalRecipe.java)，旧版对应基类位于 `mekanism.api.recipes.chemical`，两者都提供 `getInput()` 与 `getOutputDefinition()`。26.1 / 26.2 / 26.3 的同名 RecipeViewerRecipeType、RecipeType 和机器源码已逐支核对，沿用统一化学品转换 ID 与上述原料槽路径。
+
 ## 4. JEI 入口与订单界面
 
 ### 4.1 JEI 入口

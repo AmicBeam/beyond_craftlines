@@ -54,6 +54,19 @@ public final class RecipeIoProfileRegistry
                 .anyMatch(profile -> profile.nativeFallback().matches(recipe));
     }
 
+    /** Explicit datapack authorization for conversions that fill a consumer's own input tank. */
+    public static Set<String> machineInputConversionConsumers(String family, String recipeId)
+    {
+        if (family == null || recipeId == null) return Set.of();
+        return entries.stream().map(Entry::profile)
+                .filter(profile -> profile.inputConversion().active() && profile.recipeTypes().contains(family)
+                        && matchesRecipeId(recipeId, profile.recipeIdPrefixes())
+                        // Runtime steps carry IDs, not classes. Do not silently ignore a class selector.
+                        && profile.recipeClasses().isEmpty() && profile.recipeClassPrefixes().isEmpty())
+                .flatMap(profile -> profile.inputConversion().consumerRecipeTypes().stream())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
     public static List<String> inputMembers(Object recipe)
     { return resolved(recipe).inputFields(); }
 
@@ -235,7 +248,17 @@ public final class RecipeIoProfileRegistry
                 countSemantics, outputMappings, countedWrappers, directions, multipliers,
                 RecipeOutputProbabilities.parse(object.getAsJsonArray("output_probability_rules")),
                 strings(object.getAsJsonArray("ignored_output_fields"), MEMBER_NAME, 32),
-                NativeRecipeFallbackPolicy.parse(object.getAsJsonObject("native_recipe_fallback")));
+                NativeRecipeFallbackPolicy.parse(object.getAsJsonObject("native_recipe_fallback")),
+                parseInputConversion(object.getAsJsonObject("input_conversion")));
+    }
+
+    static InputConversionPolicy parseInputConversion(JsonObject object)
+    {
+        if (object == null || !"machine_input".equals(string(object, "mode")))
+            return InputConversionPolicy.NONE;
+        Set<String> consumers = strings(object.getAsJsonArray("consumer_recipe_types"), RESOURCE_ID, 128);
+        return consumers.isEmpty() ? InputConversionPolicy.NONE
+                : new InputConversionPolicy("machine_input", consumers);
     }
 
     private static ResolvedProfile resolved(Object recipe)
@@ -532,6 +555,13 @@ public final class RecipeIoProfileRegistry
     public record MultiplierRule(Set<String> recipeClasses, Set<String> recipeClassPrefixes,
                                  Set<String> inputFields, String whenBooleanField, long factor) {}
 
+    public record InputConversionPolicy(String mode, Set<String> consumerRecipeTypes)
+    {
+        static final InputConversionPolicy NONE = new InputConversionPolicy("", Set.of());
+        public InputConversionPolicy { consumerRecipeTypes = Set.copyOf(consumerRecipeTypes); }
+        public boolean active() { return "machine_input".equals(mode) && !consumerRecipeTypes.isEmpty(); }
+    }
+
     public record Profile(Set<String> recipeTypes, Set<String> recipeClasses,
                           Set<String> recipeClassPrefixes, Set<String> recipeIdPrefixes,
                           Set<String> resourceNamespaces, boolean includeDefaults,
@@ -543,7 +573,7 @@ public final class RecipeIoProfileRegistry
                           List<OutputMapping> outputMappings, List<CountedWrapper> countedWrappers,
                           List<DirectionRule> directions, List<MultiplierRule> multipliers,
                           List<RecipeOutputProbabilities.Rule> outputProbabilityRules, Set<String> ignoredOutputFields,
-                          NativeRecipeFallbackPolicy nativeFallback)
+                          NativeRecipeFallbackPolicy nativeFallback, InputConversionPolicy inputConversion)
     {
         boolean scoped()
         { return !recipeTypes.isEmpty() || !recipeClasses.isEmpty() || !recipeClassPrefixes.isEmpty()

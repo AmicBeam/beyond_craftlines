@@ -1,0 +1,23 @@
+{
+  "recipe_type": "mekanism:chemical_conversion",
+  "input_fields": [
+    "getInput"
+  ],
+  "output_fields": [
+    "getOutputDefinition"
+  ],
+  "representation_fields": [
+    "getRepresentations"
+  ],
+  "input_conversion": {
+    "mode": "machine_input",
+    "consumer_recipe_types": [
+      "mekanism:purifying",
+      "mekanism:compressing",
+      "mekanism:injecting",
+      "mekanism:dissolution",
+      "mekanism:nucleosynthesizing",
+      "mekanism:metallurgic_infusing"
+    ]
+  }
+}

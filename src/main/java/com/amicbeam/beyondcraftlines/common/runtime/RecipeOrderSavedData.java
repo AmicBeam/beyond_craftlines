@@ -295,6 +295,24 @@ public final class RecipeOrderSavedData extends SavedData
             remaining.add(encoded);
         }
         wait.put("remaining_inputs", remaining);
+        if (externalWait.bundle() != null)
+        {
+            MachineRecipeBundle bundle = externalWait.bundle();
+            CompoundTag encodedBundle = new CompoundTag();
+            encodedBundle.putInt("producer_step", bundle.producerStep());
+            encodedBundle.putLong("producer_crafts", bundle.producerCrafts());
+            encodedBundle.putLong("consumer_crafts", bundle.consumerCrafts());
+            ListTag retained = new ListTag();
+            for (KeyAmount output : bundle.retainedOutputs())
+            {
+                CompoundTag encodedOutput = new CompoundTag();
+                writeKey(encodedOutput, output.key(), registries);
+                encodedOutput.putLong("amount", output.amount());
+                retained.add(encodedOutput);
+            }
+            encodedBundle.put("retained_outputs", retained);
+            wait.put("machine_bundle", encodedBundle);
+        }
         owner.put("external_wait", wait);
     }
 
@@ -331,6 +349,7 @@ public final class RecipeOrderSavedData extends SavedData
         }
         if (occupiedMachines.isEmpty())
             occupiedMachines.add(new RecipeOrderJob.MachineLocation(dimension, position, ""));
+        MachineRecipeBundle bundle = readMachineBundle(wait, registries);
         return new RecipeOrderJob.ExternalWait(
                 dimension, position,
                 wait.contains("output_key", Tag.TAG_COMPOUND)
@@ -341,7 +360,26 @@ public final class RecipeOrderSavedData extends SavedData
                 wait.getBoolean("native_furnace"), wait.getBoolean("provisioner"), wait.getLong("baseline"),
                 wait.getLong("network_baseline"), wait.getLong("network_observed"), wait.getLong("amount"),
                 wait.getLong("collected"), remaining, readReservedList(
-                wait, "network_baseline_stacks", registries), occupiedMachines);
+                wait, "network_baseline_stacks", registries), occupiedMachines, bundle);
+    }
+
+    private static MachineRecipeBundle readMachineBundle(CompoundTag wait, HolderLookup.Provider registries)
+    {
+        MachineRecipeBundle bundle = null;
+        if (wait.contains("machine_bundle", Tag.TAG_COMPOUND))
+        {
+            CompoundTag encodedBundle = wait.getCompound("machine_bundle");
+            List<KeyAmount> retained = new ArrayList<>();
+            ListTag encodedOutputs = encodedBundle.getList("retained_outputs", Tag.TAG_COMPOUND);
+            for (int i = 0; i < encodedOutputs.size(); i++)
+            {
+                CompoundTag output = encodedOutputs.getCompound(i);
+                retained.add(new KeyAmount(readKey(output, registries), output.getLong("amount")));
+            }
+            bundle = new MachineRecipeBundle(encodedBundle.getInt("producer_step"),
+                    encodedBundle.getLong("producer_crafts"), encodedBundle.getLong("consumer_crafts"), retained);
+        }
+        return bundle;
     }
 
     private static List<RecipePlan.ReservedMaterial> readReserved(CompoundTag job,

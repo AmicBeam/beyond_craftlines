@@ -1,0 +1,19 @@
+{
+  "recipe_type": "mekanism:infusion_conversion",
+  "input_fields": [
+    "getInput"
+  ],
+  "output_fields": [
+    "getOutputDefinition"
+  ],
+  "representation_fields": [
+    "getRepresentations"
+  ],
+  "input_conversion": {
+    "mode": "machine_input",
+    "consumer_recipe_types": [
+      "mekanism:metallurgic_infusing",
+      "mekanism:metallurgic_infuser"
+    ]
+  }
+}

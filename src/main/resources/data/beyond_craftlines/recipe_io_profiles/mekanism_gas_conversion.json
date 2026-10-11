@@ -1,0 +1,27 @@
+{
+  "recipe_type": "mekanism:gas_conversion",
+  "input_fields": [
+    "getInput"
+  ],
+  "output_fields": [
+    "getOutputDefinition"
+  ],
+  "representation_fields": [
+    "getRepresentations"
+  ],
+  "input_conversion": {
+    "mode": "machine_input",
+    "consumer_recipe_types": [
+      "mekanism:purifying",
+      "mekanism:compressing",
+      "mekanism:injecting",
+      "mekanism:dissolution",
+      "mekanism:nucleosynthesizing",
+      "mekanism:purification_chamber",
+      "mekanism:osmium_compressor",
+      "mekanism:chemical_injection_chamber",
+      "mekanism:chemical_dissolution_chamber",
+      "mekanism:antiprotonic_nucleosynthesizer"
+    ]
+  }
+}

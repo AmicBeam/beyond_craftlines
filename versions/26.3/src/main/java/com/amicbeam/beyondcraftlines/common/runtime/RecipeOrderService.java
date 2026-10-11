@@ -145,6 +145,9 @@ public final class RecipeOrderService
         if (job == null || !job.owner().equals(owner) || terminal(job.status())) return false;
         DimensionsNet network = DimensionsNet.getNetFromId(job.networkId());
         if (network == null) return false;
+        job = recoverCancelledMachineBundles(server, job);
+        // Keep actually recovered resources owned by the order if the network cannot accept the return.
+        data.put(job);
         releaseReservations(network.getUnifiedStorage(), job.reserved());
         data.put(job.withReserved(List.of()).with(RecipeOrderJob.Status.CANCELLED, encode("cancelled_by_owner"))
                 .finishedAt(server.overworld().getGameTime()));
@@ -340,8 +343,8 @@ public final class RecipeOrderService
             for (int step = 0; step < working.executions().size(); step++)
             {
                 RecipeOrderJob.StepExecution execution = working.executions().get(step);
-                if (execution.complete() || attemptedSteps.contains(step)
-                        || !working.dependenciesComplete(step)) continue;
+                if (execution.complete() || attemptedSteps.contains(step) || working.bundledStep(step)
+                        || execution.externalWait() == null && !working.dependenciesComplete(step)) continue;
                 if ((pass == 0) != (execution.externalWait() != null)) continue;
                 if (pass == 1 && inFlightOutputs.stream().anyMatch(output ->
                         com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
@@ -355,13 +358,21 @@ public final class RecipeOrderService
                 RecipeOrderJob.ExternalWait currentWait = working.executions().get(step).externalWait();
                 if (previousWait != null && currentWait == null)
                 {
-                    previousWait.occupiedMachines().forEach(machine -> index.releaseMachine(
-                            new MachineKey(machine.dimension(), machine.position())));
+                    Set<MachineKey> retainedMachines = working.executions().stream()
+                            .map(RecipeOrderJob.StepExecution::externalWait).filter(java.util.Objects::nonNull)
+                            .flatMap(wait -> wait.occupiedMachines().stream())
+                            .map(machine -> new MachineKey(machine.dimension(), machine.position()))
+                            .collect(java.util.stream.Collectors.toSet());
+                    previousWait.occupiedMachines().stream().map(machine ->
+                            new MachineKey(machine.dimension(), machine.position()))
+                            .filter(machine -> !retainedMachines.contains(machine)).forEach(index::releaseMachine);
                     inFlightOutputs.removeIf(output -> com.amicbeam.beyondcraftlines.common.crafting
                             .StackKeyMatch.exact(execution.step().outputKey(), output));
                 }
-                if (currentWait != null)
-                    inFlightOutputs.add(working.executions().get(step).step().outputKey());
+                inFlightOutputs.clear();
+                working.executions().stream().map(RecipeOrderJob.StepExecution::externalWait)
+                        .filter(java.util.Objects::nonNull).map(RecipeOrderJob.ExternalWait::outputKey)
+                        .forEach(inFlightOutputs::add);
             }
         }
         if (working.executions().stream().allMatch(RecipeOrderJob.StepExecution::complete))
@@ -378,7 +389,7 @@ public final class RecipeOrderService
         if (network == null) return job.with(RecipeOrderJob.Status.PAUSED, encode("network_unavailable"));
         if (job.externalWait() != null) return job.externalWait().provisioner()
                 ? tickProvisioner(server, network, job) : job.externalWait().nativeFurnace()
-                ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
+                ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job, index);
         if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
         RecipePlan.Step step = job.step(job.nextStep());
         if (com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
@@ -404,7 +415,10 @@ public final class RecipeOrderService
         boolean hasDirectMachine = DeviceBindingRegistry.machineFor(
                 server, job.networkId(), step.family()).isPresent();
         if (hasProvisioner || hasDirectMachine)
-            return reserveGroupedEndpoints(server, network, job, step, index);
+        {
+            RecipeOrderJob bundled = tryReserveMachineBundle(server, network, job, index);
+            return bundled != null ? bundled : reserveGroupedEndpoints(server, network, job, step, index);
+        }
         if (nativeFurnaceFamily)
             return job.with(RecipeOrderJob.Status.PAUSED,
                     encode("native_furnace_unavailable", step.family()));
@@ -507,44 +521,21 @@ public final class RecipeOrderService
                                                            RuntimeOrderIndex<Integer, MachineKey> index)
     {
         List<RecipePlan.Material> batchInputs = inputsToDispatch(sequentialDispatch(job, step), step);
-        java.util.LinkedHashMap<String, List<GroupEndpoint>> routes = new java.util.LinkedHashMap<>();
-        for (String group : batchInputs.stream().map(RecipePlan.Material::inputGroup)
-                .distinct().sorted().toList())
-        {
-            List<InputGroupRouteLogic.Candidate<GroupEndpoint>> candidates = new ArrayList<>();
-            for (DeviceBindingRegistry.BoundMachine machine : DeviceBindingRegistry.machinesFor(
-                    server, job.networkId(), step.family(), group))
-            {
-                BindingRecord binding = machine.binding();
-                MachineKey key = new MachineKey(binding.dimension(), binding.position());
-                if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
-                        GroupEndpoint.direct(machine), InputGroupRouteLogic.Kind.DIRECT_MACHINE,
-                        binding.inputGroupRoutingPriority(step.family(), group),
-                        binding.priority(),
-                        binding.dimension().identifier() + "|" + binding.position().asLong()));
-            }
-            for (DeviceBindingRegistry.ProvisionerTarget provisioner : DeviceBindingRegistry.provisionersFor(
-                    server, job.networkId(), step.family(), group))
-            {
-                BindingRecord binding = provisioner.binding();
-                MachineKey key = provisionerKey(provisioner);
-                if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
-                        GroupEndpoint.provisioner(provisioner), InputGroupRouteLogic.Kind.PROVISIONER,
-                        binding.inputGroupRoutingPriority(step.family(), group),
-                        binding.priority(),
-                        key.dimension().identifier() + "|" + key.position().asLong()));
-            }
-            List<GroupEndpoint> selected = InputGroupRouteLogic.preferred(candidates).stream()
-                    .map(InputGroupRouteLogic.Candidate::endpoint).toList();
-            if (selected.isEmpty())
-                return job.with(RecipeOrderJob.Status.PAUSED, encode("input_group_unassigned", group));
-            routes.put(group, selected);
-        }
-        preferCohesiveDirectMachine(server, routes, batchInputs);
+        java.util.LinkedHashMap<String, List<GroupEndpoint>> routes = groupRoutes(
+                server, job, step, batchInputs, index, null);
+        for (RecipePlan.Material input : batchInputs)
+            if (!routes.containsKey(input.inputGroup()))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("input_group_unassigned", input.inputGroup()));
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
-        InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
-                job, step, batchInputs);
+        Set<String> directGroups = routes.entrySet().stream()
+                .filter(entry -> entry.getValue().getFirst().machine() != null)
+                .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
+        List<RecipePlan.Material> remainingInputs = subtractExistingGroupedMachineInputs(server, routes,
+                batchInputs.stream().filter(input -> directGroups.contains(input.inputGroup())).toList());
+        List<RecipePlan.Material> needed = new ArrayList<>(remainingInputs);
+        batchInputs.stream().filter(input -> !directGroups.contains(input.inputGroup())).forEach(needed::add);
+        InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(), job, step, needed);
         if (selection == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("matching_machine_inputs"));
 
@@ -603,8 +594,6 @@ public final class RecipeOrderService
             MachineKey key = endpoint.key();
             occupied.add(new RecipeOrderJob.MachineLocation(key.dimension(), key.position(), group));
         }));
-        List<RecipePlan.Material> remainingInputs = subtractExistingGroupedMachineInputs(server, routes,
-                batchInputs.stream().filter(input -> !provisionerGroups.contains(input.inputGroup())).toList());
         long baseline = routes.values().stream().flatMap(List::stream)
                 .filter(endpoint -> endpoint.machine() != null).distinct()
                 .mapToLong(endpoint -> BoundMachineAutomation.countExtractable(
@@ -627,6 +616,146 @@ public final class RecipeOrderService
                 selection.chunks(), provisionerGroups));
         return updated.awaitExternal(wait, hasDirect
                 ? encode("bound_machine_preparing") : encode("provisioner_waiting_output", 0, output));
+    }
+
+    private static java.util.LinkedHashMap<String, List<GroupEndpoint>> groupRoutes(
+            MinecraftServer server, RecipeOrderJob job, RecipePlan.Step step,
+            List<RecipePlan.Material> batchInputs, RuntimeOrderIndex<Integer, MachineKey> index,
+            MachineKey ownedMachine)
+    {
+        java.util.LinkedHashMap<String, List<GroupEndpoint>> routes = new java.util.LinkedHashMap<>();
+        for (String group : batchInputs.stream().map(RecipePlan.Material::inputGroup)
+                .distinct().sorted().toList())
+        {
+            List<InputGroupRouteLogic.Candidate<GroupEndpoint>> candidates = new ArrayList<>();
+            for (DeviceBindingRegistry.BoundMachine machine : DeviceBindingRegistry.machinesFor(
+                    server, job.networkId(), step.family(), group))
+            {
+                BindingRecord binding = machine.binding();
+                MachineKey key = new MachineKey(binding.dimension(), binding.position());
+                if (!index.isMachineOccupied(key) || key.equals(ownedMachine)) candidates.add(new InputGroupRouteLogic.Candidate<>(
+                        GroupEndpoint.direct(machine), InputGroupRouteLogic.Kind.DIRECT_MACHINE,
+                        binding.inputGroupRoutingPriority(step.family(), group),
+                        binding.priority(),
+                        binding.dimension().identifier() + "|" + binding.position().asLong()));
+            }
+            for (DeviceBindingRegistry.ProvisionerTarget provisioner : DeviceBindingRegistry.provisionersFor(
+                    server, job.networkId(), step.family(), group))
+            {
+                BindingRecord binding = provisioner.binding();
+                MachineKey key = provisionerKey(provisioner);
+                if (!index.isMachineOccupied(key) || key.equals(ownedMachine)) candidates.add(new InputGroupRouteLogic.Candidate<>(
+                        GroupEndpoint.provisioner(provisioner), InputGroupRouteLogic.Kind.PROVISIONER,
+                        binding.inputGroupRoutingPriority(step.family(), group),
+                        binding.priority(),
+                        key.dimension().identifier() + "|" + key.position().asLong()));
+            }
+            List<GroupEndpoint> selected = InputGroupRouteLogic.preferred(candidates).stream()
+                    .map(InputGroupRouteLogic.Candidate::endpoint).toList();
+            if (selected.isEmpty())
+                return new java.util.LinkedHashMap<>();
+            routes.put(group, selected);
+        }
+        preferCohesiveDirectMachine(server, routes, batchInputs);
+        return routes;
+    }
+
+    private static MachineKey singleDirectMachine(Map<String, List<GroupEndpoint>> routes)
+    {
+        if (routes.values().stream().anyMatch(endpoints -> endpoints.size() != 1
+                || endpoints.getFirst().machine() == null)) return null;
+        return MachineRecipeBundle.singleMachine(routes.values().stream()
+                .map(endpoints -> endpoints.stream().map(GroupEndpoint::key).toList()).toList());
+    }
+
+    /** Reserve both recipe stages together; the final product proves that the internal stage ran. */
+    private static RecipeOrderJob tryReserveMachineBundle(MinecraftServer server, DimensionsNet network,
+                                                           RecipeOrderJob job,
+                                                           RuntimeOrderIndex<Integer, MachineKey> index)
+    {
+        int producerIndex = job.nextStep();
+        RecipePlan.Step producer = job.step(producerIndex);
+        Set<String> consumers = com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
+                .machineInputConversionConsumers(producer.family(), producer.recipe().toString());
+        if (consumers.isEmpty() || producer.outputKey() instanceof ItemStackKey
+                || producer.inputs().stream().anyMatch(input -> !(input.key() instanceof ItemStackKey))) return null;
+        RecipeOrderJob.ExternalWait previous = job.externalWait();
+        if (previous != null && (previous.bundle() != null || previous.collected() > 0
+                || previous.provisioner() || previous.nativeFurnace())) return null;
+        MachineKey owned = previous == null ? null
+                : new MachineKey(previous.machineDimension(), previous.machinePosition());
+        if (previous != null && distinctLocations(previous.occupiedMachines()).size() != 1) return null;
+        var producerRoutes = groupRoutes(server, job, producer, producer.inputs(), index, owned);
+        MachineKey machine = singleDirectMachine(producerRoutes);
+        if (machine == null || owned != null && !owned.equals(machine)) return null;
+        ServerLevel level = server.getLevel(machine.dimension());
+        if (level == null) return null;
+        for (int consumerIndex = producerIndex + 1; consumerIndex < job.stepCount(); consumerIndex++)
+        {
+            RecipeOrderJob.StepExecution consumerExecution = job.executions().get(consumerIndex);
+            RecipePlan.Step consumer = consumerExecution.step();
+            if (!consumers.contains(consumer.family()) || consumerExecution.complete() || consumerExecution.externalWait() != null
+                    || job.bundledStep(consumerIndex) || !consumer.dependencies().contains(producerIndex)) continue;
+            MachineRecipeBundle bundle = MachineRecipeBundle.plan(producerIndex, producer, consumer, job.blockingMode());
+            if (bundle == null || bundle.retainedOutputs().stream().anyMatch(output -> output.key() instanceof ItemStackKey))
+                continue;
+            var consumerRoutes = groupRoutes(server, job, consumer, consumer.inputs(), index, owned);
+            if (!machine.equals(singleDirectMachine(consumerRoutes))) continue;
+            if (!StepDependencyGraph.ready(consumerIndex, job.stepCount(), consumer.dependencies(),
+                    dependency -> dependency == producerIndex || job.executions().get(dependency).complete()))
+            {
+                if (previous == null) return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_dependencies"));
+                continue;
+            }
+            if (previous != null)
+            {
+                long committedCrafts = MachineRecipeBundle.ceilDivide(previous.amount(), producer.outputPerCraft());
+                // An already dispatched larger batch cannot be reclassified as a smaller completed stage.
+                if (committedCrafts > bundle.producerCrafts()) continue;
+            }
+            List<RecipePlan.Material> inputs = bundle.externalInputs(producer, consumer);
+            if (previous != null)
+            {
+                List<InputChunk> committed = new ArrayList<>();
+                for (RecipePlan.Material offered : inputsToDispatch(sequentialDispatch(job, producer), producer))
+                {
+                    long pending = previous.remainingInputs().stream().filter(input ->
+                            input.inputGroup().equals(offered.inputGroup())
+                                    && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                                    .exact(input.key(), offered.key())).mapToLong(RecipePlan.Material::amount)
+                            .reduce(0, SaturatingLongMath::add);
+                    if (offered.amount() > pending) committed.add(new InputChunk(
+                            offered.key(), offered.amount() - pending, true, offered.inputGroup()));
+                }
+                inputs = subtractDeliveredInputs(inputs, committed);
+            }
+            List<RecipePlan.Material> credited = subtractExistingMachineInputs(level, machine.position(),
+                    inputs.stream().filter(input -> previous == null || producer.inputs().stream().noneMatch(source ->
+                            com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(source.key(), input.key())))
+                            .toList());
+            if (previous != null)
+            {
+                List<RecipePlan.Material> pending = new ArrayList<>(credited);
+                inputs.stream().filter(input -> producer.inputs().stream().anyMatch(source ->
+                        com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(source.key(), input.key())))
+                        .forEach(pending::add);
+                credited = List.copyOf(pending);
+            }
+            if (selectInputs(server.overworld(), network.getUnifiedStorage(), job, consumer, credited) == null) continue;
+            List<RecipeOrderJob.MachineLocation> occupied = java.util.stream.Stream.concat(
+                    producer.inputs().stream(), consumer.inputs().stream()).map(RecipePlan.Material::inputGroup)
+                    .distinct().map(group -> new RecipeOrderJob.MachineLocation(
+                            machine.dimension(), machine.position(), group)).toList();
+            long output = SaturatingLongMath.multiply(consumer.outputPerCraft(), bundle.consumerCrafts());
+            RecipeOrderJob.ExternalWait wait = new RecipeOrderJob.ExternalWait(machine.dimension(), machine.position(),
+                    consumer.outputKey(), false, false,
+                    BoundMachineAutomation.countExtractable(level, machine.position(), consumer.outputKey()),
+                    networkAmount(job.networkId(), consumer.outputKey()), 0, output, 0, credited,
+                    outputBaseline(job.networkId(), consumer.outputKey()), occupied, bundle);
+            index.occupyMachine(machine);
+            return job.awaitMachineBundle(consumerIndex, wait).awaitExternal(wait, encode("bound_machine_preparing"));
+        }
+        return null;
     }
 
     private static List<RecipePlan.ReservedMaterial> consumedReservedForGroups(
@@ -769,7 +898,7 @@ public final class RecipeOrderService
     }
 
     private static RecipeOrderJob tickBoundMachine(MinecraftServer server, DimensionsNet network,
-                                                    RecipeOrderJob job)
+                                                    RecipeOrderJob job, RuntimeOrderIndex<Integer, MachineKey> index)
     {
         RecipeOrderJob.ExternalWait wait = job.externalWait();
         RecipePlan.Step step = job.step(job.nextStep());
@@ -796,13 +925,17 @@ public final class RecipeOrderService
                     || !BuiltInRegistries.BLOCK.getKey(machineLevel.getBlockState(machine.position()).getBlock())
                     .equals(binding.lastBlockId())
                     || !BoundMachineAutomation.isAutomatable(machineLevel, machine.position())
-                    || !binding.recipeFamilies().contains(step.family())
-                    || !binding.acceptsInputGroup(step.family(), machine.inputGroup()))
+                    || !acceptsBundleGroup(job, wait, binding, machine.inputGroup()))
                 return job.with(RecipeOrderJob.Status.ERROR, encode("bound_machine_removed"));
             directLocations.add(machine);
         }
         if (directLocations.isEmpty())
             return job.with(RecipeOrderJob.Status.ERROR, encode("bound_machine_removed"));
+        if (wait.bundle() == null)
+        {
+            RecipeOrderJob bundled = tryReserveMachineBundle(server, network, job, index);
+            if (bundled != null) return bundled;
+        }
 
         if (!wait.remainingInputs().isEmpty())
         {
@@ -811,7 +944,7 @@ public final class RecipeOrderService
                     working, step, wait.remainingInputs());
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
-            if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
+            if (wait.bundle() == null && selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
                     server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
                 dispatch = dispatchableInputsAcross(
                         server, directLocations, wait.remainingInputs(), selection.chunks());
@@ -882,14 +1015,11 @@ public final class RecipeOrderService
             {
                 // These are observed machine products, not predicted yields. Hold them for later steps;
                 // cancellation and completion return unused products through the normal reservation ledger.
-                for (KeyAmount output : step.byproducts())
-                {
-                    long visible = BoundMachineAutomation.countExtractable(machineLevel, machine.position(), output.key());
-                    if (visible <= 0) continue;
-                    var collected = BoundMachineAutomation.extractStacks(machineLevel, machine.position(), output.key(), visible);
-                    job = addReserved(job, collected.stream().map(value ->
-                            new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
-                }
+                List<KeyAmount> outputs = wait.bundle() == null ? step.byproducts() : bundleOutputs(machineLevel, job, wait);
+                List<KeyAmount> collected = MachineBundleResources.collect(outputs, wait.bundle(),
+                        bundleResources(machineLevel, machine.position()));
+                job = addReserved(job, collected.stream().map(value ->
+                        new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
             }
         }
 
@@ -965,10 +1095,100 @@ public final class RecipeOrderService
             wait = wait.withProgress(Math.max(wait.networkObserved(), afterObserved), wait.collected());
         }
         if (wait.collected() >= wait.amount() && wait.remainingInputs().isEmpty())
-            return job.completeExternalBatch();
+        {
+            if (wait.bundle() != null) job = collectBundleRemainders(server, job, wait);
+            return job.awaitExternal(wait, "").completeExternalBatch();
+        }
         if (!wait.remainingInputs().isEmpty())
             return job.awaitExternal(wait, encode("feeding_bound_machine"));
         return job.awaitExternal(wait, encode("machine_processing", wait.collected(), wait.amount()));
+    }
+
+    private static boolean acceptsBundleGroup(RecipeOrderJob job, RecipeOrderJob.ExternalWait wait,
+                                               BindingRecord binding, String group)
+    {
+        RecipePlan.Step consumer = job.step(job.nextStep());
+        boolean acceptsConsumer = binding.recipeFamilies().contains(consumer.family())
+                && binding.acceptsInputGroup(consumer.family(), group);
+        if (wait.bundle() == null) return acceptsConsumer;
+        RecipePlan.Step producer = job.step(wait.bundle().producerStep());
+        // Both recipes must remain bound to this physical machine after save/load or edits.
+        if (!binding.recipeFamilies().contains(consumer.family())
+                || !binding.recipeFamilies().contains(producer.family())) return false;
+        boolean producerGroup = producer.inputs().stream().anyMatch(input -> input.inputGroup().equals(group));
+        boolean consumerGroup = consumer.inputs().stream().anyMatch(input -> input.inputGroup().equals(group));
+        return (producerGroup || consumerGroup)
+                && (!producerGroup || binding.acceptsInputGroup(producer.family(), group))
+                && (!consumerGroup || binding.acceptsInputGroup(consumer.family(), group));
+    }
+
+    private static List<KeyAmount> bundleOutputs(ServerLevel level, RecipeOrderJob job,
+                                                  RecipeOrderJob.ExternalWait wait)
+    {
+        List<KeyAmount> result = new ArrayList<>();
+        for (RecipePlan.Step stage : List.of(job.step(wait.bundle().producerStep()), job.step(job.nextStep())))
+            for (KeyAmount output : recipeOutputs(level, stage))
+                if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(output.key(), wait.outputKey())
+                        && result.stream().noneMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                        .exact(value.key(), output.key()))) result.add(output);
+        for (KeyAmount retained : wait.bundle().retainedOutputs())
+            if (result.stream().noneMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                    .exact(value.key(), retained.key()))) result.add(retained);
+        return List.copyOf(result);
+    }
+
+    private static MachineBundleResources.Access bundleResources(ServerLevel level, BlockPos position)
+    {
+        return new MachineBundleResources.Access()
+        {
+            public long extractable(IStackKey<?> key)
+            { return BoundMachineAutomation.countExtractable(level, position, key); }
+            public List<KeyAmount> extract(IStackKey<?> key, long amount)
+            { return BoundMachineAutomation.extractStacks(level, position, key, amount); }
+        };
+    }
+
+    private static RecipeOrderJob collectBundleRemainders(MinecraftServer server, RecipeOrderJob job,
+                                                          RecipeOrderJob.ExternalWait wait)
+    {
+        ServerLevel level = server.getLevel(wait.machineDimension());
+        if (level == null) return job;
+        List<KeyAmount> outputs = new ArrayList<>(bundleOutputs(level, job, wait));
+        outputs.add(new KeyAmount(wait.outputKey(), 1));
+        List<KeyAmount> collected = MachineBundleResources.collect(outputs, null,
+                bundleResources(level, wait.machinePosition()));
+        job = addReserved(job, collected.stream().map(value ->
+                new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
+        return job;
+    }
+
+    private static RecipeOrderJob recoverCancelledMachineBundles(MinecraftServer server, RecipeOrderJob job)
+    {
+        for (int consumer = 0; consumer < job.stepCount(); consumer++)
+        {
+            RecipeOrderJob.ExternalWait wait = job.executions().get(consumer).externalWait();
+            if (wait == null || wait.bundle() == null) continue;
+            ServerLevel level = server.getLevel(wait.machineDimension());
+            BindingRecord binding = level == null ? null
+                    : BindingSavedData.get(server).at(wait.machineDimension(), wait.machinePosition());
+            if (binding == null || binding.networkId() != job.networkId() || !level.isLoaded(wait.machinePosition())
+                    || !BuiltInRegistries.BLOCK.getKey(level.getBlockState(wait.machinePosition()).getBlock())
+                    .equals(binding.lastBlockId())) continue;
+            RecipeOrderJob active = job.deactivate().activate(consumer);
+            active = collectBundleRemainders(server, active, wait);
+            List<RecipePlan.Material> inputs = wait.bundle().externalInputs(
+                    job.step(wait.bundle().producerStep()), job.step(consumer));
+            for (RecipePlan.Material input : inputs)
+            {
+                long visible = BoundMachineAutomation.countExtractable(level, wait.machinePosition(), input.key());
+                List<KeyAmount> collected = BoundMachineAutomation.extractStacks(
+                        level, wait.machinePosition(), input.key(), visible);
+                active = addReserved(active, collected.stream().map(value ->
+                        new RecipePlan.ReservedMaterial(value.key(), value.amount())).toList());
+            }
+            job = active.deactivate();
+        }
+        return job;
     }
 
     /**

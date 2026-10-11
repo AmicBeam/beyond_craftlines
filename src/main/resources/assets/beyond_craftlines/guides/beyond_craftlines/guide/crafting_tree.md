@@ -29,7 +29,7 @@ For datapack/IO profile changes, apply the server data using `/reload` or the mo
 
 The requested result is at the top. Its ingredients appear below it, followed by the ingredients of every intermediate recipe. Identical resources at the same recipe level are merged and their quantities are added together.
 
-Each node shows the amount required for this order. Hover it to inspect the selected recipe's direct inputs and output, recipe family, recipe ID, network stock, and planned production count.
+At 45% zoom or above, each node shows the amount required for this order. Hover it to inspect the selected recipe's direct inputs and output, recipe family, recipe ID, network stock, and planned production count.
 
 - **Green** means existing network stock fully satisfies the node, so that branch does not need to expand.
 - **Orange** means stock satisfies only part of the demand; the tree expands only the remaining shortage.
@@ -38,6 +38,8 @@ Each node shows the amount required for this order. Hover it to inspect the sele
 - A node with an **orange `*`** is a self-increment seed. It shows only the minimum amount needed to run one operation and never becomes a purple reference.
 
 Middle-click a node to collapse or expand its visible descendants. Display folding changes only the view; it never merges server-side production steps or reservations.
+
+Scroll down to **35%** or **25%** for an overview of large recipe chains. These levels use compact frames and thumbnails without counts or corner badges; status colors, connections, and hover details remain visible without overlapping nodes. Preview mode supports dragging and zooming. Zoom back to **45%** or above to choose recipes or ingredients, open JEI recipes, jump to references, or fold nodes.
 
 ## Choosing recipes and ingredients
 

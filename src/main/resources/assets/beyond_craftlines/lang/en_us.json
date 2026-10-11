@@ -195,6 +195,7 @@
   "gui.beyond_craftlines.validating_plan": "Waiting for server plan validation…",
   "gui.beyond_craftlines.validating_plan_pages": "Receiving validated plan: page %s/%s",
   "gui.beyond_craftlines.missing": "Missing: %s",
+  "gui.beyond_craftlines.tree_preview_help": "Preview only · Drag/scroll to navigate · Zoom to 45% to interact",
   "gui.beyond_craftlines.tree_resolution_help": "Left-click the item's top-left candidate badge for tag choices/elsewhere for recipes · Middle-click collapse · Right-click choose recipe",
   "error.beyond_craftlines.invalid_order_recipe": "The selected JEI recipe is not available on this network",
   "error.beyond_craftlines.order_recipe_not_loaded": "The JEI recipe is not synchronized to the server (ID: %s)",

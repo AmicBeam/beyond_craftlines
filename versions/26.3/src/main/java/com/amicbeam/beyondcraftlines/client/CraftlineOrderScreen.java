@@ -71,9 +71,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private static final int PICKER_HEADER_HEIGHT = 18;
     private static final int PICKER_Z = 300;
     private static final long[] AMOUNT_STEPS = {1, 10, 100, 1_000};
-    private static final double DEFAULT_TREE_ZOOM = 0.65;
-    private static final double MIN_TREE_ZOOM = 0.45;
-    private static final double MAX_TREE_ZOOM = 1.75;
+    private static final double DEFAULT_TREE_ZOOM = TreeViewScale.DEFAULT_ZOOM;
 
     private FilteredEditBox amount;
     private RecipeHolder<?> selected;
@@ -684,15 +682,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         List<GraphNode> nodes = treeNodes;
 
         int contentBottom = treeContentBottom();
+        int nodeSize = TreeViewScale.nodeSize(treeZoom);
         graphics.enableScissor(treeLeft() + 1, treeTop() + 1, treeRight() - 1, contentBottom);
         for (GraphNode node : nodes)
         {
             if (node.collapsed || node.jumpTarget != null) continue;
             for (GraphNode child : node.children)
             {
-                int x1 = nodeX(node) + 14;
-                int y1 = nodeY(node) + 28;
-                int x2 = nodeX(child) + 14;
+                int x1 = nodeX(node) + nodeSize / 2;
+                int y1 = nodeY(node) + nodeSize;
+                int x2 = nodeX(child) + nodeSize / 2;
                 int y2 = nodeY(child);
                 if (!ViewportCulling.intersects(treeLeft(), treeTop(), treeRight(), contentBottom,
                         Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2) + 1, Math.max(y1, y2) + 1)) continue;
@@ -708,10 +707,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             int x = nodeX(node);
             int y = nodeY(node);
             if (!ViewportCulling.intersects(treeLeft(), treeTop(), treeRight(), contentBottom,
-                    x - 1, y - 1, x + 29, y + 29)) continue;
+                    x - 1, y - 1, x + nodeSize + 1, y + nodeSize + 1)) continue;
             renderNode(graphics, node, mouseX, mouseY);
             if (!pickerOpen() && ViewportCulling.hitTest(treeLeft() + 1, treeTop() + 1,
-                    treeRight() - 1, contentBottom, x, y, x + 28, y + 28, mouseX, mouseY)) hovered = node;
+                    treeRight() - 1, contentBottom, x, y, x + nodeSize, y + nodeSize, mouseX, mouseY)) hovered = node;
         }
         // Item/resource renderers may defer their vertices. Flush while scissoring is still active,
         // otherwise icons and counts can be emitted later on top of the footer and modal picker.
@@ -722,7 +721,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         String zoom = Math.round(treeZoom * 100) + "%";
         graphics.text(font, zoom, treeRight() - font.width(zoom) - 5, treeBottom() - 12, 0x8296A8, false);
         Component resolutionHelp = Component.literal(font.plainSubstrByWidth(
-                Component.translatable("gui.beyond_craftlines.tree_resolution_help").getString(),
+                Component.translatable(TreeViewScale.previewOnly(treeZoom)
+                        ? "gui.beyond_craftlines.tree_preview_help"
+                        : "gui.beyond_craftlines.tree_resolution_help").getString(),
                 Math.max(0, treeRight() - treeLeft() - font.width(zoom) - 16)));
         graphics.text(font, resolutionHelp,
                 treeLeft() + 5, treeBottom() - 12, 0x8296A8, false);
@@ -807,7 +808,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 "tooltip.beyond_craftlines.cycle_blocked").withStyle(ChatFormatting.RED));
         if (node.stockSatisfied) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.stock_satisfied").withStyle(ChatFormatting.GREEN));
-        if (node.jumpTarget != null) lines.add(Component.translatable(
+        if (node.jumpTarget != null && !TreeViewScale.previewOnly(treeZoom)) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.duplicate_jump", node.jumpTarget.depth)
                 .withStyle(ChatFormatting.LIGHT_PURPLE));
         if (node.itemId != null && defaultRecipes.containsKey(node.itemId)) lines.add(Component.translatable(
@@ -892,19 +893,27 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (requestPreview) markPreviewDirty();
     }
 
-    private int nodeX(GraphNode node) { return treeLeft() + (int) treeOffsetX + (int) (node.row * 46 * treeZoom); }
-    private int nodeY(GraphNode node) { return treeTop() + (int) treeOffsetY + (int) (node.depth * 58 * treeZoom); }
+    private int nodeX(GraphNode node)
+    { return treeLeft() + TreeViewScale.nodeStart(node.row, treeOffsetX, treeZoom, 46); }
+    private int nodeY(GraphNode node)
+    { return treeTop() + TreeViewScale.nodeStart(node.depth, treeOffsetY, treeZoom, 58); }
 
     private void renderNode(GuiGraphicsExtractor graphics, GraphNode node, int mouseX, int mouseY)
     {
         int x = nodeX(node);
         int y = nodeY(node);
+        int size = TreeViewScale.nodeSize(treeZoom);
         boolean hover = !pickerOpen() && ViewportCulling.hitTest(treeLeft() + 1, treeTop() + 1,
-                treeRight() - 1, treeContentBottom(), x, y, x + 28, y + 28, mouseX, mouseY);
+                treeRight() - 1, treeContentBottom(), x, y, x + size, y + size, mouseX, mouseY);
         int edge = node.selfIncrement ? BD_ORANGE
                 : node.jumpTarget != null ? BD_VIOLET : node.cyclic || node.cycleBlocked ? 0xFFB23A48
                 : node.stockSatisfied ? 0xFF39A96B : node.recipe == null ? 0xFFB23A48
                 : node.partiallySatisfied ? BD_ORANGE : BD_BLUE;
+        if (TreeViewScale.previewOnly(treeZoom))
+        {
+            renderPreviewNode(graphics, node, x, y, size, edge, hover);
+            return;
+        }
         graphics.fill(x - 1, y - 1, x + 29, y + 29, PANEL_SHADOW);
         graphics.fill(x, y, x + 28, y + 28, hover ? 0xFF293C50 : 0xFF142131);
         graphics.fill(x, y, x + 28, y + 1, edge);
@@ -933,6 +942,24 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             graphics.fill(x + 22, y + 22, x + 26, y + 26, 0xFFB78CFF);
         if (!node.reusableInput) node.key.getRender().renderAmount(graphics, node.needed, iconX, iconY);
         if(node.ingredientChoices.size()>1||node.fluidContainerAlternative)renderCandidateBadge(graphics,x+2,y+2);
+    }
+
+    private void renderPreviewNode(GuiGraphicsExtractor graphics, GraphNode node, int x, int y,
+                                   int size, int edge, boolean hover)
+    {
+        // A compact frame and thumbnail fit inside the scaled row/column gaps. Counts and
+        // clickable badges stay in the full-size view; hover keeps the complete node details.
+        graphics.fill(x, y, x + size, y + size, hover ? 0xFF293C50 : 0xFF142131);
+        graphics.outline(x, y, size, size, edge);
+        graphics.pose().pushMatrix();
+        try
+        {
+            graphics.pose().translate(x + 1, y + 1);
+            float scale = (size - 2) / 16.0F;
+            graphics.pose().scale(scale, scale);
+            node.key.getRender().render(graphics, node.key, 0, 0);
+        }
+        finally { graphics.pose().popMatrix(); }
     }
 
     private static void renderCandidateBadge(GuiGraphicsExtractor graphics, int x, int y)
@@ -1740,6 +1767,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
+        if (TreeViewScale.previewOnly(treeZoom) && overTree(mouseX, mouseY)) return true;
         if (pickerOpen())
         {
             if (clickIngredientPicker(mouseX, mouseY, button)) return true;
@@ -1795,11 +1823,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private GraphNode nodeAt(double mouseX, double mouseY)
     {
         if (pickerOpen() || !overTreeContent(mouseX, mouseY)) return null;
+        int size = TreeViewScale.nodeSize(treeZoom);
         for (GraphNode node : treeNodes)
         {
             int x = nodeX(node);
             int y = nodeY(node);
-            if (mouseX >= x && mouseX < x + 28 && mouseY >= y && mouseY < y + 28) return node;
+            if (mouseX >= x && mouseX < x + size && mouseY >= y && mouseY < y + size) return node;
         }
         return null;
     }
@@ -2565,11 +2594,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             closeIngredientPicker();
             treeViewAdjusted = true;
             double oldZoom = treeZoom;
-            treeZoom = Math.max(MIN_TREE_ZOOM, Math.min(MAX_TREE_ZOOM, treeZoom + scrollY * 0.1));
-            double anchorX = mouseX - treeLeft() - treeOffsetX;
-            double anchorY = mouseY - treeTop() - treeOffsetY;
-            treeOffsetX -= anchorX * (treeZoom / oldZoom - 1.0);
-            treeOffsetY -= anchorY * (treeZoom / oldZoom - 1.0);
+            treeZoom = TreeViewScale.nextZoom(treeZoom, scrollY);
+            treeOffsetX = TreeViewScale.offsetAfterZoom(treeOffsetX, mouseX - treeLeft(), oldZoom, treeZoom);
+            treeOffsetY = TreeViewScale.offsetAfterZoom(treeOffsetY, mouseY - treeTop(), oldZoom, treeZoom);
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);

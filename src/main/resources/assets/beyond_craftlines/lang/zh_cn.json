@@ -195,6 +195,7 @@
   "gui.beyond_craftlines.validating_plan": "正在等待服务端验证方案…",
   "gui.beyond_craftlines.validating_plan_pages": "正在接收验证结果：%s/%s 页",
   "gui.beyond_craftlines.missing": "缺少：%s",
+  "gui.beyond_craftlines.tree_preview_help": "预览模式 · 拖动/滚轮缩放 · 放大至45%后可操作节点",
   "gui.beyond_craftlines.tree_resolution_help": "左键物品左上候选标记选Tag原料/其他区域看配方 · 中键折叠 · 右键选配方",
   "error.beyond_craftlines.invalid_order_recipe": "当前网络无法使用所选 JEI 配方",
   "error.beyond_craftlines.order_recipe_not_loaded": "JEI 展示的配方未同步到服务端（ID：%s）",

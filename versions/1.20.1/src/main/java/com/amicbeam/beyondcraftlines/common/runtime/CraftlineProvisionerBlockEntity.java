@@ -1,5 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.runtime;
 
+import com.amicbeam.beyondcraftlines.common.data.BindingSavedData;
+
 import com.amicbeam.beyondcraftlines.CraftlinesConfig;
 import com.amicbeam.beyondcraftlines.common.init.CraftlinesBlockEntities;
 import com.wintercogs.beyonddimensions.api.capability.helper.CapabilityHelper;
@@ -124,7 +126,8 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
         if (!(level instanceof ServerLevel currentLevel) || wirelessConnections.isEmpty()) return;
         int size = wirelessConnections.size();
         for (KeyAmount staged : List.copyOf(storage.getStorage())) {
-            if (staged.isEmpty()) continue;
+            if (staged.isEmpty() || !BindingSavedData.get(currentLevel.getServer())
+                    .resourceFilter(currentLevel.dimension(), getBlockPos()).accepts(staged.key())) continue;
             long remaining = staged.amount();
             for (int index : connectionOrder()) {
                 if (remaining <= 0) break;
@@ -134,6 +137,8 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
                 if (targetLevel == null || !targetLevel.isLoaded(connection.position())
                         || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
                         .equals(connection.blockId())) continue;
+                if (!BindingSavedData.get(currentLevel.getServer()).resourceFilter(
+                        targetLevel.dimension(), connection.position()).accepts(staged.key())) continue;
                 long capacity = BoundMachineAutomation.insertCapacity(targetLevel, connection.position(),
                         connection.face(), staged.key(), remaining);
                 if (capacity <= 0) continue;
@@ -179,6 +184,8 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
                     .equals(connection.blockId())) continue;
             for (KeyAmount visible : BoundMachineAutomation.extractableStacks(
                     targetLevel, connection.position(), connection.face())) {
+                if (!BindingSavedData.get(currentLevel.getServer()).resourceFilter(
+                        currentLevel.dimension(), getBlockPos()).accepts(visible.key())) continue;
                 KeyAmount simulatedRemainder = networkStorage.insert(visible.key(), visible.amount(), true);
                 long accepted = visible.amount() - (simulatedRemainder.isEmpty()
                         ? 0 : simulatedRemainder.amount());

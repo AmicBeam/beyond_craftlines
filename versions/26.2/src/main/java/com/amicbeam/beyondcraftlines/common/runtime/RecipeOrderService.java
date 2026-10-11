@@ -516,6 +516,9 @@ public final class RecipeOrderService
                     server, job.networkId(), step.family(), group))
             {
                 BindingRecord binding = machine.binding();
+                if (!batchInputs.stream().filter(input -> input.inputGroup().equals(group))
+                        .allMatch(input -> BindingSavedData.get(server).resourceFilter(
+                                binding.dimension(), binding.position()).accepts(input.key()))) continue;
                 MachineKey key = new MachineKey(binding.dimension(), binding.position());
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.direct(machine), InputGroupRouteLogic.Kind.DIRECT_MACHINE,
@@ -528,6 +531,9 @@ public final class RecipeOrderService
             {
                 BindingRecord binding = provisioner.binding();
                 MachineKey key = provisionerKey(provisioner);
+                if (!batchInputs.stream().filter(input -> input.inputGroup().equals(group))
+                        .allMatch(input -> BindingSavedData.get(server).resourceFilter(
+                                key.dimension(), key.position()).accepts(input.key()))) continue;
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.provisioner(provisioner), InputGroupRouteLogic.Kind.PROVISIONER,
                         binding.inputGroupRoutingPriority(step.family(), group),
@@ -543,11 +549,16 @@ public final class RecipeOrderService
         preferCohesiveDirectMachine(server, routes, batchInputs);
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
+
         InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
                 job, step, batchInputs);
         if (selection == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("matching_machine_inputs"));
-
+        for (InputChunk input : selection.chunks())
+            if (routes.get(input.inputGroup()).stream().noneMatch(endpoint ->
+                    BindingSavedData.get(server).resourceFilter(endpoint.key().dimension(),
+                            endpoint.key().position()).accepts(input.key())))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
         Set<String> provisionerGroups = routes.entrySet().stream()
                 .filter(entry -> entry.getValue().getFirst().provisioner() != null)
                 .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -556,6 +567,10 @@ public final class RecipeOrderService
             if (!provisionerGroups.contains(input.inputGroup())) continue;
             ProvisionerStorage storage = routes.get(input.inputGroup()).getFirst()
                     .provisioner().provisioner().storage();
+            GroupEndpoint endpoint = routes.get(input.inputGroup()).getFirst();
+            if (!BindingSavedData.get(server).resourceFilter(endpoint.key().dimension(),
+                    endpoint.key().position()).accepts(input.key()))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
             if (!storage.insertFromOrder(input.key(), input.amount(), true).isEmpty())
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_no_room", input.key()));
         }
@@ -809,6 +824,11 @@ public final class RecipeOrderService
             RecipeOrderJob working = job;
             InputSelection selection = selectInputs(server.overworld(), network.getUnifiedStorage(),
                     working, step, wait.remainingInputs());
+            if (selection != null && selection.chunks().stream().anyMatch(input -> directLocations.stream()
+                    .filter(machine -> machine.inputGroup().isBlank() || machine.inputGroup().equals(input.inputGroup()))
+                    .noneMatch(machine -> BindingSavedData.get(server).resourceFilter(
+                            machine.dimension(), machine.position()).accepts(input.key()))))
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
                     server, directLocations, wait.remainingInputs(), selection.chunks());
             if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
@@ -1396,7 +1416,8 @@ public final class RecipeOrderService
             {
                 if (!machine.inputGroup().isBlank() && !machine.inputGroup().equals(chunk.inputGroup())) continue;
                 ServerLevel level = server.getLevel(machine.dimension());
-                if (level == null) continue;
+                if (level == null || !BindingSavedData.get(server).resourceFilter(
+                        machine.dimension(), machine.position()).accepts(chunk.key())) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
                 var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
                 PlannedInput previous = planned.get(channel);

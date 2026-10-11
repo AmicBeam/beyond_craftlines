@@ -45,6 +45,31 @@ public final class EmiClientIntegration
 
     private EmiClientIntegration() {}
 
+    public static IStackKey<?> ingredientUnderMouseKey(double x, double y)
+    {
+        var interaction = EmiApi.getHoveredStack((int) x, (int) y, false);
+        if (interaction == null || interaction.isEmpty()) return null;
+        return ghostKey(interaction.getStack());
+    }
+
+    public static IStackKey<?> ghostKey(EmiIngredient ingredient)
+    {
+        if (ingredient == null || ingredient.isEmpty()) return null;
+        for (EmiStack stack : ingredient.getEmiStacks())
+        {
+            ItemStack item = stack.getItemStack();
+            if (!item.isEmpty()) return new ItemStackKey(item.copyWithCount(1));
+            for (IStackKey<?> prototype : com.wintercogs.beyonddimensions.api.storage.key.StackKeyRegistry.getAllTypes())
+                try
+                {
+                    IStackKey<?> key = prototype.fromSourceObject(stack.getKey(), stack.getComponentChanges());
+                    if (key != null && !key.isEmpty()) return key;
+                }
+                catch (RuntimeException | LinkageError ignored) {}
+        }
+        return null;
+    }
+
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY)
     {
         var interaction = EmiApi.getHoveredStack(

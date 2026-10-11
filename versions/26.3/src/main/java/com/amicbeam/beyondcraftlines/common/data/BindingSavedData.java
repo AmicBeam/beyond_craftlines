@@ -34,6 +34,7 @@ public final class BindingSavedData extends SavedData
                     tag -> load(tag, NbtCompat.builtinRegistries()),
                     data -> data.save(new CompoundTag(), NbtCompat.builtinRegistries())),
             DataFixTypes.SAVED_DATA_COMMAND_STORAGE);
+    private final Map<BindingKey, ResourceFilter> resourceFilters = new HashMap<>();
     private final List<BindingRecord> records = new ArrayList<>();
     private final Map<UUID, Integer> lastUsedNetworks = new HashMap<>();
     private final Map<UUID, List<BindingRecord>> byPlayer = new HashMap<>();
@@ -59,6 +60,16 @@ public final class BindingSavedData extends SavedData
             if (record != null && (record.deviceType() == DeviceType.EXTERNAL_RECIPE_MACHINE
                     || record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING)) data.addLoaded(record);
         }
+        ListTag filters = tag.getListOrEmpty("resource_filters");
+        for (int i = 0; i < filters.size(); i++)
+        {
+            CompoundTag entry = filters.getCompoundOrEmpty(i);
+            Identifier dimension = Identifier.tryParse(entry.getStringOr("dimension", ""));
+            if (dimension == null) continue;
+            data.resourceFilters.put(new BindingKey(ResourceKey.create(
+                    net.minecraft.core.registries.Registries.DIMENSION, dimension),
+                    BlockPos.of(entry.getLongOr("position", 0L))), ResourceFilter.load(entry.getCompoundOrEmpty("filter"), registries));
+        }
         if (data.records.size() != list.size()) data.setDirty();
         return data;
     }
@@ -66,6 +77,20 @@ public final class BindingSavedData extends SavedData
     public static BindingSavedData get(net.minecraft.server.MinecraftServer server)
     {
         return server.overworld().getDataStorage().computeIfAbsent(TYPE);
+    }
+
+    public ResourceFilter resourceFilter(ResourceKey<Level> dimension, BlockPos position)
+    { return resourceFilters.getOrDefault(new BindingKey(dimension, position), ResourceFilter.EMPTY); }
+
+    public void clearResourceFilter(ResourceKey<Level> dimension, BlockPos position)
+    {
+        if (resourceFilters.remove(new BindingKey(dimension, position)) != null) setDirty();
+    }
+
+    public void setResourceFilter(ResourceKey<Level> dimension, BlockPos position, ResourceFilter filter)
+    {
+        resourceFilters.put(new BindingKey(dimension, position.immutable()), filter);
+        setDirty();
     }
 
     public List<BindingRecord> records() { return List.copyOf(records); }
@@ -205,6 +230,16 @@ public final class BindingSavedData extends SavedData
         ListTag list = new ListTag();
         for (BindingRecord record : records) list.add(writeRecord(record));
         tag.put("bindings", list);
+        ListTag filters = new ListTag();
+        resourceFilters.forEach((key, filter) -> {
+            CompoundTag entry = new CompoundTag();
+            entry.putString("dimension", key.dimension().identifier().toString());
+            entry.putLong("position", key.position().asLong());
+            entry.put("filter", filter.save(registries));
+            filters.add(entry);
+        });
+        tag.put("resource_filters", filters);
+
         CompoundTag remembered = new CompoundTag();
         lastUsedNetworks.forEach((player, network) -> remembered.putInt(player.toString(), network));
         tag.put("last_used_networks", remembered);

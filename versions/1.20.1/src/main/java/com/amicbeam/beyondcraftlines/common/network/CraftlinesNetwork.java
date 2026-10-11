@@ -44,6 +44,7 @@ public final class CraftlinesNetwork {
         server(BindMachinePayload.class, BindMachinePayload.STREAM_CODEC, BindMachinePayload::handle);
         server(OpenBoundMachineConfigPayload.class, OpenBoundMachineConfigPayload.STREAM_CODEC,
                 OpenBoundMachineConfigPayload::handle);
+        server(ConfigureResourceFilterPayload.class, ConfigureResourceFilterPayload.STREAM_CODEC, ConfigureResourceFilterPayload::handle);
         server(ConfigureProvisionerPayload.class, ConfigureProvisionerPayload.STREAM_CODEC, ConfigureProvisionerPayload::handle);
         server(ConfigureBindingPriorityPayload.class, ConfigureBindingPriorityPayload.STREAM_CODEC,
                 ConfigureBindingPriorityPayload::handle);

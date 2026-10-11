@@ -131,6 +131,12 @@ public final class DashboardConfigMenu extends AbstractContainerMenu
 
     @Override public void clicked(int slotId, int button, ClickType clickType, Player player)
     {
+        if (slotId == SAMPLE_SLOT && button == 1 && !getCarried().isEmpty())
+        {
+            var key = com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.contents(getCarried());
+            if (!key.isEmpty()) { setGhostTarget(key); persistGhost(player); }
+            return;
+        }
         if (slotId == SAMPLE_SLOT)
         {
             ItemStack carried = getCarried();

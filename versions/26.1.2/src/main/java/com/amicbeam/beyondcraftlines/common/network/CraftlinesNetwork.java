@@ -36,6 +36,7 @@ public final class CraftlinesNetwork
                 BindMachinePayload::handle);
         registrar.playToServer(OpenBoundMachineConfigPayload.TYPE, OpenBoundMachineConfigPayload.STREAM_CODEC,
                 OpenBoundMachineConfigPayload::handle);
+        registrar.playToServer(ConfigureResourceFilterPayload.TYPE, ConfigureResourceFilterPayload.STREAM_CODEC, ConfigureResourceFilterPayload::handle);
         registrar.playToServer(ConfigureProvisionerPayload.TYPE, ConfigureProvisionerPayload.STREAM_CODEC,
                 ConfigureProvisionerPayload::handle);
         registrar.playToServer(ConfigureBindingPriorityPayload.TYPE, ConfigureBindingPriorityPayload.STREAM_CODEC,

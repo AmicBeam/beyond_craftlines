@@ -197,6 +197,8 @@ public final class CraftlinesClientEvents
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)
         {
+            if (GhostResourceSelection.click(event.getScreen(), event.getMouseX(), event.getMouseY(), event.getButton()))
+            { event.setCanceled(true); return; }
             if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT
                     && com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
                     .orderRecipeButtonUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))

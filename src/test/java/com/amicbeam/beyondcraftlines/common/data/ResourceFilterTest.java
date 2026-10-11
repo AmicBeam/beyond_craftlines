@@ -37,15 +37,24 @@ final class ResourceFilterTest
         assertFalse(accepts(true, ResourceFilterRules.normalize(List.of(), ""), "chemical:oxygen|normal"));
     }
 
-    @Test void nbtAndDurabilityMatchingAreIndependent()
+    @Test void nbtMatchingIsOptionalAndDamageIsNotAnIndependentCondition()
     {
-        assertTrue(ResourceFilterRules.matchesItemMetadata(false, true, false, false, false));
-        assertFalse(ResourceFilterRules.matchesItemMetadata(false, true, true, true, false));
-        assertFalse(ResourceFilterRules.matchesItemMetadata(true, true, false, false, true));
-        assertTrue(ResourceFilterRules.matchesItemMetadata(true, true, false, true, false));
-        assertTrue(ResourceFilterRules.matchesItemMetadata(false, true, true, false, true));
-        assertFalse(ResourceFilterRules.matchesItemMetadata(true, true, false, true, true));
-        assertTrue(ResourceFilterRules.matchesItemMetadata(true, false, false, true, true));
+        assertTrue(ResourceFilterRules.matchesItemMetadata(false, false));
+        assertFalse(ResourceFilterRules.matchesItemMetadata(false, true));
+        assertTrue(ResourceFilterRules.matchesItemMetadata(true, true));
+    }
+
+    @Test void recipeModeChecksTheSelectedSideWithoutRequiringBothSidesInWhitelist()
+    {
+        var onlyProduct = List.of("item:steel");
+        java.util.function.Predicate<String> productWhitelist = key -> accepts(true, onlyProduct, key);
+        assertTrue(ResourceFilterRules.acceptsRecipeInput(true, "item:iron", "item:steel", productWhitelist));
+        assertFalse(ResourceFilterRules.acceptsRecipeInput(true, "item:iron", "item:copper", productWhitelist));
+        assertFalse(ResourceFilterRules.acceptsRecipeInput(false, "item:iron", "item:steel", productWhitelist));
+        assertTrue(ResourceFilterRules.acceptsRecipeInput(false, "item:steel", "item:copper", productWhitelist));
+        java.util.function.Predicate<String> productBlacklist = key -> accepts(false, onlyProduct, key);
+        assertFalse(ResourceFilterRules.acceptsRecipeInput(true, "item:iron", "item:steel", productBlacklist));
+        assertTrue(ResourceFilterRules.acceptsRecipeInput(true, "item:steel", "item:copper", productBlacklist));
     }
 
     @Test void slotSnapshotIsImmutableAndRejectsOversizeLists()

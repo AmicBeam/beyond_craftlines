@@ -184,7 +184,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private void initFilterEditor()
     {
         filterControls.clear();
-        String[] labels = {"whitelist", "blacklist", "nbt_ignore", "nbt_match", "durability_ignore", "durability_match", "clear"};
+        String[] labels = {"whitelist", "blacklist", "nbt_ignore", "nbt_match", "match_inputs", "match_outputs", "clear"};
         for (int option = 0; option < labels.length; option++)
         {
             final int action = option;
@@ -193,10 +193,10 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
             Button button = addRenderableWidget(Button.builder(Component.empty(), ignored -> {
                 ResourceFilter filter = menu.resourceFilter();
                 filter = switch (action) {
-                    case 0 -> filter.withOptions(true, filter.matchNbt(), filter.matchDurability());
-                    case 1 -> filter.withOptions(false, filter.matchNbt(), filter.matchDurability());
-                    case 2 -> filter.withOptions(filter.whitelist(), false, filter.matchDurability());
-                    case 3 -> filter.withOptions(filter.whitelist(), true, filter.matchDurability());
+                    case 0 -> filter.withOptions(true, filter.matchNbt(), filter.matchOutputs());
+                    case 1 -> filter.withOptions(false, filter.matchNbt(), filter.matchOutputs());
+                    case 2 -> filter.withOptions(filter.whitelist(), false, filter.matchOutputs());
+                    case 3 -> filter.withOptions(filter.whitelist(), true, filter.matchOutputs());
                     case 4 -> filter.withOptions(filter.whitelist(), filter.matchNbt(), false);
                     case 5 -> filter.withOptions(filter.whitelist(), filter.matchNbt(), true);
                     default -> filter.clear();
@@ -216,7 +216,7 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
         if (!filterEditing) return;
         ResourceFilter filter = menu.resourceFilter();
         boolean[] selected = {filter.whitelist(), !filter.whitelist(), !filter.matchNbt(), filter.matchNbt(),
-                !filter.matchDurability(), filter.matchDurability(), false};
+                !filter.matchOutputs(), filter.matchOutputs(), false};
         for (int option = 0; option < filterControls.size(); option++)
             FilterControlIcons.draw(graphics, filterControls.get(option), option, selected[option]);
     }

@@ -21,7 +21,7 @@ public final class FilterControlIcons
         }
         if (option < 2) drawWhitelistIcon(graphics, button, option == 0, selected);
         else if (option < 4) drawNbtIcon(graphics, button, option == 3, selected);
-        else if (option < 6) drawDurabilityIcon(graphics, button, option == 5, selected);
+        else if (option < 6) drawFilterTargetIcon(graphics, button, option == 5);
         else drawClearIcon(graphics, button);
     }
 
@@ -61,21 +61,18 @@ public final class FilterControlIcons
         }
     }
 
-    private static void drawDurabilityIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean enabled, boolean selected) {
-        if (button == null) {
-            return;
-        }
+    private static void drawFilterTargetIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean output)
+    {
         int color = button.active ? 0xFFE0E0E0 : 0xFFA0A0A0;
-        int x = button.getX();
-        int y = button.getY();
-        graphics.fill(x + 7, y + 4, x + 13, y + 5, color);
-        graphics.fill(x + 6, y + 5, x + 7, y + 16, color);
-        graphics.fill(x + 13, y + 5, x + 14, y + 16, color);
-        graphics.fill(x + 6, y + 15, x + 14, y + 16, color);
-        graphics.fill(x + 8, y + 10, x + 12, y + 14, color);
-        if (!enabled) {
-            drawSlash(graphics, x, y, color);
-        }
+        int x = button.getX(), y = button.getY();
+        // A container with an inward/outward arrow distinguishes ingredients from products.
+        graphics.fill(x + 6, y + 5, x + 14, y + 6, color);
+        graphics.fill(x + 6, y + 14, x + 14, y + 15, color);
+        graphics.fill(x + (output ? 6 : 13), y + 5, x + (output ? 7 : 14), y + 15, color);
+        int arrowX = output ? 11 : 2;
+        graphics.fill(x + arrowX, y + 9, x + arrowX + 7, y + 11, color);
+        graphics.fill(x + arrowX + 4, y + 7, x + arrowX + 6, y + 9, color);
+        graphics.fill(x + arrowX + 4, y + 11, x + arrowX + 6, y + 13, color);
     }
 
     private static void drawClearIcon(GuiGraphicsExtractor graphics, AbstractButton button) {

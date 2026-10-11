@@ -324,6 +324,6 @@
   "gui.beyond_craftlines.order_message.resource_filter_blocked": "资源被端点过滤列表拦截",
   "gui.beyond_craftlines.filter.nbt_ignore": "忽略 NBT／组件",
   "gui.beyond_craftlines.filter.nbt_match": "匹配 NBT／组件",
-  "gui.beyond_craftlines.filter.durability_ignore": "忽略耐久",
-  "gui.beyond_craftlines.filter.durability_match": "匹配耐久"
+  "gui.beyond_craftlines.filter.match_inputs": "匹配原料",
+  "gui.beyond_craftlines.filter.match_outputs": "匹配产物"
 }

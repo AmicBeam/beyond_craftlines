@@ -11,26 +11,25 @@ import java.util.Objects;
 public final class ResourceFilterMatch
 {
     private ResourceFilterMatch() {}
-    public static boolean matches(IStackKey<?> left, IStackKey<?> right, boolean matchNbt, boolean matchDurability)
+    public static boolean matches(IStackKey<?> left, IStackKey<?> right, boolean matchNbt)
     {
         if (!left.getTypeId().equals(right.getTypeId())) return false;
         if (left instanceof ItemStackKey a && right instanceof ItemStackKey b)
         {
             ItemStack sample = a.getReadOnlyStack(), candidate = b.getReadOnlyStack();
             if (!ItemStack.isSameItem(sample, candidate)) return false;
-            boolean sameNbt = !matchNbt || Objects.equals(comparableTag(sample, matchDurability),
-                    comparableTag(candidate, matchDurability));
-            return ResourceFilterRules.matchesItemMetadata(sameNbt, sample.isDamageableItem(),
-                    sample.getDamageValue() == candidate.getDamageValue(), matchNbt, matchDurability);
+            boolean sameNbt = !matchNbt || Objects.equals(comparableTag(sample),
+                    comparableTag(candidate));
+            return ResourceFilterRules.matchesItemMetadata(sameNbt, matchNbt);
         }
         return StackKeyMatch.exact(left, right);
     }
-    private static CompoundTag comparableTag(ItemStack stack, boolean matchDurability)
+    private static CompoundTag comparableTag(ItemStack stack)
     {
         CompoundTag tag = stack.getTag();
         if (tag == null) return null;
         CompoundTag copy = tag.copy();
-        if (!matchDurability) copy.remove("Damage");
+        copy.remove("Damage");
         return copy.isEmpty() ? null : copy;
     }
 }

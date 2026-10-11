@@ -146,11 +146,12 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             dispatchEvenly(currentLevel);
             return;
         }
+        var recipeOutput = activeRecipeOutput(currentLevel);
         int size = wirelessConnections.size();
         for (KeyAmount staged : List.copyOf(storage.getStorage()))
         {
             if (staged.isEmpty() || !BindingSavedData.get(currentLevel.getServer())
-                    .resourceFilter(currentLevel.dimension(), getBlockPos()).accepts(staged.key())) continue;
+                    .resourceFilter(currentLevel.dimension(), getBlockPos()).acceptsSupply(staged.key(), recipeOutput)) continue;
             long remaining = staged.amount();
             for (int index : connectionOrder())
             {
@@ -162,7 +163,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                         || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
                         .equals(connection.blockId())) continue;
                 if (!BindingSavedData.get(currentLevel.getServer()).resourceFilter(
-                        targetLevel.dimension(), connection.position()).accepts(staged.key())) continue;
+                        targetLevel.dimension(), connection.position()).acceptsSupply(staged.key(), recipeOutput)) continue;
                 long capacity = BoundMachineAutomation.insertCapacity(targetLevel, connection.position(),
                         connection.face(), staged.key(), remaining);
                 if (capacity <= 0) continue;
@@ -182,12 +183,13 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     /** Each resource starts at the first binding; no round-robin cursor is consumed. */
     private void dispatchEvenly(ServerLevel currentLevel)
     {
+        var recipeOutput = activeRecipeOutput(currentLevel);
         List<WirelessConnection> targets = wirelessConnections.stream()
                 .filter(connection -> connection.role() == ConnectionRole.SUPPLY).toList();
         for (KeyAmount staged : List.copyOf(storage.getStorage()))
         {
             if (staged.isEmpty() || !BindingSavedData.get(currentLevel.getServer())
-                    .resourceFilter(currentLevel.dimension(), getBlockPos()).accepts(staged.key())) continue;
+                    .resourceFilter(currentLevel.dimension(), getBlockPos()).acceptsSupply(staged.key(), recipeOutput)) continue;
             long[] capacities = new long[targets.size()];
             for (int i = 0; i < targets.size(); i++)
             {
@@ -197,7 +199,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                         || !BuiltInRegistries.BLOCK.getKey(targetLevel.getBlockState(connection.position()).getBlock())
                         .equals(connection.blockId())) continue;
                 if (!BindingSavedData.get(currentLevel.getServer()).resourceFilter(
-                        targetLevel.dimension(), connection.position()).accepts(staged.key())) continue;
+                        targetLevel.dimension(), connection.position()).acceptsSupply(staged.key(), recipeOutput)) continue;
                 capacities[i] = BoundMachineAutomation.insertCapacity(targetLevel, connection.position(),
                         connection.face(), staged.key(), staged.amount());
             }
@@ -229,6 +231,9 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
     }
 
     private boolean participatesInActiveOrder(ServerLevel currentLevel)
+    { return activeRecipeOutput(currentLevel) != null; }
+
+    private com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> activeRecipeOutput(ServerLevel currentLevel)
     {
         for (RecipeOrderJob job : RecipeOrderSavedData.get(currentLevel.getServer()).active())
         {
@@ -243,10 +248,10 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
                         machine.dimension().equals(currentLevel.dimension())
                                 && machine.position().equals(worldPosition));
                 if (ProvisionerParticipationLogic.shouldActivate(wait.provisioner(), occupied))
-                    return true;
+                    return wait.outputKey();
             }
         }
-        return false;
+        return null;
     }
 
     private void extractWireless(ServerLevel currentLevel)
@@ -264,8 +269,6 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity
             for (KeyAmount visible : BoundMachineAutomation.extractableStacks(
                     targetLevel, connection.position(), connection.face()))
             {
-                if (!BindingSavedData.get(currentLevel.getServer()).resourceFilter(
-                        currentLevel.dimension(), getBlockPos()).accepts(visible.key())) continue;
                 KeyAmount simulatedRemainder = networkStorage.insert(visible.key(), visible.amount(), true);
                 long accepted = visible.amount() - (simulatedRemainder.isEmpty()
                         ? 0 : simulatedRemainder.amount());

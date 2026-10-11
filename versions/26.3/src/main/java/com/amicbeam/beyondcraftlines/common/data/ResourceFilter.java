@@ -14,22 +14,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Fixed ghost slots; an empty blacklist preserves the behavior of older saves. */
-public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchDurability, List<IStackKey<?>> entries)
+public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchOutputs, List<IStackKey<?>> entries)
 {
     public static final int COLUMNS = ResourceFilterRules.COLUMNS;
     public static final int ROWS = ResourceFilterRules.ROWS;
     public static final int SIZE = COLUMNS * ROWS;
     public static final ResourceFilter EMPTY = new ResourceFilter(false, false, false, List.of());
 
-    /** Legacy constructor retains the component-exact behavior of earlier callers. */
+    /** Legacy callers match ingredients; item damage is always ignored. */
     public ResourceFilter(boolean whitelist, List<IStackKey<?>> entries)
-    { this(whitelist, true, true, entries); }
+    { this(whitelist, true, false, entries); }
 
-    public ResourceFilter withOptions(boolean whitelist, boolean matchNbt, boolean matchDurability)
-    { return new ResourceFilter(whitelist, matchNbt, matchDurability, entries); }
+    public ResourceFilter withOptions(boolean whitelist, boolean matchNbt, boolean matchOutputs)
+    { return new ResourceFilter(whitelist, matchNbt, matchOutputs, entries); }
 
     public ResourceFilter clear()
-    { return new ResourceFilter(whitelist, matchNbt, matchDurability, List.of()); }
+    { return new ResourceFilter(whitelist, matchNbt, matchOutputs, List.of()); }
 
     public ResourceFilter
     {
@@ -39,21 +39,29 @@ public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchD
     public boolean accepts(IStackKey<?> key)
     {
         return ResourceFilterRules.accepts(whitelist, entries, key, IStackKey::isEmpty,
-                (left, right) -> ResourceFilterMatch.matches(left, right, matchNbt, matchDurability));
+                (left, right) -> ResourceFilterMatch.matches(left, right, matchNbt));
     }
+
+    /** Select recipe eligibility by ingredient or by the requested recipe output. */
+    public boolean acceptsRecipeInput(IStackKey<?> input, IStackKey<?> output)
+    { return ResourceFilterRules.acceptsRecipeInput(matchOutputs, input, output, this::accepts); }
+
+    /** Manually staged resources have no recipe output to compare in product mode. */
+    public boolean acceptsSupply(IStackKey<?> input, IStackKey<?> output)
+    { return matchOutputs && output == null || acceptsRecipeInput(input, output); }
 
     public ResourceFilter withEntry(int slot, IStackKey<?> key)
     {
         ArrayList<IStackKey<?>> changed = new ArrayList<>(entries);
         changed.set(slot, key == null ? ItemStackKey.EMPTY : key);
-        return new ResourceFilter(whitelist, matchNbt, matchDurability, changed);
+        return new ResourceFilter(whitelist, matchNbt, matchOutputs, changed);
     }
 
     public void write(FriendlyByteBuf buffer)
     {
         buffer.writeBoolean(whitelist);
         buffer.writeBoolean(matchNbt);
-        buffer.writeBoolean(matchDurability);
+        buffer.writeBoolean(matchOutputs);
         for (IStackKey<?> entry : entries) IStackKey.STREAM_CODEC.encode((RegistryFriendlyByteBuf) buffer, entry);
     }
 
@@ -61,10 +69,10 @@ public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchD
     {
         boolean whitelist = buffer.readBoolean();
         boolean matchNbt = buffer.readBoolean();
-        boolean matchDurability = buffer.readBoolean();
+        boolean matchOutputs = buffer.readBoolean();
         ArrayList<IStackKey<?>> entries = new ArrayList<>();
         for (int slot = 0; slot < SIZE; slot++) entries.add(IStackKey.STREAM_CODEC.decode((RegistryFriendlyByteBuf) buffer));
-        return new ResourceFilter(whitelist, matchNbt, matchDurability, entries);
+        return new ResourceFilter(whitelist, matchNbt, matchOutputs, entries);
     }
 
     public CompoundTag save(HolderLookup.Provider registries)
@@ -72,7 +80,7 @@ public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchD
         CompoundTag tag = new CompoundTag();
         tag.putBoolean("whitelist", whitelist);
         tag.putBoolean("match_nbt", matchNbt);
-        tag.putBoolean("match_durability", matchDurability);
+        tag.putBoolean("match_outputs", matchOutputs);
         ListTag list = new ListTag();
         for (int slot = 0; slot < SIZE; slot++)
         {
@@ -92,7 +100,7 @@ public record ResourceFilter(boolean whitelist, boolean matchNbt, boolean matchD
     {
         ResourceFilter filter = new ResourceFilter(tag.getBooleanOr("whitelist", false),
                 !tag.contains("match_nbt") || tag.getBooleanOr("match_nbt", false),
-                !tag.contains("match_durability") || tag.getBooleanOr("match_durability", false), List.of());
+                tag.getBooleanOr("match_outputs", false), List.of());
         ListTag list = tag.getListOrEmpty("entries");
         for (int index = 0; index < Math.min(SIZE, list.size()); index++)
         {

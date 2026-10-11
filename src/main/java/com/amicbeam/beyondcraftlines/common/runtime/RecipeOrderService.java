@@ -518,7 +518,7 @@ public final class RecipeOrderService
                 BindingRecord binding = machine.binding();
                 if (!batchInputs.stream().filter(input -> input.inputGroup().equals(group))
                         .allMatch(input -> BindingSavedData.get(server).resourceFilter(
-                                binding.dimension(), binding.position()).accepts(input.key()))) continue;
+                                binding.dimension(), binding.position()).acceptsRecipeInput(input.key(), step.outputKey()))) continue;
                 MachineKey key = new MachineKey(binding.dimension(), binding.position());
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.direct(machine), InputGroupRouteLogic.Kind.DIRECT_MACHINE,
@@ -533,7 +533,7 @@ public final class RecipeOrderService
                 MachineKey key = provisionerKey(provisioner);
                 if (!batchInputs.stream().filter(input -> input.inputGroup().equals(group))
                         .allMatch(input -> BindingSavedData.get(server).resourceFilter(
-                                key.dimension(), key.position()).accepts(input.key()))) continue;
+                                key.dimension(), key.position()).acceptsRecipeInput(input.key(), step.outputKey()))) continue;
                 if (!index.isMachineOccupied(key)) candidates.add(new InputGroupRouteLogic.Candidate<>(
                         GroupEndpoint.provisioner(provisioner), InputGroupRouteLogic.Kind.PROVISIONER,
                         binding.inputGroupRoutingPriority(step.family(), group),
@@ -557,7 +557,7 @@ public final class RecipeOrderService
         for (InputChunk input : selection.chunks())
             if (routes.get(input.inputGroup()).stream().noneMatch(endpoint ->
                     BindingSavedData.get(server).resourceFilter(endpoint.key().dimension(),
-                            endpoint.key().position()).accepts(input.key())))
+                            endpoint.key().position()).acceptsRecipeInput(input.key(), step.outputKey())))
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
         Set<String> provisionerGroups = routes.entrySet().stream()
                 .filter(entry -> entry.getValue().getFirst().provisioner() != null)
@@ -569,7 +569,7 @@ public final class RecipeOrderService
                     .provisioner().provisioner().storage();
             GroupEndpoint endpoint = routes.get(input.inputGroup()).getFirst();
             if (!BindingSavedData.get(server).resourceFilter(endpoint.key().dimension(),
-                    endpoint.key().position()).accepts(input.key()))
+                    endpoint.key().position()).acceptsRecipeInput(input.key(), step.outputKey()))
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
             if (!storage.insertFromOrder(input.key(), input.amount(), true).isEmpty())
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_no_room", input.key()));
@@ -827,14 +827,14 @@ public final class RecipeOrderService
             if (selection != null && selection.chunks().stream().anyMatch(input -> directLocations.stream()
                     .filter(machine -> machine.inputGroup().isBlank() || machine.inputGroup().equals(input.inputGroup()))
                     .noneMatch(machine -> BindingSavedData.get(server).resourceFilter(
-                            machine.dimension(), machine.position()).accepts(input.key()))))
+                            machine.dimension(), machine.position()).acceptsRecipeInput(input.key(), step.outputKey()))))
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
-                    server, directLocations, wait.remainingInputs(), selection.chunks());
+                    server, directLocations, wait.remainingInputs(), selection.chunks(), step.outputKey());
             if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
                     server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
                 dispatch = dispatchableInputsAcross(
-                        server, directLocations, wait.remainingInputs(), selection.chunks());
+                        server, directLocations, wait.remainingInputs(), selection.chunks(), step.outputKey());
             if (!dispatch.isEmpty())
             {
                 // Extract every network-backed chunk before touching the machine. A stock change can
@@ -1404,7 +1404,7 @@ public final class RecipeOrderService
     /** Allocates one feeding round across grouped direct endpoints without overbooking empty one-slot machines. */
     private static List<RoutedInputChunk> dispatchableInputsAcross(
             MinecraftServer server, List<RecipeOrderJob.MachineLocation> machines,
-            List<RecipePlan.Material> materials, List<InputChunk> selected)
+            List<RecipePlan.Material> materials, List<InputChunk> selected, IStackKey<?> outputKey)
     {
         List<RoutedInputChunk> result = new ArrayList<>();
         List<InputChunk> deferredByResourceConflict = new ArrayList<>();
@@ -1417,7 +1417,7 @@ public final class RecipeOrderService
                 if (!machine.inputGroup().isBlank() && !machine.inputGroup().equals(chunk.inputGroup())) continue;
                 ServerLevel level = server.getLevel(machine.dimension());
                 if (level == null || !BindingSavedData.get(server).resourceFilter(
-                        machine.dimension(), machine.position()).accepts(chunk.key())) continue;
+                        machine.dimension(), machine.position()).acceptsRecipeInput(chunk.key(), outputKey)) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
                 var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
                 PlannedInput previous = planned.get(channel);

@@ -324,6 +324,6 @@
   "gui.beyond_craftlines.order_message.resource_filter_blocked": "Resource blocked by endpoint filter",
   "gui.beyond_craftlines.filter.nbt_ignore": "Ignore NBT / components",
   "gui.beyond_craftlines.filter.nbt_match": "Match NBT / components",
-  "gui.beyond_craftlines.filter.durability_ignore": "Ignore durability",
-  "gui.beyond_craftlines.filter.durability_match": "Match durability"
+  "gui.beyond_craftlines.filter.match_inputs": "Match ingredients",
+  "gui.beyond_craftlines.filter.match_outputs": "Match products"
 }

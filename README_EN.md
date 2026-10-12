@@ -4,7 +4,7 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.7.0 changes optimal search to preference-first inventory feasibility: try saved recipes first, backtrack when they prevent a complete order, and stop at the first fully craftable plan. Each resource still has one production recipe per plan. See the [0.7.0 changelog](docs/CHANGELOG_0.7.0.md), [previous JEI exception fixes](docs/CHANGELOG_0.6.1.md), and [cache and incremental recovery notes](docs/CHANGELOG_0.6.0.md).
+Version 0.7.0 improves preference-first inventory-feasible search, adds stock-only recipe choices, compact previews and order pagination, and introduces 36-slot device filters and dashboard container-resource markers. It also adds Minecraft 26.2 and 26.3 support. See the [0.7.0 changelog](docs/CHANGELOG_0.7.0.md), [previous JEI exception fixes](docs/CHANGELOG_0.6.1.md), and [cache and incremental recovery notes](docs/CHANGELOG_0.6.0.md).
 
 ## Features
 

@@ -229,6 +229,8 @@ public final class CraftlinesClientEvents
         @SubscribeEvent(priority = EventPriority.HIGHEST)
         public static void openOrderFromMouse(ScreenEvent.MouseButtonPressed.Pre event)
         {
+            if (GhostResourceSelection.click(event.getScreen(), event.getMouseX(), event.getMouseY(), event.getMouseButtonEvent().button()))
+            { event.setCanceled(true); return; }
             if (!CraftlinesKeyMappings.ORDER_HOVERED_RESOURCE.matchesMouse(
                     event.getMouseButtonEvent())) return;
             if (openOrderUnderMouse(event.getScreen(), event.getMouseX(), event.getMouseY()))

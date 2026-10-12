@@ -16,6 +16,7 @@ public final class EmiOptionalIntegration
             "com.amicbeam.beyondcraftlines.client.integration.emi.EmiClientIntegration";
     private static volatile boolean initialized;
     private static Method orderHovered;
+    private static Method ghostHovered;
     private static Method preferredRecipe;
     private static Method recipeTypesFor;
     private static Method recipeTypeTitle;
@@ -33,6 +34,14 @@ public final class EmiOptionalIntegration
         if (refreshMetadata == null) return;
         try { refreshMetadata.invoke(null); }
         catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {}
+    }
+
+    public static IStackKey<?> ingredientUnderMouseKey(double x, double y)
+    {
+        initialize();
+        if (ghostHovered == null) return null;
+        try { return (IStackKey<?>) ghostHovered.invoke(null, x, y); }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return null; }
     }
 
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY)
@@ -129,6 +138,7 @@ public final class EmiOptionalIntegration
         try
         {
             Class<?> type = Class.forName(CLIENT, false, EmiOptionalIntegration.class.getClassLoader());
+            ghostHovered = type.getMethod("ingredientUnderMouseKey", double.class, double.class);
             orderHovered = type.getMethod("orderIngredientUnderMouse", double.class, double.class);
             refreshMetadata = type.getMethod("refreshMetadata");
             preferredRecipe = type.getMethod("preferredRecipe", IStackKey.class);

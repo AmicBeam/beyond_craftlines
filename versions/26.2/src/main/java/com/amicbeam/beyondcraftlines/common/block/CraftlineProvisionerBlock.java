@@ -78,6 +78,7 @@ public final class CraftlineProvisionerBlock extends NetedBlock implements Entit
                         ProvisionerConfigMenu.writeOptions(buffer, pos, candidates, configured,
                                 availableGroups, selectedGroups, false, priority,
                                 false, java.util.Set.of(), java.util.Map.of());
+                        BindingSavedData.get(serverPlayer.level().getServer()).resourceFilter(level.dimension(), pos).write(buffer);
                     });
     }
 

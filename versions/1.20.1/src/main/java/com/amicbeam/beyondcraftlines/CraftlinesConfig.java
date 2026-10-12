@@ -25,7 +25,7 @@ public final class CraftlinesConfig {
             .comment("Ticks to wait after the latest recipe or ingredient choice change before recalculating the preview.")
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
     public static final ForgeConfigSpec.BooleanValue ENABLE_OPTIMAL_RECIPE_SEARCH = CLIENT_BUILDER
-            .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
+            .comment("Search alternative recipes and ingredient variants until one complete inventory-feasible plan is found, preferring saved recipe choices. This is a heuristic first-complete search, not a mathematically optimal solver. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
     public static final ForgeConfigSpec.BooleanValue PRELOAD_ALL_RECIPE_TYPES = CLIENT_BUILDER
@@ -35,6 +35,11 @@ public final class CraftlinesConfig {
 
     public static final ForgeConfigSpec.BooleanValue COLLAPSE_DUPLICATE_TREE_RESOURCES = CLIENT_BUILDER
             .define("collapseDuplicateTreeResources", true);
+    public static final ForgeConfigSpec.BooleanValue SHOW_CYCLIC_TREE_NODES = CLIENT_BUILDER
+            .comment("Show the bottom repeated-ancestor marker of a cyclic recipe branch. This only changes the tree display.")
+            .translation("config.beyond_craftlines.show_cyclic_tree_nodes")
+            .define("showCyclicTreeNodes", false);
+
     public static final ForgeConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
             .pop().push("jei").define("showOrderButtonEverywhere", true);
     public static final ForgeConfigSpec.IntValue ORDER_STATUS_REFRESH_INTERVAL_TICKS = CLIENT_BUILDER

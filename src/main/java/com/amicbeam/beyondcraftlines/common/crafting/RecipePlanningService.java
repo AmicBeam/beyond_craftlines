@@ -206,6 +206,11 @@ public final class RecipePlanningService
                 (key, amount) -> state.usedStock.merge(key, amount, SaturatingLongMath::add));
         long remainder = needed - used;
         if (remainder == 0) return;
+        if (RecipeResolutionOverrides.NO_RECIPE.equals(overrides.recipeFor(resource)))
+        {
+            state.missing.merge(resource, remainder, SaturatingLongMath::add);
+            return;
+        }
         if (mode == ResolutionMode.SELECTED_CHAIN && overrides.recipeFor(resource) == null)
         {
             state.missing.merge(resource, remainder, SaturatingLongMath::add);

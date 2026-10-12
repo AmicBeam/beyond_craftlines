@@ -29,7 +29,7 @@ For datapack/IO profile changes, apply the server data using `/reload` or the mo
 
 The requested result is at the top. Its ingredients appear below it, followed by the ingredients of every intermediate recipe. Identical resources at the same recipe level are merged and their quantities are added together.
 
-Each node shows the amount required for this order. Hover it to inspect the selected recipe's direct inputs and output, recipe family, recipe ID, network stock, and planned production count.
+At 45% zoom or above, each node shows the amount required for this order. Hover it to inspect the selected recipe's direct inputs and output, recipe family, recipe ID, network stock, and planned production count.
 
 - **Green** means existing network stock fully satisfies the node, so that branch does not need to expand.
 - **Orange** means stock satisfies only part of the demand; the tree expands only the remaining shortage.
@@ -39,6 +39,8 @@ Each node shows the amount required for this order. Hover it to inspect the sele
 
 Middle-click a node to collapse or expand its visible descendants. Display folding changes only the view; it never merges server-side production steps or reservations.
 
+Scroll down to **35%** or **25%** for an overview of large recipe chains. These levels use compact frames and thumbnails without counts or corner badges; status colors, connections, and hover details remain visible without overlapping nodes. Preview mode supports dragging and zooming. Zoom back to **45%** or above to choose recipes or ingredients, open JEI recipes, jump to references, or fold nodes.
+
 ## Choosing recipes and ingredients
 
 Automatic planning chooses and expands the recipe chain. Right-click a target or product node to override its recipe; the candidate page is also available when an unresolved node has only one network-compatible recipe.
@@ -46,6 +48,8 @@ Automatic planning chooses and expands the recipe chain. Right-click a target or
 For a tag or OR-ingredient, click the candidate marker at the top-left of its item to open the complete candidate grid. Choose the exact item Craftlines should reserve and use. The grid supports scrolling and paging when there are many choices.
 
 Manual recipe and ingredient choices are saved as planner preferences and reused in later trees. When the current candidate already has a saved preference, a **Forget** button appears at the top-right of the candidate page; clicking it deletes that preference and restores automatic selection. A missing, unloaded, or no-longer-valid preference is ignored. The server still validates every selected recipe and ingredient when previewing and submitting the order.
+
+With inventory feasibility search enabled, saved preferences are tried first. If a preferred route prevents the complete order from using the available network stock, the search can backtrack and choose another route. Choices explicitly made in the current tree remain fixed. Each resource has one production recipe per plan. Search stops at the first complete craftable plan; a shorter chain is a secondary heuristic, rather than a guarantee of the globally shortest plan. Exhausting a search budget does not prove that no solution exists.
 
 ## Material summary
 

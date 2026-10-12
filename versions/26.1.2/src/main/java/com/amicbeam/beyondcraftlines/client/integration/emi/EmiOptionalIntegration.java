@@ -11,6 +11,7 @@ import java.util.Set;
 public final class EmiOptionalIntegration
 {
     private EmiOptionalIntegration() {}
+    public static IStackKey<?> ingredientUnderMouseKey(double x, double y) { return null; }
     public static void refreshMetadata() {}
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY) { return false; }
     public static @Nullable Identifier preferredRecipe(IStackKey<?> target) { return null; }

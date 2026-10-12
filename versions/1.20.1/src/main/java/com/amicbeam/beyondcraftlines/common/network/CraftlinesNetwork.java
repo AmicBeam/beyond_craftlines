@@ -17,7 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 
 public final class CraftlinesNetwork {
-    private static final String PROTOCOL = "27";
+    private static final String PROTOCOL = "31";
     private static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(BeyondCraftlines.MOD_ID, "main"), () -> PROTOCOL,
             PROTOCOL::equals, PROTOCOL::equals);
@@ -44,6 +44,7 @@ public final class CraftlinesNetwork {
         server(BindMachinePayload.class, BindMachinePayload.STREAM_CODEC, BindMachinePayload::handle);
         server(OpenBoundMachineConfigPayload.class, OpenBoundMachineConfigPayload.STREAM_CODEC,
                 OpenBoundMachineConfigPayload::handle);
+        server(ConfigureResourceFilterPayload.class, ConfigureResourceFilterPayload.STREAM_CODEC, ConfigureResourceFilterPayload::handle);
         server(ConfigureProvisionerPayload.class, ConfigureProvisionerPayload.STREAM_CODEC, ConfigureProvisionerPayload::handle);
         server(ConfigureBindingPriorityPayload.class, ConfigureBindingPriorityPayload.STREAM_CODEC,
                 ConfigureBindingPriorityPayload::handle);

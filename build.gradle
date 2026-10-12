@@ -60,6 +60,10 @@ tasks.named('test', Test) {
     useJUnitPlatform()
 }
 
+// Planner contract tests call the real Minecraft-backed DTOs with synthetic storage keys.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath
+
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     var replaceProperties = [
             minecraft_version_range: minecraft_version_range,

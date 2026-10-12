@@ -45,6 +45,11 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     private int statusTicks;
     private UUID statusSession = UUID.randomUUID();
     private Button cancelButton;
+    private Button previousPageButton;
+    private Button nextPageButton;
+    private int orderPage;
+    private int orderPageCount = 1;
+    private boolean pagePending;
 
     public CraftlineStatusScreen(CraftlineStatusMenu menu, Inventory inventory, Component title)
     {
@@ -69,6 +74,17 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 .bounds(leftPos + imageWidth - 130, topPos + imageHeight - 30, 120, 20).build());
         cancelButton.setTooltip(Tooltip.create(Component.translatable("tooltip.beyond_craftlines.cancel")));
         cancelButton.active = selectedActive();
+        previousPageButton = addRenderableWidget(Button.builder(Component.literal("<"),
+                        ignored -> changePage(orderPage - 1))
+                .bounds(leftPos + 12, topPos + imageHeight - 30, 40, 20).build());
+        previousPageButton.setTooltip(Tooltip.create(Component.translatable(
+                "gui.beyond_craftlines.order_previous_page")));
+        nextPageButton = addRenderableWidget(Button.builder(Component.literal(">"),
+                        ignored -> changePage(orderPage + 1))
+                .bounds(leftPos + 58, topPos + imageHeight - 30, 40, 20).build());
+        nextPageButton.setTooltip(Tooltip.create(Component.translatable(
+                "gui.beyond_craftlines.order_next_page")));
+        updatePageButtons();
         OrderStatusPayload.clientReceiver = this::receiveOrders;
         requestStatus();
     }
@@ -85,7 +101,27 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     }
 
     private void requestStatus()
-    { PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId(), statusSession)); }
+    { PacketDistributor.sendToServer(new RequestOrderStatusPayload(menu.networkId(), statusSession, orderPage)); }
+
+    private void changePage(int page)
+    {
+        if (pagePending || page < 0 || page >= orderPageCount || page == orderPage) return;
+        orderPage = page;
+        pagePending = true;
+        statusSession = UUID.randomUUID();
+        scrollOffset = 0;
+        collapsedOrders.clear();
+        defaultExpansionApplied = false;
+        cancelButton.active = false;
+        updatePageButtons();
+        requestStatus();
+    }
+
+    private void updatePageButtons()
+    {
+        if (previousPageButton != null) previousPageButton.active = !pagePending && orderPage > 0;
+        if (nextPageButton != null) nextPageButton.active = !pagePending && orderPage + 1 < orderPageCount;
+    }
 
     private void receiveOrders(net.minecraft.nbt.CompoundTag root)
     {
@@ -144,6 +180,17 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             }
             next.add(order);
         }
+        int receivedPage = root.getInt("page");
+        if (receivedPage != orderPage)
+        {
+            scrollOffset = 0;
+            collapsedOrders.clear();
+            defaultExpansionApplied = false;
+        }
+        orderPage = receivedPage;
+        orderPageCount = Math.max(1, root.getInt("page_count"));
+        pagePending = false;
+        updatePageButtons();
         orders = List.copyOf(next);
         if (!defaultExpansionApplied)
         {
@@ -159,10 +206,11 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     }
 
     private boolean selectedActive()
-    { return orders.stream().anyMatch(order -> order.id().equals(selectedOrder) && order.active()); }
+    { return !pagePending && orders.stream().anyMatch(order -> order.id().equals(selectedOrder) && order.active()); }
 
     private void cancelSelected()
     {
+        if (pagePending) return;
         orders.stream().filter(order -> order.id().equals(selectedOrder) && order.active()).findFirst()
                 .ifPresent(order -> {
                     PacketDistributor.sendToServer(new CancelOrderPayload(order.id()));
@@ -198,11 +246,19 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 leftPos + imageWidth - 12 - font.width(Component.translatable(
                         "gui.beyond_craftlines.status.network", menu.networkId())), topPos + 12, 0x687784, false);
         renderOrders(graphics);
+        graphics.drawString(font, font.plainSubstrByWidth((orderPage + 1) + "/" + orderPageCount,
+                        imageWidth - 240), leftPos + 104, topPos + imageHeight - 24, 0x687784, false);
         renderTooltip(graphics, mouseX, mouseY);
     }
 
     private void renderOrders(GuiGraphics graphics)
     {
+        if (pagePending)
+        {
+            graphics.drawCenteredString(font, Component.translatable("gui.beyond_craftlines.loading_orders"),
+                    leftPos + imageWidth / 2, listTop() + 18, 0x687784);
+            return;
+        }
         if (orders.isEmpty())
         {
             graphics.drawCenteredString(font, Component.translatable("gui.beyond_craftlines.status.empty"),
@@ -303,7 +359,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button)
     {
-        if (button == 0 && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
+        if (!pagePending && button == 0 && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
                 && mouseY >= listTop() && mouseY < listBottom())
         {
             int y = listTop() - scrollOffset;
@@ -329,7 +385,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY)
     {
-        if (mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
+        if (!pagePending && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
                 && mouseY >= listTop() && mouseY < listBottom() && maxScroll() > 0)
         {
             scrollOffset -= (int) Math.signum(scrollY) * STEP_HEIGHT;

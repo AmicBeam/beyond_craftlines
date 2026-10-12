@@ -45,6 +45,31 @@ public final class EmiClientIntegration
 
     private EmiClientIntegration() {}
 
+    public static IStackKey<?> ingredientUnderMouseKey(double x, double y)
+    {
+        var interaction = EmiApi.getHoveredStack((int) x, (int) y, false);
+        if (interaction == null || interaction.isEmpty()) return null;
+        return ghostKey(interaction.getStack());
+    }
+
+    public static IStackKey<?> ghostKey(EmiIngredient ingredient)
+    {
+        if (ingredient == null || ingredient.isEmpty()) return null;
+        for (EmiStack stack : ingredient.getEmiStacks())
+        {
+            ItemStack item = stack.getItemStack();
+            if (!item.isEmpty()) return new ItemStackKey(item.copyWithCount(1));
+            for (IStackKey<?> prototype : com.wintercogs.beyonddimensions.api.storage.key.StackKeyRegistry.getAllTypes())
+                try
+                {
+                    IStackKey<?> key = prototype.fromSourceObject(stack.getKey(), stack.getComponentChanges());
+                    if (key != null && !key.isEmpty()) return key;
+                }
+                catch (RuntimeException | LinkageError ignored) {}
+        }
+        return null;
+    }
+
     public static boolean orderIngredientUnderMouse(double mouseX, double mouseY)
     {
         var interaction = EmiApi.getHoveredStack(
@@ -123,7 +148,7 @@ public final class EmiClientIntegration
         EmiStack output = itemStack(target);
         if (output == null) return null;
         EmiRecipe added = BoM.addedRecipes.get(output);
-        if (added != null && added.getId() != null) syncPreferenceFromEmi(output, null);
+        if (added != null && added.getId() != null) syncPreferenceFromEmi(output, null, true);
         EmiRecipe recipe = BoM.getRecipe(output);
         return recipe == null ? null : EmiRecipeId.normalize(recipe.getId());
     }
@@ -150,6 +175,10 @@ public final class EmiClientIntegration
 
     /** Called by the BoM mixin after EMI changes one of its own defaults. */
     public static void syncPreferenceFromEmi(EmiIngredient output, @Nullable EmiRecipe removedRecipe)
+    { syncPreferenceFromEmi(output, removedRecipe, false); }
+
+    private static void syncPreferenceFromEmi(EmiIngredient output, @Nullable EmiRecipe removedRecipe,
+                                               boolean automaticImport)
     {
         try
         {
@@ -167,6 +196,10 @@ public final class EmiClientIntegration
                 ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
                 ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
                 ResourceLocation saved = snapshot.recipes().get(token);
+                // EMI has no equivalent of stock-only. Preserve that preference during preload;
+                // an explicit later BoM choice may still replace it through the public callback.
+                if (automaticImport && com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides
+                        .NO_RECIPE.equals(saved)) continue;
                 if (currentId != null)
                 {
                     if (!currentId.equals(saved)) ClientPlannerPreferences.setRecipe(token, currentId);
@@ -189,7 +222,7 @@ public final class EmiClientIntegration
         {
             for (var entry : BoM.addedRecipes.entrySet())
                 if (entry.getValue() != null && entry.getValue().getId() != null)
-                    syncPreferenceFromEmi(entry.getKey(), null);
+                    syncPreferenceFromEmi(entry.getKey(), null, true);
         }
         catch (RuntimeException | LinkageError ignored) {}
     }

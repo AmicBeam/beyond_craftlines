@@ -21,6 +21,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
     exclude 'com/amicbeam/beyondcraftlines/client/integration/jade/CraftlinesJadePlugin.java'
     exclude 'com/amicbeam/beyondcraftlines/client/BindingVisualBuffers.java'
     exclude 'com/amicbeam/beyondcraftlines/common/network/CraftlinesNetwork.java'
+    exclude 'com/amicbeam/beyondcraftlines/client/FilterControlIcons.java'
+    exclude 'com/amicbeam/beyondcraftlines/common/data/ResourceFilterMatch.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/CraftlineProvisionerBlockEntity.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceRegistry.java'
     exclude 'com/amicbeam/beyondcraftlines/common/runtime/NativeFurnaceAutomation.java'
@@ -30,6 +32,8 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
     into layout.buildDirectory.dir('generated/versionSources/main/java')
     filteringCharset = 'UTF-8'
     filter { line -> line
+            .replace('stack.getCapability((net.neoforged.neoforge.capabilities.ItemCapability) entry.getValue())', 'stack.getCapability((net.minecraftforge.common.capabilities.Capability) entry.getValue()).resolve().orElse(null)')
+            .replace('stack.getComponentChanges()', 'stack.getNbt()')
             .replace('net.neoforged.api.distmarker', 'net.minecraftforge.api.distmarker')
             .replace('net.neoforged.bus.api', 'net.minecraftforge.eventbus.api')
             .replace('net.neoforged.fml', 'net.minecraftforge.fml')
@@ -71,6 +75,7 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('Capabilities.ItemHandler.BLOCK', 'ForgeCapabilities.ITEM_HANDLER')
             .replace('level.getCapability(ForgeCapabilities.ITEM_HANDLER, position,', 'com.amicbeam.beyondcraftlines.compat.ForgeCapabilityAccess.get(level, ForgeCapabilities.ITEM_HANDLER, position,')
             .replace('level.getCapability((net.minecraftforge.capabilities.BlockCapability) capability,', 'com.amicbeam.beyondcraftlines.compat.ForgeCapabilityAccess.get(level, (net.minecraftforge.common.capabilities.Capability) capability,')
+            .replace('source.copyWithCount(1)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(source, 1)')
             .replace('template.copyWithCount(request)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(template, request)')
             .replace('stack.copyWithCount(1)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(stack, 1)')
             .replace('item.copyWithCount(1)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(item, 1)')
@@ -82,8 +87,12 @@ def prepareVersionSources = tasks.register('prepareVersionSources', Sync) {
             .replace('itemKey.getReadOnlyStack().copyWithCount(1)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(itemKey.getReadOnlyStack(), 1)')
             .replace('item.getReadOnlyStack().copyWithCount(1)', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(item.getReadOnlyStack(), 1)')
             .replace('itemKey.getReadOnlyStack().copyWithCount(', 'com.amicbeam.beyondcraftlines.compat.ItemStackCompat.copy(itemKey.getReadOnlyStack(), ')
+            .replace('ResourceFilter.load(entry.getCompound("filter"), registries)', 'ResourceFilter.load(entry.getCompound("filter"))')
+            .replace('filter.save(registries)', 'filter.save()')
+            .replace('public CompoundTag save(HolderLookup.Provider registries)', 'public CompoundTag save()')
             .replace(', HolderLookup.Provider registries', '')
             .replace(', registries)', ')')
+            .replace('deserializeNBT(entry.getCompound("key"), registries)', 'deserializeNBT(entry.getCompound("key"))')
             .replace('serializeNBT(registries)', 'serializeNBT()')
             .replace('var registries = com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve();', '')
             .replace('serializeNBT(com.wintercogs.beyonddimensions.util.RegistryAccessResolver.resolve())', 'serializeNBT()')
@@ -228,6 +237,8 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testImplementation 'com.google.code.gson:gson:2.11.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // Match the Minecraft logging bridge in the real-planner test classpath.
+    testRuntimeOnly 'org.slf4j:slf4j-api:2.0.9'
 }
 
 var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
@@ -257,3 +268,7 @@ tasks.withType(Jar).configureEach {
     manifest { attributes 'MixinConfigs': 'beyond_craftlines.mixins.json' }
 }
 tasks.named('test', Test) { useJUnitPlatform() }
+
+// The generated shared planner tests need the same mapped Minecraft types as main sources.
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.compileClasspath

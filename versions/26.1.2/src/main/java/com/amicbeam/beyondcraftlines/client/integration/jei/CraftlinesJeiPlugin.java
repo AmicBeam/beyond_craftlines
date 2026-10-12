@@ -80,7 +80,23 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             }
         });
     }
-    @Override public void registerGuiHandlers(IGuiHandlerRegistration registration){registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.DashboardConfigScreen.class,new DashboardGhostIngredientHandler());}
+    @Override public void registerGuiHandlers(IGuiHandlerRegistration registration)
+    {
+        registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.ProvisionerConfigScreen.class,
+                new ResourceFilterGhostIngredientHandler());
+        registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.DashboardConfigScreen.class,
+                new DashboardGhostIngredientHandler());
+    }
+
+    public static IStackKey<?> ingredientUnderMouseKey()
+    {
+        IJeiRuntime current = runtime;
+        if (current == null) return null;
+        var ingredient = current.getIngredientListOverlay().getIngredientUnderMouse()
+                .or(() -> current.getBookmarkOverlay().getIngredientUnderMouse());
+        return ingredient.map(value -> RecipeResourceResolver.fromStack(value.getIngredient()))
+                .map(com.wintercogs.beyonddimensions.api.storage.key.KeyAmount::key).orElse(null);
+    }
 
     @Override
     public void onRuntimeAvailable(IJeiRuntime jeiRuntime)

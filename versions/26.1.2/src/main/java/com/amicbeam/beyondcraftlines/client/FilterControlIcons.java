@@ -1,0 +1,127 @@
+package com.amicbeam.beyondcraftlines.client;
+
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.AbstractButton;
+import net.minecraft.client.gui.components.WidgetSprites;
+import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.RenderPipelines;
+
+
+/** Pixel glyphs adapted from Sky Logistics FilterListScreen (GPL-3.0). */
+public final class FilterControlIcons
+{
+    private static final WidgetSprites BUTTON_SPRITES = new WidgetSprites(
+            Identifier.withDefaultNamespace("widget/button"),
+            Identifier.withDefaultNamespace("widget/button_disabled"),
+            Identifier.withDefaultNamespace("widget/button_highlighted"));
+
+    private FilterControlIcons() {}
+
+    public static void draw(GuiGraphicsExtractor graphics, AbstractButton button, int option, boolean selected)
+    {
+        int tint = !selected ? 0xFFFFFFFF : switch (option) {
+            case 0 -> 0xFF3F8F3F;
+            case 1 -> 0xFFB84343;
+            case 2, 4 -> 0xFF3A8D99;
+            default -> 0xFF2F7F8C;
+        };
+        drawButtonChrome(graphics, button, tint);
+        if (option < 2) drawWhitelistIcon(graphics, button, option == 0, selected);
+        else if (option < 4) drawNbtIcon(graphics, button, option == 3, selected);
+        else if (option < 6) drawFilterTargetIcon(graphics, button, option == 5);
+        else drawClearIcon(graphics, button);
+    }
+
+    /** Uses Sky Logistics' tinted vanilla button chrome for every selected/hover state. */
+    private static void drawButtonChrome(GuiGraphicsExtractor graphics, AbstractButton button, int tint)
+    {
+        graphics.blitSprite(RenderPipelines.GUI_TEXTURED, BUTTON_SPRITES.get(button.active, button.isHovered()),
+                button.getX(), button.getY(), button.getWidth(), button.getHeight(), tint);
+    }
+
+    private static void drawWhitelistIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean allow, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        int color = button.active ? 0xFFE0E0E0 : 0xFFA0A0A0;
+        int x = button.getX();
+        int y = button.getY();
+        int listColor = color;
+        graphics.fill(x + 5, y + 5, x + 13, y + 6, listColor);
+        graphics.fill(x + 5, y + 9, x + 12, y + 10, listColor);
+        graphics.fill(x + 5, y + 13, x + 11, y + 14, listColor);
+        if (allow) {
+            drawCheck(graphics, x + 10, y + 8, color);
+        } else {
+            drawCross(graphics, x + 11, y + 8, color);
+        }
+    }
+
+    private static void drawNbtIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean enabled, boolean selected) {
+        if (button == null) {
+            return;
+        }
+        int color = button.active ? 0xFFE0E0E0 : 0xFFA0A0A0;
+        int x = button.getX();
+        int y = button.getY();
+        graphics.fill(x + 6, y + 4, x + 14, y + 5, color);
+        graphics.fill(x + 6, y + 4, x + 7, y + 16, color);
+        graphics.fill(x + 13, y + 4, x + 14, y + 16, color);
+        graphics.fill(x + 6, y + 15, x + 14, y + 16, color);
+        graphics.fill(x + 8, y + 8, x + 12, y + 9, color);
+        graphics.fill(x + 8, y + 11, x + 12, y + 12, color);
+        if (!enabled) {
+            drawSlash(graphics, x, y, color);
+        }
+    }
+
+    private static void drawFilterTargetIcon(GuiGraphicsExtractor graphics, AbstractButton button, boolean output)
+    {
+        int color = button.active ? 0xFFE0E0E0 : 0xFFA0A0A0;
+        int x = button.getX(), y = button.getY();
+        // A container with an inward/outward arrow distinguishes ingredients from products.
+        graphics.fill(x + 6, y + 5, x + 14, y + 6, color);
+        graphics.fill(x + 6, y + 14, x + 14, y + 15, color);
+        graphics.fill(x + (output ? 6 : 13), y + 5, x + (output ? 7 : 14), y + 15, color);
+        int arrowX = output ? 11 : 2;
+        graphics.fill(x + arrowX, y + 9, x + arrowX + 7, y + 11, color);
+        graphics.fill(x + arrowX + 4, y + 7, x + arrowX + 6, y + 9, color);
+        graphics.fill(x + arrowX + 4, y + 11, x + arrowX + 6, y + 13, color);
+    }
+
+    private static void drawClearIcon(GuiGraphicsExtractor graphics, AbstractButton button) {
+        if (button == null) {
+            return;
+        }
+        int x = button.getX();
+        int y = button.getY();
+        int color = button.active ? 0xFFE0E0E0 : 0xFFA0A0A0;
+        drawSlash(graphics, x, y, color);
+        for (int offset = 0; offset < 8; offset++) {
+            graphics.fill(x + 6 + offset, y + 5 + offset, x + 8 + offset, y + 7 + offset, color);
+        }
+    }
+
+    private static void drawCheck(GuiGraphicsExtractor graphics, int x, int y, int color) {
+        for (int offset = 0; offset < 3; offset++) {
+            graphics.fill(x + offset, y + 4 + offset, x + offset + 2, y + 6 + offset, color);
+        }
+        for (int offset = 0; offset < 5; offset++) {
+            graphics.fill(x + 3 + offset, y + 6 - offset, x + 5 + offset, y + 8 - offset, color);
+        }
+    }
+
+    private static void drawCross(GuiGraphicsExtractor graphics, int x, int y, int color) {
+        for (int offset = 0; offset < 6; offset++) {
+            graphics.fill(x + offset, y + offset, x + offset + 2, y + offset + 2, color);
+            graphics.fill(x + 5 - offset, y + offset, x + 7 - offset, y + offset + 2, color);
+        }
+    }
+
+    private static void drawSlash(GuiGraphicsExtractor graphics, int x, int y, int color) {
+        for (int offset = 0; offset < 8; offset++) {
+            graphics.fill(x + 6 + offset, y + 13 - offset, x + 8 + offset, y + 15 - offset, color);
+        }
+    }
+
+}

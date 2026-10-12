@@ -153,6 +153,12 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
         int slotY = topPos + DashboardConfigMenu.SAMPLE_SLOT_Y;
         if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18)
         {
+            if (button == 1 && !menu.getCarried().isEmpty())
+            {
+                var key = com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.contents(menu.getCarried());
+                if (!key.isEmpty()) setGhostTarget(key);
+                return true;
+            }
             if (button == 1)
             {
                 menu.setGhostTarget(ItemStackKey.EMPTY);
@@ -179,6 +185,17 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
                 return true;
             }
         }
+        if (button == 1 && menu.getCarried().isEmpty())
+            for (int index = 1; index < menu.slots.size(); index++)
+            {
+                var slot = menu.slots.get(index);
+                if (mouseX >= leftPos + slot.x && mouseX < leftPos + slot.x + 16
+                        && mouseY >= topPos + slot.y && mouseY < topPos + slot.y + 16)
+                {
+                    var key = com.amicbeam.beyondcraftlines.common.crafting.ContainerResourceMarker.contents(slot.getItem());
+                    if (!key.isEmpty()) { setGhostTarget(key); return true; }
+                }
+            }
         boolean handled = super.mouseClicked(mouseX, mouseY, button);
         syncTargetFromMenu();
         return handled;

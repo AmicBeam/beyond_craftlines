@@ -43,7 +43,7 @@ public final class CraftlinesConfig
             .defineInRange("recipePreviewDelayTicks", 5, 1, 1_200);
 
     public static final ModConfigSpec.BooleanValue ENABLE_OPTIMAL_RECIPE_SEARCH = CLIENT_BUILDER
-            .comment("Search alternative recipes and ingredient variants for the best craftable plan. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
+            .comment("Search alternative recipes and ingredient variants until one complete inventory-feasible plan is found, preferring saved recipe choices. This is a heuristic first-complete search, not a mathematically optimal solver. Disable to try only the first preferred candidate at each branch and reduce background planning work.")
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
 
@@ -56,6 +56,11 @@ public final class CraftlinesConfig
             .comment("Show only the occurrence closest to the root for an identical component-aware resource in the recipe tree; later occurrences become clickable jump references.")
             .translation("config.beyond_craftlines.collapse_duplicate_tree_resources")
             .define("collapseDuplicateTreeResources", true);
+
+    public static final ModConfigSpec.BooleanValue SHOW_CYCLIC_TREE_NODES = CLIENT_BUILDER
+            .comment("Show the bottom repeated-ancestor marker of a cyclic recipe branch. This only changes the tree display.")
+            .translation("config.beyond_craftlines.show_cyclic_tree_nodes")
+            .define("showCyclicTreeNodes", false);
 
     public static final ModConfigSpec.BooleanValue SHOW_JEI_ORDER_BUTTON_EVERYWHERE = CLIENT_BUILDER
             .pop()

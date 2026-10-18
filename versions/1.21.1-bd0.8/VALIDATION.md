@@ -1,8 +1,8 @@
 # for BD 0.8 构建验证
 
 - 目标：Minecraft 1.21.1 NeoForge / Beyond Dimensions 0.8.0 / CompixelUI 0.1.12。
-- 模组版本：0.7.0；文件：`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`；大小：1,228,641 字节。
-- SHA-256：`ba4f2a47eff96d04ac208ed668b4ffa542a14a68569df314ba476fa3d337cdc4`。
+- 模组版本：0.7.0；文件：`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`；大小：1,228,621 字节。
+- SHA-256：`e4f7914ca902cb50f7043165a4716c76add134db29d306c4c30e144eb5617a80`。
 - JDK：Eclipse Adoptium 21.0.9。
 - `../../gradlew --offline --no-daemon build`：通过；310 项测试，无失败、错误或跳过。
 - 回归测试覆盖：原崩溃涉及的方块实体类加载、新页面 API 注册、供应器新旧存入接口的订单门禁、订单存入和提取。
@@ -13,3 +13,8 @@
 - JAR 检查：版本及本体依赖范围正确；无旧 GUI 类/Mixin；仪表盘与供应器含新同步方法；
   未打入本体、CompixelUI 或 Kotlin 依赖类；绑定调用使用新的主网络查询 API。
 - 本次仅新增 `versions/1.21.1-bd0.8`；原有五个版本的实现和构建配置未修改。
+
+## 2026-10-19 本地化修正
+
+- 页签标题改用模组名称翻译键，中文显示“超越维度：合成链”；核验成品 jar 中页签与两个按钮的中英翻译。
+- 再次执行完整构建，310 项测试全部通过；未新增图形环境验证。

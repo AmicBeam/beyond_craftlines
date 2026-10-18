@@ -33,7 +33,7 @@ object CraftlinesPages {
 
     private object StatusPage : BdPage<DimensionsNetMenu, Labels, Action> {
         override val icon = BdIcons.Crafting
-        override fun title(context: BdPageContext<DimensionsNetMenu>) = Component.literal("Beyond: Craftlines")
+        override fun title(context: BdPageContext<DimensionsNetMenu>) = Component.translatable("itemGroup.beyond_craftlines")
         override fun snapshot(context: BdPageContext<DimensionsNetMenu>) = Labels(
             Component.translatable("tooltip.beyond_craftlines.open_crafting_status").string,
             Component.translatable("tooltip.beyond_craftlines.open_dashboard_status").string,

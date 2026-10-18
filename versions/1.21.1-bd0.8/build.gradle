@@ -31,6 +31,12 @@ sourceSets.test.java.srcDir '../../src/test/java'
 def prepareSharedResources = tasks.register('prepareSharedResources', Sync) {
     from '../../src/main/resources'
     exclude 'beyond_craftlines.mixins.json'
+    // A button label needs less detail than the old sidebar's hover tooltip.
+    inputs.property('dashboardButtonLabel', 'View active dashboards')
+    filteringCharset = 'UTF-8'
+    filesMatching('assets/beyond_craftlines/lang/en_us.json') {
+        filter { line -> line.replace('"View active Craftline Dashboards on this network"', '"View active dashboards"') }
+    }
     into layout.buildDirectory.dir('generated/sharedResources/main')
 }
 sourceSets.main.resources.srcDir prepareSharedResources

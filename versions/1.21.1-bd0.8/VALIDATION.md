@@ -1,8 +1,8 @@
 # for BD 0.8 构建验证
 
 - 目标：Minecraft 1.21.1 NeoForge / Beyond Dimensions 0.8.0 / CompixelUI 0.1.12。
-- 模组版本：0.7.0；文件：`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`；大小：1,228,621 字节。
-- SHA-256：`e4f7914ca902cb50f7043165a4716c76add134db29d306c4c30e144eb5617a80`。
+- 模组版本：0.7.0；文件：`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`；大小：1,228,624 字节。
+- SHA-256：`5a4b8c676c6a58699d8f766c59f5fd36583f0b1c092b9403fce87021c63da5ea`。
 - JDK：Eclipse Adoptium 21.0.9。
 - `../../gradlew --offline --no-daemon build`：通过；310 项测试，无失败、错误或跳过。
 - 回归测试覆盖：原崩溃涉及的方块实体类加载、新页面 API 注册、供应器新旧存入接口的订单门禁、订单存入和提取。
@@ -18,3 +18,8 @@
 
 - 页签标题改用模组名称翻译键，中文显示“超越维度：合成链”；核验成品 jar 中页签与两个按钮的中英翻译。
 - 再次执行完整构建，310 项测试全部通过；未新增图形环境验证。
+
+## 2026-10-19 英文按钮文案
+
+- 订单按钮保留 `View crafting status`，仪表盘按钮改为 `View active dashboards`；仅作用于本专用版，中文保持原样。
+- 完整构建与 310 项测试通过，核验成品 jar 中的实际英文和中文资源。

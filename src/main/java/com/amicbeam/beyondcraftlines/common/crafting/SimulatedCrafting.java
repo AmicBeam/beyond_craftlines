@@ -185,7 +185,8 @@ public final class SimulatedCrafting
                                      List<RecipePlan.Material> plannedInputs)
     {
         if (requestedCrafts < 1) return Attempt.failed(encode("crafting_invalid_batch"));
-        var holder = level.getRecipeManager().byKey(recipeId).orElse(null);
+        var holder = level.getRecipeManager().byKey(recipeId)
+                .or(() -> FireworkRocketRecipeVariants.find(level, recipeId)).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
 
@@ -216,6 +217,9 @@ public final class SimulatedCrafting
             return Attempt.failed(encode("crafting_simulation_failed"));
         }
         if (output.isEmpty() || !output.getItemHolder().is(expectedOutput))
+            return Attempt.failed(encode("crafting_unexpected_output"));
+
+        if (recipe instanceof FireworkRocketCraftingVariant variant && !variant.acceptsOutput(output))
             return Attempt.failed(encode("crafting_unexpected_output"));
 
         boolean[] persistentSlots = new boolean[prepared.input().size()];

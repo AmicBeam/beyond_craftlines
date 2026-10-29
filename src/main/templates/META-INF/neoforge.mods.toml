@@ -30,7 +30,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="beyonddimensions"
 type="required"
-versionRange="[${beyond_dimensions_version},)"
+versionRange="[${beyond_dimensions_version},0.8)"
 ordering="AFTER"
 side="BOTH"
 

@@ -195,7 +195,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
         // Output resolution is performed lazily by the query/capture that actually needs it.
-        return RecipePlanningService.allRecipes(level).stream()
+        return com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.planningRecipes(level).stream()
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> RecipePlanningService.isNativeExecutable(holder)).toList();
     }
@@ -208,7 +208,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
 
     private static RecipeHolder<?> findDisplayRecipe(net.minecraft.world.level.Level level, ResourceLocation id)
     {
-        return level.getRecipeManager().byKey(id).filter(holder ->
+        return level.getRecipeManager().byKey(id).or(() -> com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.find(level, id)).filter(holder ->
                         RecipePlanningService.isNativeExecutable(holder))
                 .or(() -> com.amicbeam.beyondcraftlines.common.crafting
                         .VirtualProvisionerRecipeRegistry.find(id)).orElse(null);

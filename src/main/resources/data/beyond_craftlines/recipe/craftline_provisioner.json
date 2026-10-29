@@ -7,21 +7,11 @@
     "ISI"
   ],
   "key": {
-    "I": {
-      "tag": "c:ingots/iron"
-    },
-    "H": {
-      "item": "minecraft:hopper"
-    },
-    "R": {
-      "tag": "c:dusts/redstone"
-    },
-    "C": {
-      "item": "beyonddimensions:space_time_stable_frame"
-    },
-    "S": {
-      "tag": "c:chests/wooden"
-    }
+    "I": {"tag": "c:ingots/iron"},
+    "H": {"item": "minecraft:hopper"},
+    "R": {"tag": "c:dusts/redstone"},
+    "C": {"item": "beyonddimensions:space_time_stable_frame"},
+    "S": {"tag": "c:chests/wooden"}
   },
   "result": {
     "id": "beyond_craftlines:craftline_provisioner",

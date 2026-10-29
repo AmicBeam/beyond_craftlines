@@ -34,7 +34,7 @@ public final class RecipePlanningService
     public static List<RecipeHolder<?>> visibleRecipes(Level level)
     {
         List<RecipeHolder<?>> base = VISIBLE_RECIPE_CACHE.computeIfAbsent(level.getRecipeManager(), manager ->
-                manager.getRecipes().stream()
+                FireworkRocketRecipeVariants.planningRecipes(level).stream()
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> !RecipeOutputResolver.outputs(
                         holder.value(), level.registryAccess()).isEmpty())
@@ -50,6 +50,7 @@ public final class RecipePlanningService
     public static void clearRecipeCache()
     {
         VISIBLE_RECIPE_CACHE.clear();
+        FireworkRocketRecipeVariants.clear();
         LOADED_FAMILY_CACHE.clear();
         RecipeIngredientResolver.clearCache();
     }
@@ -158,6 +159,7 @@ public final class RecipePlanningService
             for (ResourceLocation id : overrides.selectedRecipes())
             {
                 RecipeHolder<?> holder = level.getRecipeManager().byKey(id)
+                        .or(() -> FireworkRocketRecipeVariants.find(level, id))
                         .filter(candidate -> isNativeExecutable(candidate))
                         .or(() -> VirtualProvisionerRecipeRegistry.find(id)).orElse(null);
                 if (holder != null) selected.add(holder);

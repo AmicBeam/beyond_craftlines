@@ -59,7 +59,7 @@ neoForge {
 repositories {
     exclusiveContent {
         forRepository {
-            maven { name = 'Wintercogs'; url = 'https://maven.wintercogs.com/releases' }
+            maven { name = 'Wintercogs'; url = providers.systemProperty('craftlines.dependencyMirror').getOrElse('https://maven.wintercogs.com/releases') }
         }
         filter { includeGroup 'com.wintercogs.beyonddimensions'; includeGroup 'dev.compixel' }
     }
@@ -133,7 +133,7 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
     inputs.properties replaceProperties
     filteringCharset = 'UTF-8'
     from '../../src/main/templates'
-    filter { line -> line.replace('versionRange="[${beyond_dimensions_version},)"', 'versionRange="[${beyond_dimensions_version},0.9)"') }
+    filter { line -> line.replace('versionRange="[${beyond_dimensions_version},0.8)"', 'versionRange="[${beyond_dimensions_version},0.9)"') }
     expand replaceProperties
     into layout.buildDirectory.dir('generated/sources/modMetadata')
 }
@@ -146,3 +146,5 @@ tasks.named('processResources', ProcessResources) {
 }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
 tasks.withType(Jar).configureEach { includeEmptyDirs = false }
+
+sourceSets.test.resources.srcDir '../../src/test/resources'

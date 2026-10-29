@@ -105,7 +105,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             if (!(context.player() instanceof ServerPlayer player)) return;
             IStackKey<?> target = payload.target();
             ResourceLocation requestedRecipe = payload.recipeId().isBlank()
-                    ? null : ResourceLocation.tryParse(payload.recipeId());
+                    ? null : com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.targetRecipeId(player.level(),
+                            ResourceLocation.tryParse(payload.recipeId()), target);
             ResourceLocation requestedType = payload.jeiRecipeType().isBlank()
                     ? null : ResourceLocation.tryParse(payload.jeiRecipeType());
             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -183,6 +184,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             var candidates = requestedRecipe == null
                     ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
                     : level.getRecipeManager().byKey(requestedRecipe)
+                    .or(() -> com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.find(level, requestedRecipe))
                     .filter(holder -> RecipePlanningService.isNativeExecutable(holder))
                     .or(() -> com.amicbeam.beyondcraftlines.common.crafting
                             .VirtualProvisionerRecipeRegistry.find(requestedRecipe)).stream().toList();

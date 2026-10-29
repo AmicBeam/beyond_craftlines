@@ -449,8 +449,11 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static <T> @Nullable ResourceLocation serverRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayed = layout.getRecipe();
-        return JeiRecipeExecutionSource.usesServerRecipe(displayed)
-                ? findRecipeId(layout) : null;
+        if (!JeiRecipeExecutionSource.usesServerRecipe(displayed)) return null;
+        var output = findOutput(layout);
+        var level = Minecraft.getInstance().level;
+        return level == null || output == null ? findRecipeId(layout)
+                : com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.targetRecipeId(level, findRecipeId(layout), output.key());
     }
 
     /**

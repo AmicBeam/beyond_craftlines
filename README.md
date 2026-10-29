@@ -51,7 +51,7 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 Minecraft 1.20.1、1.21.1、26.1.2、26.2 与 26.3 的模组版本统一为 `0.7.0`，均属于 `0.7` 功能版本。
 
 - `mod_id`: `beyond_craftlines`
-- 必需依赖：Beyond Dimensions（1.20.1、1.21.1、26.1.2 为 0.7.30 或更高版本；26.2 与 26.3 为 0.7.31 或更高版本）、JEI（以上五个 Minecraft 版本均适用）
+- 必需依赖：Beyond Dimensions、JEI（以上五个 Minecraft 版本均适用）。`for-bd0.7` 产物限定 BD `<0.8`：1.20.1、1.21.1、26.1.2 至少 0.7.30，26.2、26.3 至少 0.7.31。1.20.1 Forge 与 1.21.1 NeoForge 另有 `for-bd0.8` 产物，要求 BD `[0.8.8,0.9)`、CompixelUI 和 Kotlin；同一实例只安装一个对应版本的 Craftlines JAR。1.20.1 的 BD 0.8 实例至少使用 Forge 47.2.18。
 - 可选依赖：GuideME；EMI（Minecraft 1.20.1 Forge 与 1.21.1 NeoForge）。26.1.2、26.2 与 26.3 构建保留显式 no-op EMI 桥，不提供 EMI 运行支持。
 
 服务端配置位置：1.20.1、1.21.1、26.1.2 与 26.2 使用世界目录的 `serverconfig/beyond_craftlines-server.toml`。26.3 使用 NeoForge 的同步配置：默认读取全局 `config/beyond_craftlines-server.toml`，单个世界可通过 `syncedconfig/beyond_craftlines-server.toml` 覆盖，并在连接时同步到客户端。升级世界时，应把需要保留的旧 `serverconfig` 文件复制到该世界的 `syncedconfig`；文件名和配置项保持不变。
@@ -83,11 +83,22 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 五个产物分别位于：
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.7.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3-for-bd0.7.jar`
+
+BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根目录分别执行（JDK 17 / 21）：
+
+```bash
+./gradlew -p versions/1.20.1-bd0.8 --no-daemon build
+./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
+```
+
+新增产物位于 `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.8.jar` 和 `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`。26.1.2、26.2、26.3 目前仅提供 BD 0.7 构建。
+
+普通推进烟花火箭按飞行时间 1、2、3 分别建立服务端可验证的配方变体；单次合成消耗一张纸及对应数量的独立火药槽，产出由原版配方实际组装。含烟火之星的火箭不自动替换成普通火箭。炼药、火箭及白鞘动态产物的测试范围与限制见 [动态合成验收](docs/DYNAMIC_CRAFTING.md)。
 
 ## 使用概要
 

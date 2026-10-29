@@ -27,3 +27,6 @@ logs/
 .env
 *.tmp
 .tmp/
+
+# Task-scoped build mirrors and verification scratch files
+.codex/tmp/

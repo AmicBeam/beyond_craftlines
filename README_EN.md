@@ -51,7 +51,7 @@ Unless explicitly scoped to one version, feature descriptions and development ch
 Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.0`, sharing the `0.7` feature version.
 
 - `mod_id`: `beyond_craftlines`
-- Required dependencies: Beyond Dimensions (0.7.30 or newer for 1.20.1, 1.21.1, and 26.1.2; 0.7.31 or newer for 26.2 and 26.3) and JEI (for all five Minecraft versions above)
+- Required dependencies: Beyond Dimensions and JEI on all five Minecraft versions. `for-bd0.7` artifacts require BD `<0.8`: at least 0.7.30 on 1.20.1, 1.21.1 and 26.1.2, or 0.7.31 on 26.2 and 26.3. Separate `for-bd0.8` artifacts on 1.20.1 Forge and 1.21.1 NeoForge require BD `[0.8.8,0.9)`, CompixelUI and Kotlin. Install only one matching Craftlines JAR per instance. The 1.20.1 BD 0.8 runtime requires Forge 47.2.18 or newer.
 - Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2, 26.2, and 26.3 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
 
 Server configuration paths: 1.20.1, 1.21.1, 26.1.2, and 26.2 use `serverconfig/beyond_craftlines-server.toml` inside the world directory. Minecraft 26.3 uses NeoForge synced configuration: the global default is `config/beyond_craftlines-server.toml`, with a per-world override at `syncedconfig/beyond_craftlines-server.toml`, synchronized to clients on connection. When upgrading a world, copy any previous world-specific file from `serverconfig` into that world’s `syncedconfig`; the filename and settings remain unchanged.
@@ -83,11 +83,22 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 The five artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.7.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3-for-bd0.7.jar`
+
+The two BD 0.8 builds share recipe logic and common tests. Run from the repository root with JDK 17 / 21 respectively:
+
+```bash
+./gradlew -p versions/1.20.1-bd0.8 --no-daemon build
+./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
+```
+
+Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
+
+Ordinary firework rockets have server-derived recipe variants for flight durations 1, 2 and 3. Each consumes one paper and the corresponding number of separate gunpowder slots, and delegates assembly to the real vanilla recipe. Rockets with explosions are never silently replaced by ordinary rockets. See [dynamic crafting acceptance](docs/DYNAMIC_CRAFTING.md) for brewing, rockets and White Sheath policy test coverage and limitations.
 
 ## Usage Overview
 

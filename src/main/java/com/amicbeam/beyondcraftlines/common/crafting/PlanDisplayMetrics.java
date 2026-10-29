@@ -86,7 +86,8 @@ public final class PlanDisplayMetrics
     {
         for (RecipePlan.Step step : steps)
         {
-            var holder = level.getRecipeManager().byKey(step.recipe()).orElse(null);
+            var holder = level.getRecipeManager().byKey(step.recipe())
+                    .or(() -> FireworkRocketRecipeVariants.find(level, step.recipe())).orElse(null);
             if (holder == null) continue;
             for (ItemStack remainder : SimulatedCrafting.previewRemainders(
                     holder, level, step.ingredientSelections(), step.inputs()))

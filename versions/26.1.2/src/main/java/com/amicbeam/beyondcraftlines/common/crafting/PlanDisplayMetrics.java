@@ -87,7 +87,8 @@ public final class PlanDisplayMetrics
         for (RecipePlan.Step step : steps)
         {
             var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                    net.minecraft.core.registries.Registries.RECIPE, step.recipe())).orElse(null);
+                    net.minecraft.core.registries.Registries.RECIPE, step.recipe()))
+                    .or(() -> FireworkRocketRecipeVariants.find(level, step.recipe())).orElse(null);
             if (holder == null) continue;
             for (ItemStack remainder : SimulatedCrafting.previewRemainders(
                     holder, level, step.ingredientSelections(), step.inputs()))

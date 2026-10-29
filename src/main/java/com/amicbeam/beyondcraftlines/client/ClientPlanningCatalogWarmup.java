@@ -361,7 +361,7 @@ public final class ClientPlanningCatalogWarmup
 
         private RecipeSnapshotBuilder(Level level, Set<String> availableFamilies)
         {
-            Collection<RecipeHolder<?>> nativeValues = RecipePlanningService.allRecipes(level);
+            Collection<RecipeHolder<?>> nativeValues = com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.planningRecipes(level);
             List<RecipeHolder<?>> virtualValues = VirtualProvisionerRecipeRegistry.recipes();
             nativeRecipes = nativeValues.iterator();
             virtualRecipes = virtualValues.iterator();

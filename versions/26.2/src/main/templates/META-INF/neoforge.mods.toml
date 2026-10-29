@@ -29,7 +29,7 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="beyonddimensions"
 type="required"
-versionRange="[0.7.31,)"
+versionRange="[0.7.31,0.8)"
 ordering="AFTER"
 side="BOTH"
 

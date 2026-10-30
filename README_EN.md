@@ -100,6 +100,8 @@ Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.
 
 Ordinary firework rockets have server-derived recipe variants for flight durations 1, 2 and 3. Each consumes one paper and the corresponding number of separate gunpowder slots, and delegates assembly to the real vanilla recipe. Rockets with explosions are never silently replaced by ordinary rockets. See [dynamic crafting acceptance](docs/DYNAMIC_CRAFTING.md) for brewing, rockets and White Sheath policy test coverage and limitations.
 
+When exact recipe matching fails, right-click the resource node to select a component variant. The bundled SlashBlade profile has been removed; actual dynamic outputs are tracked per order. Ordinary exact indexing and batching retain their existing paths. See [component matching](docs/COMPONENT_MATCHING.md). Clients and servers must use matching protocol 32 builds.
+
 ## Usage Overview
 
 After receiving a world save or joining a shared network, Craftlines orders, order status, and dashboard status opened from the BD network screen use that screen's network. Opening Craftlines directly from JEI/EMI first uses the last accessible network that player actually opened, falling back to the primary network when no valid memory exists. The last network is saved per player UUID in the world; deleted networks or revoked access clear that memory. Granting manager permissions does not switch the primary network; provisioners and machines must belong to the network used for the order. This applies to Minecraft 1.20.1 / Forge, 1.21.1 / NeoForge, 26.1.2 / NeoForge, 26.2 / NeoForge, and 26.3 / NeoForge.

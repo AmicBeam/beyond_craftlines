@@ -24,6 +24,11 @@ public final class SimulatedWorkstationRecipe
 
     public static Attempt craftOne(ServerLevel level, UnifiedStorage storage, RecipePlan.Step step,
                                    List<RecipePlan.ReservedMaterial> orderReserved, boolean escrowOutput)
+    { return craftOne(level, storage, step, orderReserved, escrowOutput, (expected, actual) -> false); }
+
+    public static Attempt craftOne(ServerLevel level, UnifiedStorage storage, RecipePlan.Step step,
+                                   List<RecipePlan.ReservedMaterial> orderReserved, boolean escrowOutput,
+                                   java.util.function.BiPredicate<IStackKey<?>, IStackKey<?>> producedMatch)
     {
         var holder = level.recipeAccess().byKey(ResourceKey.create(Registries.RECIPE, step.recipe())).orElse(null);
         if (holder == null || !VanillaProvisionerRecipeTypes.isProxyFamily(step.family()))
@@ -39,6 +44,10 @@ public final class SimulatedWorkstationRecipe
             RecipePlan.Material material = materials.get(slot);
             if (material == null || !(material.key() instanceof ItemStackKey item))
                 return Attempt.failed(encode("crafting_waiting_inputs"));
+            IStackKey<?> expected = item;
+            var produced = orderReserved.stream().filter(value -> value.key() instanceof ItemStackKey
+                    && producedMatch.test(expected, value.key())).findFirst().orElse(null);
+            if (produced != null) item = (ItemStackKey) produced.key();
             input.add(item.getReadOnlyStack().copyWithCount(1));
             consumption.merge(item, 1L, Long::sum);
         }
@@ -58,6 +67,8 @@ public final class SimulatedWorkstationRecipe
         if (output.isEmpty() || !BuiltInRegistries.ITEM.getKey(output.getItem()).equals(step.output()))
             return Attempt.failed(encode("crafting_unexpected_output"));
         ItemStackKey outputKey = new ItemStackKey(output.copyWithCount(1));
+        if (!StackKeyMatch.exact(step.executionOutputKey(), outputKey) && output.getCount() != step.outputPerCraft())
+            return Attempt.failed(encode("crafting_unexpected_output"));
         if (!escrowOutput && !storage.insert(outputKey, output.getCount(), true).isEmpty())
             return Attempt.failed(encode("crafting_network_full"));
 
@@ -90,7 +101,7 @@ public final class SimulatedWorkstationRecipe
         return new Attempt(true, "", 1,
                 consumedReserved.entrySet().stream().map(entry ->
                         new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList(),
-                escrowOutput ? List.of(new RecipePlan.ReservedMaterial(outputKey, output.getCount())) : List.of());
+                escrowOutput ? List.of(new RecipePlan.ReservedMaterial(outputKey, output.getCount())) : List.of(), new KeyAmount(outputKey, output.getCount()));
     }
 
     private static Map<IStackKey<?>, Long> reservedAmounts(List<RecipePlan.ReservedMaterial> values)
@@ -106,7 +117,7 @@ public final class SimulatedWorkstationRecipe
 
     public record Attempt(boolean success, String reason, long crafts,
                           List<RecipePlan.ReservedMaterial> consumedReserved,
-                          List<RecipePlan.ReservedMaterial> producedReserved)
+                          List<RecipePlan.ReservedMaterial> producedReserved, KeyAmount actualOutput)
     {
         public Attempt
         {
@@ -115,6 +126,6 @@ public final class SimulatedWorkstationRecipe
         }
 
         static Attempt failed(String reason)
-        { return new Attempt(false, reason, 0, List.of(), List.of()); }
+        { return new Attempt(false, reason, 0, List.of(), List.of(), null); }
     }
 }

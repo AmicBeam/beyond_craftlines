@@ -33,10 +33,8 @@ public final class JeiVirtualRecipeLayouts
             Captured exact = captures.stream().filter(value -> StackKeyMatch.exact(target, value.output().key()))
                     .findFirst().orElse(null);
             if (exact != null) return exact;
-            var source = CraftlinesJeiPlugin.findRecipeId(layout);
-            if (source == null || !JeiRecipeExecutionSource.usesServerRecipe(layout.getRecipe())) return null;
-            return captures.stream().filter(value -> RecipeIoProfileRegistry.outputMatches(
-                    source.toString(), target, value.output().key())).findFirst().orElse(null);
+            var candidates = captures.stream().filter(value -> ComponentRecipeCandidates.sameResource(target, value.output().key())).toList();
+            return candidates.size() == 1 ? candidates.get(0) : null;
         }, null, failure -> reportLayoutFailure("focused_capture", type, layout, failure));
     }
 

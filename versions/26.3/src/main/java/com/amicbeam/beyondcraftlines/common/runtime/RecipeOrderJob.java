@@ -182,7 +182,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
         List<StepExecution> updated = new java.util.ArrayList<>(executions);
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - completedCrafts, current.inputs(),
-                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(), current.byproducts());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(), current.byproducts(), current.executionOutputKey());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextAllowedTick, null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -206,7 +206,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
         }
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,
-                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(), current.byproducts());
+                current.ingredientSelections(), current.dependencies(), current.selfIncrementSeed(), current.byproducts(), current.executionOutputKey());
         updated.set(activeStep, executions.get(activeStep).with(remaining, nextCraftingTick(), null));
         return copy(updated, activeStep, Status.RUNNING, "", createdAt, finishedAt, reserved);
     }
@@ -228,6 +228,58 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
     public RecipeOrderJob withReserved(List<RecipePlan.ReservedMaterial> values)
     {
         return copy(executions, activeStep, status, message, createdAt, finishedAt, values);
+    }
+
+    /** Record only real outputs of this active step, never a same-item guess from network stock. */
+    public RecipeOrderJob recordProduced(IStackKey<?> actual, long amount)
+    {
+        requireActive();
+        if (actual == null || amount <= 0) return this;
+        StepExecution execution = executions.get(activeStep);
+        if (!com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.sameResource(execution.step().outputKey(), actual))
+            throw new IllegalArgumentException("produced resource type differs from selected recipe");
+        var amounts = new java.util.LinkedHashMap<IStackKey<?>, Long>();
+        for (var value : execution.produced()) amounts.merge(value.key(), value.amount(),
+                com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath::add);
+        amounts.merge(actual, amount, com.amicbeam.beyondcraftlines.common.crafting.SaturatingLongMath::add);
+        var updated = new java.util.ArrayList<>(executions);
+        updated.set(activeStep, new StepExecution(execution.step(), execution.complete(), execution.nextCraftingTick(),
+                execution.externalWait(), amounts.entrySet().stream().map(entry ->
+                new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList()));
+        return copy(updated, activeStep, status, message, createdAt, finishedAt, reserved);
+    }
+
+    public boolean matchesProduced(IStackKey<?> expected, IStackKey<?> candidate)
+    {
+        if (!com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.sameResource(expected, candidate)) return false;
+        return executions.stream().filter(execution -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                .exact(expected, execution.step().outputKey())).flatMap(execution -> execution.produced().stream())
+                .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(value.key(), candidate));
+    }
+    public java.util.function.BiPredicate<String, IStackKey<?>> producedSelectionMatcher()
+    {
+        java.util.Set<IStackKey<?>> held = reserved.stream().map(RecipePlan.ReservedMaterial::key).collect(java.util.stream.Collectors.toSet());
+        java.util.Map<String, java.util.Set<IStackKey<?>>> aliases = new java.util.HashMap<>();
+        for (StepExecution execution : executions)
+            for (var value : execution.produced())
+                if (held.contains(value.key()) && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(execution.step().outputKey(), value.key()))
+                    aliases.computeIfAbsent(com.amicbeam.beyondcraftlines.common.crafting.IngredientSelectionKey.exact(execution.step().outputKey()),
+                            ignored -> new java.util.HashSet<>()).add(value.key());
+        return (selection, candidate) -> aliases.getOrDefault(selection, java.util.Set.of()).contains(candidate);
+    }
+
+    public boolean hasChangedFinalOutput()
+    {
+        if (executions.isEmpty()) return false;
+        StepExecution root = executions.get(executions.size() - 1);
+        return root.produced().stream().anyMatch(value -> !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
+                .exact(root.step().outputKey(), value.key()));
+    }
+    public boolean matchesFinalReceipt(IStackKey<?> candidate)
+    {
+        if (executions.isEmpty()) return false;
+        return executions.get(executions.size() - 1).produced().stream()
+                .anyMatch(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(value.key(), candidate));
     }
 
     public RecipeOrderJob finishedAt(long gameTime)
@@ -258,7 +310,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
                     ? java.util.stream.IntStream.range(0, i).boxed().toList() : source.dependencies();
             RecipePlan.Step step = new RecipePlan.Step(source.recipe(), source.family(), source.outputKey(),
                     source.outputPerCraft(), source.crafts(), source.inputs(),
-                    source.ingredientSelections(), dependencies, source.selfIncrementSeed(), source.byproducts());
+                    source.ingredientSelections(), dependencies, source.selfIncrementSeed(), source.byproducts(), source.executionOutputKey());
             migrated.add(new StepExecution(step, i < nextStep,
                     i == nextStep ? nextCraftingTick : 0, i == nextStep ? externalWait : null));
         }
@@ -266,17 +318,20 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, Identifier targ
     }
 
     public record StepExecution(RecipePlan.Step step, boolean complete, long nextCraftingTick,
-                                ExternalWait externalWait)
+                                ExternalWait externalWait, List<RecipePlan.ReservedMaterial> produced)
     {
+        public StepExecution(RecipePlan.Step step, boolean complete, long nextCraftingTick, ExternalWait externalWait)
+        { this(step, complete, nextCraftingTick, externalWait, List.of()); }
         public StepExecution
         {
+            produced = List.copyOf(produced);
             if (step == null || nextCraftingTick < 0 || complete && externalWait != null)
                 throw new IllegalArgumentException("invalid recipe step execution");
         }
         static StepExecution pending(RecipePlan.Step step) { return new StepExecution(step, false, 0, null); }
-        StepExecution completed(long tick) { return new StepExecution(step, true, tick, null); }
+        StepExecution completed(long tick) { return new StepExecution(step, true, tick, null, produced); }
         StepExecution with(RecipePlan.Step value, long tick, ExternalWait wait)
-        { return new StepExecution(value, false, tick, wait); }
+        { return new StepExecution(value, false, tick, wait, produced); }
     }
 
     public record ExternalWait(ResourceKey<Level> machineDimension, BlockPos machinePosition,

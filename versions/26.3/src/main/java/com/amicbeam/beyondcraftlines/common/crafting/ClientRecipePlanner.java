@@ -121,6 +121,7 @@ public final class ClientRecipePlanner
     private static final class Search
     {
         private final java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput;
+        private final java.util.function.BiFunction<IStackKey<?>, Identifier, List<Recipe>> selectedByOutput;
         private final Map<String, Identifier> lockedRecipes;
         private final Map<IngredientKey, String> lockedIngredients;
         private final Map<String, Identifier> preferredRecipes;
@@ -138,6 +139,7 @@ public final class ClientRecipePlanner
                        ClientPlanningBudget budget, boolean optimalSearch)
         {
             this.byOutput = catalog::lookup;
+            this.selectedByOutput = catalog::selected;
             this.lockedRecipes = lockedRecipes;
             this.lockedIngredients = lockedIngredients;
             this.preferredRecipes = preferredRecipes;
@@ -217,6 +219,7 @@ public final class ClientRecipePlanner
                 var selected = lockedRecipes.get(resourceId);
                 if (selected == null) selected = lockedRecipes.get(RecipeResourceResolver.sortKey(resource));
                 if (selected == null) selected = state.recipes.get(resourceId);
+                if (selected == null && candidates.isEmpty()) selected = preferredRecipes.get(resourceId);
                 if (RecipeResolutionOverrides.NO_RECIPE.equals(selected))
                 {
                     state.recipes.put(resourceId, selected);
@@ -227,7 +230,7 @@ public final class ClientRecipePlanner
                 if (selected != null)
                 {
                     var choice = selected;
-                    candidates = candidates.stream().filter(recipe -> recipe.id().equals(choice)).toList();
+                    candidates = selectedByOutput.apply(resource, choice);
                 }
                 else candidates = rankRecipes(resource, candidates, state);
                 if (candidates.isEmpty())
@@ -453,6 +456,7 @@ public final class ClientRecipePlanner
         private final List<Recipe> recipes;
         private final OutputRecipeMap byOutput;
         private final Set<String> availableFamilies;
+        private final BoundedIdentityCache<IStackKey<?>, Map<String, IStackKey<?>>> candidateCache = new BoundedIdentityCache<>(64);
 
         public Catalog(List<Recipe> recipes)
         {
@@ -493,8 +497,31 @@ public final class ClientRecipePlanner
                             .includes(recipe.family(), availableFamilies)).toList();
         }
 
+        /** Reuses existing coarse buckets; ordinary capture stores no extra per-recipe component projection. */
+        public IStackKey<?> candidateOutput(String recipeId, IStackKey<?> resource)
+        { return candidateOutputs(resource).get(recipeId); }
+        public Map<String, IStackKey<?>> candidateOutputs(IStackKey<?> resource)
+        {
+            return candidateCache.computeIfAbsent(resource, key -> {
+                Map<String, List<KeyAmount>> grouped = new LinkedHashMap<>();
+                for (var entry : byOutput.byCoarse.getOrDefault(RecipeResourceResolver.sortKey(key), List.of()))
+                    for (Recipe recipe : entry.getValue())
+                        grouped.computeIfAbsent(recipe.id().toString(), ignored -> new ArrayList<>())
+                                .add(new KeyAmount(recipe.output(), recipe.outputCount()));
+                Map<String, IStackKey<?>> selected = new LinkedHashMap<>();
+                grouped.forEach((id, values) -> {
+                    KeyAmount output = ComponentRecipeCandidates.selectedOutput(key, values);
+                    if (output != null) selected.put(id, output.key());
+                });
+                return Map.copyOf(selected);
+            });
+        }
+
         private List<Recipe> lookup(IStackKey<?> resource)
         { return byOutput.lookup(resource, availableFamilies); }
+        private List<Recipe> selected(IStackKey<?> resource, Identifier id)
+        { return byOutput.selected(resource, id, availableFamilies); }
+
     }
 
     private static void logSlowInputs(String stage, long elapsedNanos, RecipeHolder<?> holder, String family,
@@ -866,7 +893,7 @@ public final class ClientRecipePlanner
                 .filter(entry -> resource.isSame(entry.getKey()) || entry.getKey().isSame(resource))
                 .limit(16).map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="
                         + entry.getValue().stream().map(recipe -> recipe.id().toString()).toList()).toList();
-        if (!sameItemCandidates.isEmpty()) OrderDiagnostics.LOGGER.warn(
+        if (!sameItemCandidates.isEmpty() && OrderDiagnostics.LOGGER.isDebugEnabled()) OrderDiagnostics.LOGGER.debug(
                 "{} client dependency exact miss requested={} sameItemCandidates={}",
                 OrderDiagnostics.PREFIX, OrderDiagnostics.resource(resource), sameItemCandidates);
         return List.of();
@@ -877,6 +904,16 @@ public final class ClientRecipePlanner
         private Map<String,List<Recipe>> byResolution=Map.of();
         private Map<String,List<Map.Entry<IStackKey<?>,List<Recipe>>>> byCoarse=Map.of();
         private void finish(){LinkedHashMap<String,List<Recipe>> exact=new LinkedHashMap<>();LinkedHashMap<String,List<Map.Entry<IStackKey<?>,List<Recipe>>>> coarse=new LinkedHashMap<>();replaceAll((key,value)->List.copyOf(value));for(var entry:entrySet()){exact.computeIfAbsent(RecipeResourceResolver.resolutionKey(entry.getKey()),ignored->new ArrayList<>()).addAll(entry.getValue());coarse.computeIfAbsent(RecipeResourceResolver.sortKey(entry.getKey()),ignored->new ArrayList<>()).add(Map.entry(entry.getKey(),entry.getValue()));}exact.replaceAll((key,value)->List.copyOf(value));coarse.replaceAll((key,value)->List.copyOf(value));byResolution=Map.copyOf(exact);byCoarse=Map.copyOf(coarse);}
+        private List<Recipe> selected(IStackKey<?> resource, Identifier id, Set<String> families)
+        {
+            List<Recipe> selected = byCoarse.getOrDefault(RecipeResourceResolver.sortKey(resource), List.of()).stream()
+                    .flatMap(entry -> entry.getValue().stream()).filter(recipe -> recipe.id().equals(id))
+                    .filter(recipe -> families == null || com.amicbeam.beyondcraftlines.common.menu.RecipeIndexVisibility.includes(recipe.family(), families))
+                    .filter(recipe -> ComponentRecipeCandidates.sameResource(resource, recipe.output())).toList();
+            List<Recipe> exact = selected.stream().filter(recipe -> StackKeyMatch.exact(resource, recipe.output())).toList();
+            return !exact.isEmpty() ? exact : selected.size() == 1 ? selected : List.of();
+        }
+
         private List<Recipe> lookup(IStackKey<?> resource)
         { return lookup(resource, null); }
 
@@ -906,7 +943,7 @@ public final class ClientRecipePlanner
                                 (left, right) -> left.isSame(right) || right.isSame(left))).toList();
                 if (!configured.isEmpty()) return configured;
             }
-            if (!candidates.isEmpty()) OrderDiagnostics.LOGGER.warn(
+            if (!candidates.isEmpty() && OrderDiagnostics.LOGGER.isDebugEnabled()) OrderDiagnostics.LOGGER.debug(
                     "{} client dependency exact miss requested={} sameItemCandidates={}",
                     OrderDiagnostics.PREFIX, OrderDiagnostics.resource(resource), candidates.stream().limit(16)
                             .map(entry -> OrderDiagnostics.resource(entry.getKey()) + "="

@@ -150,7 +150,7 @@ public final class RecipePlanningService
                                    ResolutionMode mode)
     {
 
-        Map<IStackKey<?>, List<RecipeHolder<?>>> byOutput = new LinkedHashMap<>();
+        SelectedOutputs byOutput = new SelectedOutputs();
         Iterable<RecipeHolder<?>> candidates;
         if (mode == ResolutionMode.SEARCH) candidates = visibleRecipes(level);
         else
@@ -170,8 +170,7 @@ public final class RecipePlanningService
         {
             String family = family(holder);
             if (!"crafting".equals(family) && !availableFamilies.contains(family)) continue;
-            for (KeyAmount output : RecipeOutputResolver.outputs(holder.value(), level))
-                byOutput.computeIfAbsent(output.key(), ignored -> new ArrayList<>()).add(holder);
+            byOutput.add(holder, RecipeOutputResolver.outputs(holder.value(), level));
         }
         PlanningState state = new PlanningState(stock, new ArrayList<>(), new LinkedHashMap<>(),
                 new LinkedHashMap<>(), new LinkedHashMap<>());
@@ -229,8 +228,13 @@ public final class RecipePlanningService
 
         try
         {
-            List<RecipeHolder<?>> candidates = recipesFor(byOutput, resource);
+            Identifier explicit = overrides.recipeFor(resource);
+            List<RecipeHolder<?>> candidates = explicit != null && byOutput instanceof SelectedOutputs selected
+                    ? selected.forChoice(resource, explicit) : recipesFor(byOutput, resource);
             if (requiredIngredient != null) candidates = candidates.stream().filter(holder ->
+                    explicit != null && byOutput instanceof SelectedOutputs selected
+                            && !StackKeyMatch.exact(resource, ComponentRecipeCandidates.selectedOutput(resource,
+                            selected.outputs.get(holder.id().identifier())).key()) ||
                     RecipeOutputResolver.outputs(holder.value(), level).stream().anyMatch(output ->
                             output.key() instanceof ItemStackKey item && VirtualRecipeOutputMatch.matches(
                                     item.getReadOnlyStack(), net.minecraft.world.item.ItemStack.class,
@@ -361,11 +365,11 @@ public final class RecipePlanningService
                                              List<KeyAmount> variant)
     {
         int dependencyStart = state.steps.size();
-        List<KeyAmount> recipeOutputs = RecipeOutputResolver.outputs(holder.value(), level);
-        KeyAmount result = recipeOutputs.stream()
-                .filter(value -> RecipeIoProfileRegistry.outputMatches(
-                        holder.value(), holder.id().identifier().toString(), outputKey, value.key()))
-                .findFirst().orElseThrow();
+        List<KeyAmount> recipeOutputs = byOutput instanceof SelectedOutputs selected
+                ? selected.outputs.getOrDefault(holder.id().identifier(), List.of())
+                : RecipeOutputResolver.outputs(holder.value(), level);
+        KeyAmount result = ComponentRecipeCandidates.selectedOutput(outputKey, recipeOutputs);
+        if (result == null) throw new IllegalArgumentException("ambiguous selected recipe output");
         long perCraft = Math.max(1, result.amount());
         List<RecipePlan.Material> inputs = new ArrayList<>();
         List<PlanningDependencyBatcher.Entry<IStackKey<?>>> dependencyInputs = new ArrayList<>();
@@ -458,7 +462,7 @@ public final class RecipePlanningService
         dependencies = List.copyOf(producers);
         state.steps.add(new RecipePlan.Step(holder.id().identifier(), family(holder), outputKey,
                 perCraft, crafts, inputs, finalSelections, dependencies, shape.seed(), VirtualProvisionerRecipeRegistry.descriptor(holder.value()) == null
-                ? List.of() : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).byproducts()));
+                ? List.of() : VirtualProvisionerRecipeRegistry.descriptor(holder.value()).byproducts(), result.key()));
         long produced = SaturatingLongMath.multiply(shape.netOutputPerCraft(), crafts);
         long surplus = produced > remainder ? produced - remainder : 0;
         if (surplus > 0) state.stock.add(outputKey, surplus);
@@ -521,6 +525,23 @@ public final class RecipePlanningService
         LinkedHashMap<IStackKey<?>, KeyAmount> unique = new LinkedHashMap<>();
         choices.stream().sorted(comparator).forEach(choice -> unique.putIfAbsent(choice.key(), choice));
         return List.copyOf(unique.values());
+    }
+
+    private static final class SelectedOutputs extends LinkedHashMap<IStackKey<?>, List<RecipeHolder<?>>>
+    {
+        private final Map<Identifier, RecipeHolder<?>> holders = new HashMap<>();
+        private final Map<Identifier, List<KeyAmount>> outputs = new HashMap<>();
+        void add(RecipeHolder<?> holder, List<KeyAmount> values)
+        {
+            holders.put(holder.id().identifier(), holder); outputs.put(holder.id().identifier(), values);
+            for (KeyAmount value : values) computeIfAbsent(value.key(), ignored -> new ArrayList<>()).add(holder);
+        }
+        List<RecipeHolder<?>> forChoice(IStackKey<?> resource, Identifier id)
+        {
+            RecipeHolder<?> holder = holders.get(id);
+            return holder != null && ComponentRecipeCandidates.selectedOutput(resource, outputs.get(id)) != null
+                    ? List.of(holder) : List.of();
+        }
     }
 
     private enum ResolutionMode { SEARCH, FIXED, SELECTED_CHAIN }

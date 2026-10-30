@@ -362,7 +362,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 ? com.amicbeam.beyondcraftlines.client.integration.jei.CraftlinesJeiPlugin
                         .consumePendingRecipeHint(menu.initialTarget()) : null;
         ResourceLocation initialRecipe = menu.initialRecipe() != null ? menu.initialRecipe() : hintedRecipe;
-        selected = initialRecipe != null && menu.recipeProduces(initialRecipe, menu.targetToken())
+        selected = initialRecipe != null && (menu.recipeProduces(initialRecipe, menu.targetToken())
+                || menu.candidateOutput(initialRecipe, menu.initialTarget()) != null)
                 ? menu.recipe(initialRecipe) : null;
         if (selected != null)
         {
@@ -1119,11 +1120,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     .FluidContainerChoice.isProxy(choice))) selectedInputs.set(i, new SelectedTreeInput(
                     selectedInput.slot(), selectedInput.ingredient(), proxy));
         }
-        long outputPerCraft = com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
-                .outputs(recipe.value(), minecraft.level.registryAccess()).stream()
-                .filter(output -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
-                        .exact(resourceKey, output.key())).mapToLong(output -> output.amount())
-                .findFirst().orElse(1);
+        var chosenOutput = com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.selectedOutput(
+                resourceKey, com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
+                        .outputs(recipe.value(), minecraft.level.registryAccess()));
+        long outputPerCraft = chosenOutput == null ? 1 : chosenOutput.amount();
         long seedPerCraft = 0;
         long consumedSeedPerCraft = 0;
         for (SelectedTreeInput selectedInput : selectedInputs)
@@ -1327,7 +1327,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             return null;
         if (RecipeResolutionOverrides.NO_RECIPE.equals(selectedId)) return null;
         if (selectedId != null)
+        {
             for (RecipeHolder<?> candidate : candidates) if (candidate.id().equals(selectedId)) return candidate;
+            if ((manualId != null || defaultResourceRecipes.containsKey(token)) && menu.candidateOutput(selectedId, output) != null)
+                return menu.recipe(selectedId);
+        }
         // The material proposal is the authoritative expansion result. Dynamic recipes can produce
         // the requested component state even when their static display output does not compare
         // equal to it, so the exact resource-token choice must still drive the visible tree.
@@ -1524,7 +1528,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private boolean openRecipePicker(GraphNode node)
     {
         if (node.stockSatisfied) return false;
-        List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(node.key);
+        List<RecipeHolder<?>> candidates = menu.recipeCandidatesForResource(node.key);
         ingredientPickerNode = null;
         ingredientPickerItems = List.of();
         recipePickerNode = node;
@@ -1756,7 +1760,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 RecipeHolder<?> candidateRecipe = recipePickerNode == null || noRecipe
                         ? null : recipePickerRecipes.get(index - 1);
                 ItemStack stack = recipePickerNode == null ? ingredientPickerItems.get(index) : ItemStack.EMPTY;
-                IStackKey<?> outputKey = candidateRecipe == null ? null : recipePickerNode.key;
+                IStackKey<?> outputKey = candidateRecipe == null ? null : menu.candidateOutput(candidateRecipe.id(), recipePickerNode.key);
+                if (candidateRecipe != null && outputKey == null) outputKey = recipePickerNode.key;
                 IStackKey<?> candidateKey = candidateRecipe == null ? null
                         : firstRecipeInputKey(candidateRecipe, outputKey);
                 if (candidateRecipe != null && candidateKey == null) candidateKey = outputKey;
@@ -1766,6 +1771,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 boolean hover = mouseX >= x && mouseX < x + 18 && mouseY >= y && mouseY < y + 18;
                 graphics.fill(x, y, x + 18, y + 18, hover ? 0xFF38536D : 0xFF111923);
                 graphics.renderOutline(x, y, 18, 18, selected ? BD_CYAN : 0xFF526273);
+                if (candidateRecipe != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(
+                        recipePickerNode.key, outputKey))
+                    graphics.drawString(font, "~", x + 12, y, 0xFFFFCC66, false);
                 if (noRecipe) renderNoRecipeIcon(graphics, x + 1, y + 1);
                 else if (candidateKey == null) graphics.renderItem(stack, x + 1, y + 1);
                 else candidateKey.getRender().render(graphics, candidateKey, x + 1, y + 1);
@@ -1857,7 +1865,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (inputs.size() > 1)
                 title = Component.translatable("tooltip.beyond_craftlines.materials_and_more", title);
         }
-        List<Component> lines = List.of(title, localizedRecipeType(recipe));
+        List<Component> lines = new ArrayList<>(List.of(title, localizedRecipeType(recipe)));
+        if (recipePickerNode != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(recipePickerNode.key, output))
+            lines.add(Component.translatable("gui.beyond_craftlines.component_candidate").withStyle(ChatFormatting.GOLD));
         graphics.renderTooltip(font, lines, Optional.<TooltipComponent>of(
                 new RecipePreviewTooltip(inputs,
                         com.amicbeam.beyondcraftlines.common.crafting.RecipeOutputResolver
@@ -2481,7 +2491,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         return switch (outcome)
         {
-            case NO_RECIPE -> Component.translatable("error.beyond_craftlines.planning_no_recipe").getString();
+            case NO_RECIPE -> Component.translatable(menu.recipeCandidatesForResource(menu.initialTarget()).isEmpty()
+                    ? "error.beyond_craftlines.planning_no_recipe" : "gui.beyond_craftlines.component_choice_required").getString();
             case CYCLE -> Component.translatable("error.beyond_craftlines.planning_cycle_only").getString();
             case BUDGET_EXHAUSTED -> Component.translatable(
                     "error.beyond_craftlines.planning_budget_exhausted").getString();

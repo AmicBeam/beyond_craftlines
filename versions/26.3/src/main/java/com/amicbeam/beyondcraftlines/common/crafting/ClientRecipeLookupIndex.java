@@ -19,13 +19,32 @@ public final class ClientRecipeLookupIndex
     private ClientRecipeLookupIndex() {}
 
     public static Builder begin(ClientRecipePlanner.Catalog catalog)
-    { return new Builder(catalog.recipes()); }
+    { return new Builder(catalog); }
 
-    public static void clear() { snapshot = Snapshot.EMPTY; }
+    public static void clear() { snapshot = Snapshot.EMPTY; ComponentRecipeCandidates.clear(); }
     public static boolean ready() { return snapshot.ready(); }
     public static List<String> recipeIdsForOutput(IStackKey<?> output)
     { return recipeIdsForOutput(RecipeResourceResolver.resolutionKey(output),
             RecipeResourceResolver.sortKey(output), snapshot.byOutput(), snapshot.byCompatibleOutput()); }
+    public static IStackKey<?> candidateOutput(String recipe, IStackKey<?> requested)
+    {
+        return snapshot.catalog() == null ? null : snapshot.catalog().candidateOutput(recipe, requested);
+    }
+    public static List<String> recipeIdsForCandidates(IStackKey<?> requested)
+    {
+        if (snapshot.catalog() == null) return recipeIdsForOutput(requested);
+        var outputs = snapshot.catalog().candidateOutputs(requested);
+        var candidates = new LinkedHashSet<>(recipeIdsForOutput(requested));
+        candidates.addAll(outputs.keySet());
+        Map<String, Integer> distances = new LinkedHashMap<>();
+        for (String recipe : candidates)
+        {
+            IStackKey<?> output = outputs.get(recipe);
+            if (output != null) distances.put(recipe, ComponentRecipeCandidates.distance(requested, output));
+        }
+        return distances.keySet().stream().sorted(java.util.Comparator.<String>comparingInt(distances::get)
+                .thenComparing(recipe -> recipe)).toList();
+    }
     public static List<String> recipeIdsForItem(String item)
     { return snapshot.byItem().getOrDefault(item, List.of()); }
     public static String itemForOutputToken(String token) { return snapshot.itemsByOutput().get(token); }
@@ -46,7 +65,9 @@ public final class ClientRecipeLookupIndex
         private Snapshot built;
         private boolean complete;
 
-        private Builder(List<ClientRecipePlanner.Recipe> recipes) { this.recipes = recipes; }
+        private final ClientRecipePlanner.Catalog catalog;
+        private Builder(ClientRecipePlanner.Catalog catalog)
+        { this.catalog = catalog; this.recipes = catalog.recipes(); }
 
         public void advance(long timeBudgetNanos)
         {
@@ -77,7 +98,7 @@ public final class ClientRecipeLookupIndex
             if (next < recipes.size()) return;
             built = new Snapshot(freezeLists(byOutput), freezeLists(byCompatibleOutput),
                     freezeLists(byItem), Map.copyOf(itemsByOutput), freezeSets(outputsByRecipe),
-                    List.copyOf(recipeIds), true);
+                    List.copyOf(recipeIds), catalog, true);
             complete = true;
         }
 
@@ -118,9 +139,9 @@ public final class ClientRecipeLookupIndex
                             Map<String, List<String>> byCompatibleOutput,
                             Map<String, List<String>> byItem,
                             Map<String, String> itemsByOutput, Map<String, Set<String>> outputsByRecipe,
-                            List<String> recipeIds, boolean ready)
+                            List<String> recipeIds, ClientRecipePlanner.Catalog catalog, boolean ready)
     {
         private static final Snapshot EMPTY = new Snapshot(
-                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(), false);
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(), null, false);
     }
 }

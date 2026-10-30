@@ -1,4 +1,6 @@
 {
+  "gui.beyond_craftlines.component_candidate": "Approximate candidate: different components; crafts the selected recipe output",
+  "gui.beyond_craftlines.component_choice_required": "Component variants found; right-click the node to choose a recipe",
   "key.category.beyond_craftlines.controls": "Beyond: Craftlines",
   "key.beyond_craftlines.order_hovered_resource": "Order hovered resource",
   "config.beyond_craftlines.show_bound_machine_frames": "Show bound machine frames",
@@ -271,6 +273,7 @@
   "tooltip.beyond_craftlines.output_destination_inventory": "Move completed output to your inventory; the order waits while you are offline or lack space.",
   "gui.beyond_craftlines.order_message.waiting_owner_online": "Waiting for the ordering player to come online",
   "gui.beyond_craftlines.order_message.waiting_inventory_space": "Waiting for enough player inventory space",
+  "gui.beyond_craftlines.order_message.dynamic_output_requires_manual": "Actual output differs from the restock target; inspect the result or use a manual order",
   "gui.beyond_craftlines.order_message.waiting_final_output": "Waiting for the final output to enter the network",
   "gui.beyond_craftlines.order_message.waiting_dashboard_container": "Waiting for the attached dashboard container",
   "gui.beyond_craftlines.order_message.waiting_dashboard_container_space": "Waiting for space in the attached dashboard container",

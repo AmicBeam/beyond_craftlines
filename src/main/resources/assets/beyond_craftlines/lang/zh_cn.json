@@ -1,4 +1,6 @@
 {
+  "gui.beyond_craftlines.component_candidate": "近似候选：组件不同，将制作所选配方的产物",
+  "gui.beyond_craftlines.component_choice_required": "找到组件不同的候选，请右击对应节点选择配方",
   "key.category.beyond_craftlines.controls": "超越维度：合成链",
   "key.beyond_craftlines.order_hovered_resource": "下单悬浮资源",
   "config.beyond_craftlines.show_bound_machine_frames": "显示已绑定机器的超维边框",
@@ -271,6 +273,7 @@
   "tooltip.beyond_craftlines.output_destination_inventory": "订单产物完成后转移到你的物品栏；空间不足或离线时订单会等待。",
   "gui.beyond_craftlines.order_message.waiting_owner_online": "正在等待下单玩家上线以交付产物",
   "gui.beyond_craftlines.order_message.waiting_inventory_space": "正在等待物品栏腾出足够空间",
+  "gui.beyond_craftlines.order_message.dynamic_output_requires_manual": "实际产物组件与补货目标不同，请检查产物或改用手动订单",
   "gui.beyond_craftlines.order_message.waiting_final_output": "正在等待最终产物进入网络",
   "gui.beyond_craftlines.order_message.waiting_dashboard_container": "正在等待仪表盘背后的容器可用",
   "gui.beyond_craftlines.order_message.waiting_dashboard_container_space": "正在等待仪表盘背后的容器腾出空间",

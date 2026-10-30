@@ -229,12 +229,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     current, target, category, focuses, focusGroup, true);
             if (payload != null) return payload;
         }
-        for (var category : categories)
-        {
-            OpenOrderMenuPayload payload = focusedOrderPayload(
-                    current, target, category, focuses, focusGroup, false);
-            if (payload != null) return payload;
-        }
+        if (!com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.recipeIdsForCandidates(target).isEmpty())
+            return new OpenOrderMenuPayload(target, "", "");
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.warn(
                 "{} client JEI focused search found no recipe target={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
@@ -279,16 +275,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     return new OpenOrderMenuPayload(target, serverRecipe.toString(),
                             captured.type().toString(), java.util.List.of(), captured.output().amount());
                 }
-                var focusedCapture = exact ? captured : new JeiVirtualRecipeLayouts.Captured(
-                        captured.type(), new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
-                        target, captured.output().amount()), captured.inputs(), captured.byproducts(), captured.guaranteedByproducts());
+                var focusedCapture = captured;
                 Identifier virtualRecipe = JeiVirtualRecipeLayouts.register(focusedCapture).id().identifier();
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                         "{} client JEI match virtualRecipe={} exact={} inputs={} target={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                         virtualRecipe, exact, captured.inputs().size(),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
-                return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
+                return new OpenOrderMenuPayload(captured.output().key(), virtualRecipe.toString(), captured.type().toString(),
                         captured.inputs(), captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts());
             }, null, failure -> JeiVirtualRecipeLayouts.reportFailure(
                     "focused_search", category.getRecipeType().getUid(), recipe, failure));

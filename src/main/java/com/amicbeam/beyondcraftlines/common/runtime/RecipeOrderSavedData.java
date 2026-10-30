@@ -56,7 +56,7 @@ public final class RecipeOrderSavedData extends SavedData
                         executions.add(new RecipeOrderJob.StepExecution(steps.get(j),
                                 encoded.getBoolean("execution_complete"),
                                 encoded.getLong("execution_next_crafting_tick"),
-                                readExternalWait(encoded, registries)));
+                                readExternalWait(encoded, registries), readProduced(encoded, registries)));
                     }
                     job = new RecipeOrderJob(value.getUUID("id"), value.getUUID("owner"),
                             value.getInt("network"), ResourceLocation.parse(value.getString("target")),
@@ -153,6 +153,13 @@ public final class RecipeOrderSavedData extends SavedData
             for (RecipeOrderJob.StepExecution execution : job.executions())
             {
                 CompoundTag step = writeStep(execution.step(), registries);
+                ListTag produced = new ListTag();
+                for (var material : execution.produced())
+                {
+                    CompoundTag receipt = new CompoundTag();
+                    writeKey(receipt, material.key(), registries); receipt.putLong("amount", material.amount()); produced.add(receipt);
+                }
+                if (!produced.isEmpty()) step.put("produced", produced);
                 step.putBoolean("execution_complete", execution.complete());
                 step.putLong("execution_next_crafting_tick", execution.nextCraftingTick());
                 if (execution.externalWait() != null)
@@ -173,6 +180,11 @@ public final class RecipeOrderSavedData extends SavedData
         CompoundTag outputKey = new CompoundTag();
         writeKey(outputKey, step.outputKey(), registries);
         tag.put("output_key", outputKey);
+        if (!com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(step.outputKey(), step.executionOutputKey()))
+        {
+            CompoundTag declared = new CompoundTag(); writeKey(declared, step.executionOutputKey(), registries);
+            tag.put("execution_output", declared);
+        }
         tag.putLong("per", step.outputPerCraft());
         tag.putLong("crafts", step.crafts());
         tag.putLong("self_increment_seed", step.selfIncrementSeed());
@@ -245,7 +257,20 @@ public final class RecipeOrderSavedData extends SavedData
         return new RecipePlan.Step(ResourceLocation.parse(tag.getString("recipe")), tag.getString("family"),
                 output, tag.getLong("per"), tag.getLong("crafts"), inputs, selections,
                 java.util.Arrays.stream(tag.getIntArray("dependencies")).boxed().toList(),
-                tag.getLong("self_increment_seed"), byproducts);
+                tag.getLong("self_increment_seed"), byproducts,
+                tag.contains("execution_output") ? readKey(tag.getCompound("execution_output"), registries) : output);
+    }
+
+    private static List<RecipePlan.ReservedMaterial> readProduced(CompoundTag tag, HolderLookup.Provider registries)
+    {
+        List<RecipePlan.ReservedMaterial> result = new ArrayList<>();
+        ListTag entries = tag.getList("produced", Tag.TAG_COMPOUND);
+        for (int i = 0; i < entries.size(); i++)
+        {
+            CompoundTag value = entries.getCompound(i);
+            result.add(new RecipePlan.ReservedMaterial(readKey(value, registries), value.getLong("amount")));
+        }
+        return List.copyOf(result);
     }
 
     private static void writeExternalWait(CompoundTag owner, RecipeOrderJob.ExternalWait externalWait,

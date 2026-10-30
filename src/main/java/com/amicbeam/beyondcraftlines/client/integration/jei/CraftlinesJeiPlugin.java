@@ -267,6 +267,10 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     current, target, category, focuses, focusGroup, true, preferredRecipe);
             if (payload != null) return payload;
         }
+        // An item-list query must not silently pin the first approximate recipe.
+        if (preferredRecipe == null)
+            return com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.recipeIdsForCandidates(target).isEmpty()
+                    ? null : new OpenOrderMenuPayload(target, "", "");
         // Dynamic recipes may expose only a base getResultItem while JEI's focused layout
         // represents the concrete assemble() result. The focus is authoritative here; preserve
         // the clicked target components instead of falling back to every same-item recipe.
@@ -323,16 +327,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                     return new OpenOrderMenuPayload(target, serverRecipe.toString(),
                             captured.type().toString(), java.util.List.of(), captured.output().amount());
                 }
-                var focusedCapture = exact ? captured : new JeiVirtualRecipeLayouts.Captured(
-                        captured.type(), new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(
-                        target, captured.output().amount()), captured.inputs(), captured.byproducts(), captured.guaranteedByproducts());
+                var focusedCapture = captured;
                 ResourceLocation virtualRecipe = JeiVirtualRecipeLayouts.register(focusedCapture).id();
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                         "{} client JEI match virtualRecipe={} exact={} inputs={} target={}",
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                         virtualRecipe, exact, captured.inputs().size(),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
-                return new OpenOrderMenuPayload(target, virtualRecipe.toString(), captured.type().toString(),
+                return new OpenOrderMenuPayload(captured.output().key(), virtualRecipe.toString(), captured.type().toString(),
                         captured.inputs(), captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts());
             }, null, failure -> JeiVirtualRecipeLayouts.reportFailure(
                     "focused_search", category.getRecipeType().getUid(), recipe, failure));

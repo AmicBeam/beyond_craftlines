@@ -34,7 +34,7 @@ import java.util.zip.GZIPOutputStream;
 final class ClientPlanningCatalogCache
 {
     static final int MAGIC = 0x42434C43;
-    static final int VERSION = 5;
+    static final int VERSION = 6;
     // Stable across logins. Same-ID content changes are explicitly refreshed with /craftlines reload.
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,

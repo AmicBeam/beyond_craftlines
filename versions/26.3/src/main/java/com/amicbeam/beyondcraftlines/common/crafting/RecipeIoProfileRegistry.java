@@ -120,6 +120,9 @@ public final class RecipeIoProfileRegistry
     public static boolean allowsSameResourceOutput(String recipeId)
     { return resolved(null, recipeId).outputMatch() == OutputMatchSemantics.SAME_RESOURCE; }
 
+    public static boolean hasDynamicOutputProfiles()
+    { return entries.stream().anyMatch(entry -> entry.profile().outputMatch() == OutputMatchSemantics.SAME_RESOURCE); }
+
     public static boolean allowsSameResourceMaterial(String namespace)
     {
         return namespace != null && entries.stream().map(Entry::profile)

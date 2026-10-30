@@ -112,6 +112,13 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                 holder.value(), player.level().registryAccess()).stream().anyMatch(value ->
                 com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(output, value.key()))).toList();
     }
+    public List<RecipeHolder<?>> recipeCandidatesForResource(IStackKey<?> output)
+    {
+        return player.level().isClientSide() ? clientRecipes(com.amicbeam.beyondcraftlines.common.crafting
+                .ClientRecipeLookupIndex.recipeIdsForCandidates(output)) : recipesForResourceOutput(output);
+    }
+    public IStackKey<?> candidateOutput(ResourceLocation recipe, IStackKey<?> requested)
+    { return com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.candidateOutput(recipe.toString(), requested); }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public boolean canPlanTarget(IStackKey<?> output)

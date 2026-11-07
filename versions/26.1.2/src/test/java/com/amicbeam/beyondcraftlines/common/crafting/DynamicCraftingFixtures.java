@@ -24,7 +24,7 @@ public final class DynamicCraftingFixtures
         // 26.x normally binds defaults during datapack reload. These focused unit fixtures need
         // only common defaults; potion, blade-state and firework components are supplied explicitly.
         for (Item item : List.of(Items.PAPER, Items.GUNPOWDER, Items.FIREWORK_STAR, Items.FIREWORK_ROCKET,
-                Items.POTION, Items.SPLASH_POTION, Items.IRON_SWORD))
+                Items.POTION, Items.SPLASH_POTION, Items.IRON_SWORD, Items.STONE_SLAB, Items.STONE))
             item.builtInRegistryHolder().bindComponents(DataComponents.COMMON_ITEM_COMPONENTS);
         initialized = true;
     }

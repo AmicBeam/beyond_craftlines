@@ -480,7 +480,7 @@ public final class JeiCatalystIndex
                                  java.util.List<JeiVirtualRecipeLayouts.Captured> captures)
     {
         rememberServerRecipe(category, displayedRecipe);
-        if (!JeiRecipeExecutionSource.usesServerRecipe(displayedRecipe))
+        if (!JeiRecipeExecutionSource.usesServerRecipe(type, displayedRecipe))
             captures.forEach(JeiVirtualRecipeLayouts::register);
         mergeInputGroups(type, captures.stream().flatMap(captured -> captured.inputs().stream()).map(
                 com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload.VirtualInput::inputGroup)

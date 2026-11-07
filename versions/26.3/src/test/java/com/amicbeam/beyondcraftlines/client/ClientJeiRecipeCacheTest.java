@@ -35,6 +35,30 @@ final class ClientJeiRecipeCacheTest
         assertEquals(1, loaded.result.recipes());
     }
 
+    @Test void nativeCraftingVariantsRestoreUnderTheJeiCategoryAndKeepTheirSource() throws Exception
+    {
+        com.amicbeam.beyondcraftlines.common.crafting.DynamicCraftingFixtures.bootstrap();
+        var source = new com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource("test:slabs", 2, 1, List.of(0, 1));
+        var slot = new VirtualProvisionerRecipeRegistry.InputSlot("ingredients", List.of(new KeyAmount(CacheTestKeys.key("item:slab"), 1)));
+        var descriptor = new VirtualProvisionerRecipeRegistry.Descriptor("crafting", CacheTestKeys.key("item:block"),
+                1, List.of(slot, slot), List.of(), List.of(), source);
+        var otherSource = new VirtualProvisionerRecipeRegistry.Descriptor("crafting", descriptor.output(), 1,
+                descriptor.inputs(), List.of(), List.of(),
+                new com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource("test:other", 2, 1, List.of(0, 1)));
+        assertNotEquals(descriptor.id(), otherSource.id());
+        var sources = Map.of("minecraft:crafting", List.of("id:test:slabs"));
+        Path path = save(sources, List.of(descriptor));
+        VirtualProvisionerRecipeRegistry.clear();
+        var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, sources);
+        await(loaded);
+        assertFalse(loaded.failed);
+        assertEquals(1, loaded.result.recipes());
+        assertEquals(Set.of("minecraft:crafting"), loaded.result.types());
+        var restored = VirtualProvisionerRecipeRegistry.descriptor(VirtualProvisionerRecipeRegistry.find(descriptor.id()).orElseThrow().value());
+        assertEquals(source, restored.craftingSource());
+        assertEquals("crafting", restored.family());
+    }
+
     @Test void onlyChangedCategoryNeedsRematerialization() throws Exception
     {
         var original = descriptor("test:crusher", "crushed");
@@ -95,7 +119,7 @@ final class ClientJeiRecipeCacheTest
         assertTrue(loaded.result.types().isEmpty());
     }
 
-    @Test void legacyIdsMigrateWithoutRematerializingTheCategory() throws Exception
+    @Test void oldSchemaRequiresCategoryRebuild() throws Exception
     {
         var descriptor = descriptor("test:crusher", "output");
         var legacySources = Map.of("test:crusher", List.of("presentation:old"));
@@ -105,11 +129,9 @@ final class ClientJeiRecipeCacheTest
         rewriteId(path, descriptor.id().toString(), oldId.toString(), 1);
         var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, stableSources, legacySources);
         await(loaded);
-        assertFalse(loaded.failed);
-        assertEquals(Set.of("test:crusher"), loaded.result.types());
-        assertEquals(Map.of(oldId, descriptor.id()), loaded.idMigrations);
-        assertTrue(loaded.needsRewrite);
-        assertTrue(VirtualProvisionerRecipeRegistry.find(descriptor.id()).isPresent());
+        assertTrue(loaded.failed);
+        assertTrue(loaded.result.types().isEmpty());
+        assertTrue(loaded.idMigrations.isEmpty());
     }
 
     @Test void oneInvalidDescriptorOnlyInvalidatesItsCategoryAndRemovesPartialRestores() throws Exception

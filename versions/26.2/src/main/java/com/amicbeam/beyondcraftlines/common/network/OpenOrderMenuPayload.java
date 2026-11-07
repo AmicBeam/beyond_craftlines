@@ -22,13 +22,19 @@ import org.jetbrains.annotations.NotNull;
 
 public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType,
                                    java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount,
-                                   java.util.List<KeyAmount> virtualByproducts, java.util.List<KeyAmount> guaranteedByproducts)
+                                   java.util.List<KeyAmount> virtualByproducts, java.util.List<KeyAmount> guaranteedByproducts,
+                                   com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource craftingSource)
         implements CustomPacketPayload
 {
     public static final Type<OpenOrderMenuPayload> TYPE = new Type<>(
             net.minecraft.resources.Identifier.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, "open_order_menu"));
     public static final StreamCodec<RegistryFriendlyByteBuf, OpenOrderMenuPayload> STREAM_CODEC = StreamCodec.of(
             OpenOrderMenuPayload::encode, OpenOrderMenuPayload::decode);
+
+    public OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType,
+                                java.util.List<VirtualInput> virtualInputs, long virtualOutputAmount,
+                                java.util.List<KeyAmount> virtualByproducts, java.util.List<KeyAmount> guaranteedByproducts)
+    { this(target, recipeId, jeiRecipeType, virtualInputs, virtualOutputAmount, virtualByproducts, guaranteedByproducts, null); }
 
     public OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String jeiRecipeType)
     { this(target, recipeId, jeiRecipeType, java.util.List.of(), 0); }
@@ -62,6 +68,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
         buffer.writeVarLong(payload.virtualOutputAmount());
         VirtualRecipeOutputs.write(buffer, payload.virtualByproducts());
         VirtualRecipeOutputs.write(buffer, payload.guaranteedByproducts());
+        buffer.writeUtf(com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.encode(payload.craftingSource()), 320);
     }
 
     private static OpenOrderMenuPayload decode(RegistryFriendlyByteBuf buffer)
@@ -91,7 +98,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 values.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
             inputs.add(new VirtualInput(inputGroup, values, use));
         }
-        return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong(), VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer));
+        return new OpenOrderMenuPayload(target, recipe, type, inputs, buffer.readVarLong(), VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer), com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.decode(buffer.readUtf(320)));
     }
 
     public static void handle(OpenOrderMenuPayload payload, IPayloadContext context)
@@ -130,7 +137,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     OrderMenuError.translated("error.beyond_craftlines.invalid_order_target"));return;}
             if (!payload.virtualInputs().isEmpty())
             {
-                String executionFamily = requestedType == null ? ""
+                String executionFamily = payload.craftingSource() != null ? "crafting" : requestedType == null ? ""
                         : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                         .executionFamily(requestedType.toString());
                 try
@@ -138,7 +145,11 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     boolean nativeFurnaceAvailable = requestedType != null
                             && com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                             .isAvailable(requestedType.toString(), availableFamilies);
-                    if (requestedType == null || (!nativeFurnaceAvailable
+                    if (payload.craftingSource() != null && (!"minecraft:crafting".equals(payload.jeiRecipeType())
+                            || payload.craftingSource().resolve(player.level()) == null))
+                        throw new IllegalArgumentException("captured crafting source unavailable");
+                    boolean capturedCrafting = payload.craftingSource() != null;
+                    if (requestedType == null || (!capturedCrafting && !nativeFurnaceAvailable
                             && !DeviceBindingRegistry.supportsJeiType(
                             player.level().getServer(), networkId, requestedType, executionFamily)))
                         throw new IllegalArgumentException("invalid virtual recipe category");
@@ -150,7 +161,7 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                             payload.virtualOutputAmount(), payload.virtualInputs().stream().map(input ->
                                     new com.amicbeam.beyondcraftlines.common.crafting
                                             .VirtualProvisionerRecipeRegistry.InputSlot(
-                                            input.inputGroup(), input.candidates(), input.use())).toList(), payload.virtualByproducts(), payload.guaranteedByproducts());
+                                            input.inputGroup(), input.candidates(), input.use())).toList(), payload.virtualByproducts(), payload.guaranteedByproducts(), payload.craftingSource());
                     if (requestedRecipe == null || !descriptor.id().equals(requestedRecipe))
                         throw new IllegalArgumentException("virtual recipe id mismatch");
                     com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry.register(descriptor);

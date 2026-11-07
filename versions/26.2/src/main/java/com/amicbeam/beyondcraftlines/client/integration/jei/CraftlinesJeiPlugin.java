@@ -67,14 +67,14 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                         var output = findOutput(recipeLayoutDrawable);
                         return output == null ? null : new OrderButtonController(
                                 output.key(), craftingRecipe, recipeType, java.util.List.of(),
-                                output.amount(), java.util.List.of(), java.util.List.of(), scaledIcon);
+                                output.amount(), java.util.List.of(), java.util.List.of(), null, scaledIcon);
                     }
                     var captured = JeiVirtualRecipeLayouts.capture(recipeType, recipeLayoutDrawable);
                     if (captured == null) return null;
                     Identifier recipe = JeiVirtualRecipeLayouts.register(captured).id().identifier();
                     return new OrderButtonController(
                             captured.output().key(), recipe, recipeType, captured.inputs(),
-                            captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts(), scaledIcon);
+                            captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts(), captured.craftingSource(), scaledIcon);
                 }, null, failure -> JeiVirtualRecipeLayouts.reportLayoutFailure(
                         "button", null, recipeLayoutDrawable, failure));
             }
@@ -283,7 +283,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                         virtualRecipe, exact, captured.inputs().size(),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(target));
                 return new OpenOrderMenuPayload(captured.output().key(), virtualRecipe.toString(), captured.type().toString(),
-                        captured.inputs(), captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts());
+                        captured.inputs(), captured.output().amount(), captured.byproducts(), captured.guaranteedByproducts(), captured.craftingSource());
             }, null, failure -> JeiVirtualRecipeLayouts.reportFailure(
                     "focused_search", category.getRecipeType().getUid(), recipe, failure));
             if (payload != null) return payload;
@@ -389,7 +389,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
     private static <T> @Nullable Identifier serverRecipeId(IRecipeLayoutDrawable<T> layout)
     {
         Object displayed = layout.getRecipe();
-        if (!JeiRecipeExecutionSource.usesServerRecipe(displayed)) return null;
+        if (!JeiRecipeExecutionSource.usesServerRecipe(layout.getRecipeCategory().getRecipeType().getUid(), displayed)) return null;
         var output = findOutput(layout);
         var level = Minecraft.getInstance().level;
         return level == null || output == null ? findRecipeId(layout)
@@ -443,7 +443,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                                          Identifier recipeType,
                                          java.util.List<OpenOrderMenuPayload.VirtualInput> virtualInputs,
                                          long virtualOutputAmount, java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> virtualByproducts,
-                                         java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> guaranteedByproducts, IDrawable icon)
+                                         java.util.List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> guaranteedByproducts, com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource craftingSource, IDrawable icon)
             implements IIconButtonController
     {
         @Override
@@ -468,7 +468,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
             if (!input.isSimulate())
             {
                 queueOrder(new OpenOrderMenuPayload(target, recipe.toString(), recipeType.toString(),
-                        virtualInputs, virtualOutputAmount, virtualByproducts, guaranteedByproducts));
+                        virtualInputs, virtualOutputAmount, virtualByproducts, guaranteedByproducts, craftingSource));
             }
             return true;
         }

@@ -46,12 +46,12 @@ public final class JeiVirtualRecipeLayouts
             return captureComplete(type, layout).stream()
                     .filter(captured -> ignored.stream().noneMatch(key -> StackKeyMatch.exact(key, captured.output().key())))
                     .map(captured -> new Captured(captured.type(), captured.output(), captured.inputs(), captured.byproducts().stream()
-                            .filter(output -> ignored.stream().noneMatch(key -> StackKeyMatch.exact(key, output.key()))).toList()))
+                            .filter(output -> ignored.stream().noneMatch(key -> StackKeyMatch.exact(key, output.key()))).toList(), captured.guaranteedByproducts(), captured.craftingSource()))
                     .filter(captured -> uncertain.stream()
                     .noneMatch(key -> StackKeyMatch.exact(key, captured.output().key())))
                     .map(captured -> new Captured(captured.type(), captured.output(), captured.inputs(), captured.byproducts(),
                             captured.byproducts().stream().filter(output -> uncertain.stream()
-                                    .noneMatch(key -> StackKeyMatch.exact(key, output.key()))).toList())).toList();
+                                    .noneMatch(key -> StackKeyMatch.exact(key, output.key()))).toList(), captured.craftingSource())).toList();
         }, List.of(), failure -> reportLayoutFailure("capture", type, layout, failure));
     }
 
@@ -82,7 +82,8 @@ public final class JeiVirtualRecipeLayouts
 
     private static List<Captured> captureComplete(ResourceLocation type, IRecipeLayoutDrawable<?> layout)
     {
-        List<Captured> structured = structuredCaptures(type, layout.getRecipe());
+        List<Captured> structured = JeiRecipeExecutionSource.needsCraftingCapture(type, layout.getRecipe())
+                ? List.of() : structuredCaptures(type, layout.getRecipe());
         if (!structured.isEmpty()) return structured;
         List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
         List<List<KeyAmount>> raw = new ArrayList<>();
@@ -147,10 +148,42 @@ public final class JeiVirtualRecipeLayouts
                 inputs.add(new OpenOrderMenuPayload.VirtualInput(slot.semanticGroup().isBlank()
                         ? JeiSlotGroupResolver.resolve(List.of(slot.groupSlot())).getFirst() : slot.semanticGroup(),
                         slot.candidates(), slot.use()));
-            captured.addAll(withOutputs(type, outputs, inputs));
+            List<Captured> variants = withOutputs(type, outputs, inputs);
+            if (JeiRecipeExecutionSource.needsCraftingCapture(type, layout.getRecipe()))
+            {
+                var sourceId = CraftlinesJeiPlugin.findRecipeId(layout);
+                if (sourceId == null || outputs.size() != 1 || !catalysts.isEmpty())
+                    throw new IllegalArgumentException("dynamic crafting needs one output and an authoritative source id");
+                var positions = new ArrayList<int[]>();
+                for (int i = 0; i < views.size(); i++)
+                    if (views.get(i).getRole() == RecipeIngredientRole.INPUT && !variant.get(i).isEmpty())
+                    {
+                        if (!(views.get(i) instanceof mezz.jei.api.gui.ingredient.IRecipeSlotDrawable drawable))
+                            throw new IllegalArgumentException("crafting slot position unavailable");
+                        var rect = drawable.getRect();
+                        positions.add(new int[]{rect.getX(), rect.getY()});
+                    }
+                CapturedCraftingSource source = craftingGrid(sourceId.toString(), positions);
+                variants = variants.stream().map(value -> new Captured(value.type(), value.output(), value.inputs(),
+                        value.byproducts(), value.guaranteedByproducts(), source)).toList();
+            }
+            captured.addAll(variants);
             if (captured.size() > 256) throw new IllegalArgumentException("JEI recipe exceeds variant budget");
         }
         return List.copyOf(captured);
+    }
+
+    static CapturedCraftingSource craftingGrid(String sourceId, List<int[]> positions)
+    {
+        if (positions.isEmpty()) throw new IllegalArgumentException("empty crafting grid");
+        int minX = positions.stream().mapToInt(p -> p[0]).min().orElseThrow();
+        int minY = positions.stream().mapToInt(p -> p[1]).min().orElseThrow();
+        int width = 1 + (positions.stream().mapToInt(p -> p[0]).max().orElseThrow() - minX) / 18;
+        int height = 1 + (positions.stream().mapToInt(p -> p[1]).max().orElseThrow() - minY) / 18;
+        if (positions.stream().anyMatch(p -> (p[0] - minX) % 18 != 0 || (p[1] - minY) % 18 != 0))
+            throw new IllegalArgumentException("nonstandard crafting grid spacing");
+        return new CapturedCraftingSource(sourceId, width, height, positions.stream()
+                .map(p -> (p[1] - minY) / 18 * width + (p[0] - minX) / 18).toList());
     }
 
     private static List<Captured> withOutputs(ResourceLocation type, List<KeyAmount> outputs,
@@ -190,18 +223,22 @@ public final class JeiVirtualRecipeLayouts
 
     public static RecipeHolder<?> register(Captured captured)
     {
-        String family = com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
+        String family = captured.craftingSource() != null ? "crafting" : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                 .executionFamily(captured.type().toString());
         return VirtualProvisionerRecipeRegistry.retainForClientCatalog(
-                VirtualProvisionerRecipeRegistry.register(family, captured.output().key(), captured.output().amount(),
+                VirtualProvisionerRecipeRegistry.register(new VirtualProvisionerRecipeRegistry.Descriptor(family, captured.output().key(), captured.output().amount(),
                 captured.inputs().stream().map(input -> new VirtualProvisionerRecipeRegistry.InputSlot(
-                        input.inputGroup(), input.candidates(), input.use())).toList(), captured.byproducts(), captured.guaranteedByproducts()));
+                        input.inputGroup(), input.candidates(), input.use())).toList(), captured.byproducts(), captured.guaranteedByproducts(), captured.craftingSource())));
     }
 
     public record Captured(ResourceLocation type, KeyAmount output,
                            List<OpenOrderMenuPayload.VirtualInput> inputs, List<KeyAmount> byproducts,
-                           List<KeyAmount> guaranteedByproducts)
+                           List<KeyAmount> guaranteedByproducts, CapturedCraftingSource craftingSource)
     {
+        public Captured(ResourceLocation type, KeyAmount output, List<OpenOrderMenuPayload.VirtualInput> inputs,
+                        List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
+        { this(type, output, inputs, byproducts, guaranteedByproducts, null); }
+
         public Captured(ResourceLocation type, KeyAmount output, List<OpenOrderMenuPayload.VirtualInput> inputs,
                         List<KeyAmount> byproducts)
         { this(type, output, inputs, byproducts, byproducts); }

@@ -34,7 +34,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var descriptor = holder == null ? null : VirtualProvisionerRecipeRegistry.descriptor(holder.value());
             return descriptor == null ? null : new Entry(id.toString(), descriptor.family(), descriptor.output(),
                     descriptor.outputAmount(), descriptor.inputs().stream().map(input ->
-                    new Input(input.inputGroup(), input.candidates(), input.use())).toList(), descriptor.byproducts(), descriptor.guaranteedByproducts());
+                    new Input(input.inputGroup(), input.candidates(), input.use())).toList(), descriptor.byproducts(), descriptor.guaranteedByproducts(), descriptor.craftingSource());
         }).filter(java.util.Objects::nonNull).toList();
         int count = Math.max(1, (entries.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         List<VirtualRecipeUploadPayload> pages = new ArrayList<>();
@@ -71,6 +71,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             }
             VirtualRecipeOutputs.write(buffer, recipe.byproducts());
             VirtualRecipeOutputs.write(buffer, recipe.guaranteedByproducts());
+            buffer.writeUtf(com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.encode(recipe.craftingSource()), 320);
         }
     }
 
@@ -112,7 +113,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
                     candidates.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
                 inputs.add(new Input(group, candidates, use));
             }
-            recipes.add(new Entry(id, family, output, outputAmount, inputs, VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer)));
+            recipes.add(new Entry(id, family, output, outputAmount, inputs, VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer), com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.decode(buffer.readUtf(320))));
         }
         return new VirtualRecipeUploadPayload(nonce, page, pages, recipes);
     }
@@ -125,14 +126,16 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
                 || payload.pageIndex() < 0 || payload.pageIndex() >= payload.pageCount()) return;
         for (Entry recipe : payload.recipes())
         {
-            if (!menu.availableFamilies().contains(recipe.family()))
+            if (recipe.craftingSource() != null && recipe.craftingSource().resolve(player.level()) == null) return;
+            if (!("crafting".equals(recipe.family()) && recipe.craftingSource() != null)
+                    && !menu.availableFamilies().contains(recipe.family()))
                 return;
             if (!com.amicbeam.beyondcraftlines.common.crafting.VanillaRecipeBatching
                     .validUploadedOutputAmount(recipe.family(), recipe.outputAmount())) return;
             var descriptor = new VirtualProvisionerRecipeRegistry.Descriptor(recipe.family(), recipe.output(),
                     recipe.outputAmount(), recipe.inputs().stream().map(input ->
                             new VirtualProvisionerRecipeRegistry.InputSlot(
-                                    input.inputGroup(), input.candidates(), input.use())).toList(), recipe.byproducts(), recipe.guaranteedByproducts());
+                                    input.inputGroup(), input.candidates(), input.use())).toList(), recipe.byproducts(), recipe.guaranteedByproducts(), recipe.craftingSource());
             if (!descriptor.id().toString().equals(recipe.id()))
                 return;
             VirtualProvisionerRecipeRegistry.register(descriptor);
@@ -140,7 +143,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
     }); }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
-    public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts) {}
+    public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts, com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource craftingSource) {}
     public record Input(String inputGroup, List<KeyAmount> candidates,
                         com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
     {

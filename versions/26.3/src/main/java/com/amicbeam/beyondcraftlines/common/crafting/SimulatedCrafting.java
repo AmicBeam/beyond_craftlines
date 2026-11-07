@@ -194,14 +194,20 @@ public final class SimulatedCrafting
                                      IStackKey<?> declaredOutput, long declaredOutputCount)
     {
         if (requestedCrafts < 1) return Attempt.failed(encode("crafting_invalid_batch"));
-        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, recipeId))
-                .or(() -> FireworkRocketRecipeVariants.find(level, recipeId)).orElse(null);
+        var capturedHolder = VirtualProvisionerRecipeRegistry.find(recipeId).orElse(null);
+        var captured = capturedHolder == null ? null : VirtualProvisionerRecipeRegistry.descriptor(capturedHolder.value());
+        if (captured != null && captured.craftingSource() == null)
+            return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
+        Identifier executionId = captured == null ? recipeId : Identifier.parse(captured.craftingSource().recipeId());
+        var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.RECIPE, executionId))
+                .or(() -> captured == null ? FireworkRocketRecipeVariants.find(level, recipeId) : java.util.Optional.empty()).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
 
+        if (captured != null && recipe instanceof net.minecraft.world.item.crafting.FireworkRocketRecipe)
+            return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
         Map<IStackKey<?>, Long> reservedAmounts = reservedAmounts(orderReserved);
-        Map<Integer, KeyAmount> discoveredProxies = bucketFluidInputs(holder, level, selections);
+        Map<Integer, KeyAmount> discoveredProxies = captured == null ? bucketFluidInputs(holder, level, selections) : Map.of();
         LinkedHashMap<Integer, KeyAmount> activeProxies = new LinkedHashMap<>();
         for (RecipePlan.Material input : plannedInputs)
         {
@@ -210,9 +216,10 @@ public final class SimulatedCrafting
                     && StackKeyMatch.exact(input.key(), proxy.key()))
                 activeProxies.put(input.ingredientSlot(), proxy);
         }
-        VirtualInputUse[] inputUses=inputUses(holder,level,selections);
-        Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts,
-                networkSnapshot, activeProxies,inputUses, producedSelection);
+        VirtualInputUse[] inputUses = captured == null ? inputUses(holder, level, selections) : new VirtualInputUse[0];
+        Prepared prepared = captured == null ? prepare(storage, recipe, level, selections, reservedAmounts,
+                networkSnapshot, activeProxies, inputUses, producedSelection)
+                : prepareCaptured(storage, recipe, level, captured, selections, reservedAmounts);
         if (prepared == null) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         ItemStack output;
@@ -227,6 +234,9 @@ public final class SimulatedCrafting
             return Attempt.failed(encode("crafting_simulation_failed"));
         }
         if (output.isEmpty() || !BuiltInRegistries.ITEM.getKey(output.getItem()).equals(expectedOutput))
+            return Attempt.failed(encode("crafting_unexpected_output"));
+
+        if (captured != null && output.getCount() != captured.outputAmount())
             return Attempt.failed(encode("crafting_unexpected_output"));
 
         ItemStackKey actualOutputKey = new ItemStackKey(output);
@@ -248,7 +258,7 @@ public final class SimulatedCrafting
             else if (ItemStack.isSameItem(input, remainder)) statefulRemainder = true;
         }
 
-        long batch = statefulRemainder || changedOutput ? 1 : availableBatch(
+        long batch = captured != null || statefulRemainder || changedOutput ? 1 : availableBatch(
                 storage, networkSnapshot, reservedAmounts, prepared, persistentSlots, requestedCrafts);
         if (batch < 1) return Attempt.failed(encode("crafting_waiting_inputs"));
 
@@ -298,6 +308,44 @@ public final class SimulatedCrafting
                 escrowOutput ? List.of(new RecipePlan.ReservedMaterial(new ItemStackKey(output),
                         SaturatingLongMath.multiply(output.getCount(), batch))) : List.of(),
                 new KeyAmount(actualOutputKey, SaturatingLongMath.multiply(output.getCount(), batch)));
+    }
+
+    /** Only exact candidates from this variant are looked up; no inventory discovery or planning assembly. */
+    static Prepared prepareCaptured(UnifiedStorage storage, CraftingRecipe recipe, Level level,
+                                    VirtualProvisionerRecipeRegistry.Descriptor descriptor,
+                                    List<RecipePlan.IngredientSelection> selections,
+                                    Map<IStackKey<?>, Long> orderReserved)
+    {
+        CapturedCraftingSource source = descriptor.craftingSource();
+        int size = source.width() * source.height();
+        List<ItemStack> chosen = new ArrayList<>(java.util.Collections.nCopies(size, ItemStack.EMPTY));
+        List<IStackKey<?>> keys = new ArrayList<>(java.util.Collections.nCopies(size, null));
+        List<Long> amounts = new ArrayList<>(java.util.Collections.nCopies(size, 0L));
+        Map<IStackKey<?>, Long> held = new LinkedHashMap<>();
+        Map<Integer, String> selected = new LinkedHashMap<>();
+        selections.forEach(selection -> selected.put(selection.slot(), selection.selection()));
+        for (int i = 0; i < descriptor.inputs().size(); i++)
+        {
+            IStackKey<?> picked = null;
+            for (KeyAmount candidate : descriptor.inputs().get(i).candidates())
+            {
+                if (!(candidate.key().getReadOnlyStack() instanceof ItemStack item)
+                        || !matchesSelection(selected.get(i), item)) continue;
+                var key = candidate.key();
+                long available = SaturatingLongMath.add(storage.getStackByKey(key).amount(), orderReserved.getOrDefault(key, 0L));
+                if (available > held.getOrDefault(key, 0L)) { picked = key; break; }
+            }
+            if (picked == null) return null;
+            held.merge(picked, 1L, Long::sum);
+            int slot = source.slots().get(i);
+            keys.set(slot, picked);
+            amounts.set(slot, 1L);
+            chosen.set(slot, ((ItemStack) picked.getReadOnlyStack()).copyWithCount(1));
+        }
+        CraftingInput input = CraftingInput.of(source.width(), source.height(), chosen);
+        try
+        { return recipe.matches(input, level) ? new Prepared(input, java.util.Collections.unmodifiableList(keys), List.copyOf(amounts), Set.of()) : null; }
+        catch (RuntimeException | LinkageError failure) { return null; }
     }
 
     private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level,
@@ -480,7 +528,7 @@ public final class SimulatedCrafting
         for (int i = 0; i < prepared.slotKeys().size(); i++)
         {
             IStackKey<?> key = prepared.slotKeys().get(i);
-            if (key == ItemStackKey.EMPTY) continue;
+            if (key == null || key == ItemStackKey.EMPTY) continue;
             (persistent[i] ? fixed : perBatch).merge(key, prepared.slotAmounts().get(i),
                     SaturatingLongMath::add);
         }
@@ -508,7 +556,7 @@ public final class SimulatedCrafting
         for (int i = 0; i < prepared.slotKeys().size(); i++)
         {
             IStackKey<?> key = prepared.slotKeys().get(i);
-            if (key == ItemStackKey.EMPTY) continue;
+            if (key == null || key == ItemStackKey.EMPTY) continue;
             long amount = prepared.slotAmounts().get(i);
             result.merge(key, persistent[i] ? amount : SaturatingLongMath.multiply(amount, batch),
                     SaturatingLongMath::add);
@@ -528,7 +576,7 @@ public final class SimulatedCrafting
         extracted.forEach(value -> storage.insert(value.key(), value.amount(), false));
     }
 
-    private record Prepared(CraftingInput input, List<IStackKey<?>> slotKeys, List<Long> slotAmounts,
+    record Prepared(CraftingInput input, List<IStackKey<?>> slotKeys, List<Long> slotAmounts,
                             Set<Integer> proxySlots) {}
 
     private static Map<IStackKey<?>, Long> reservedAmounts(List<RecipePlan.ReservedMaterial> reserved)

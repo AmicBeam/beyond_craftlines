@@ -21,7 +21,7 @@ import java.util.zip.*;
 public final class ClientJeiRecipeCache
 {
     static final int MAGIC = 0x42434C4A;
-    static final int VERSION = 2;
+    static final int VERSION = 3;
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final String PREFIX = com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX;
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -111,7 +111,7 @@ public final class ClientJeiRecipeCache
                 var snapshot = VirtualProvisionerRecipeRegistry.clientCatalogSnapshot(epoch);
                 if (snapshot == null) return;
                 var recipes = snapshot.stream()
-                        .filter(value -> types.contains(value.descriptor().family())).toList();
+                        .filter(value -> types.contains(value.descriptor().category())).toList();
                 write(level.registryAccess(), cachePath, revision, fingerprints, types, frozenGroups, recipes);
             });
         }
@@ -170,7 +170,7 @@ public final class ClientJeiRecipeCache
                 }
                 // All retained descriptors belong to a successfully scanned, completed category.
                 List<VirtualProvisionerRecipeRegistry.CachedDescriptor> accepted = recipes.stream()
-                        .filter(value -> persisted.contains(value.descriptor().family())).toList();
+                        .filter(value -> persisted.contains(value.descriptor().category())).toList();
                 output.writeInt(accepted.size());
                 for (var value : accepted)
                 {
@@ -210,6 +210,7 @@ public final class ClientJeiRecipeCache
         }
         writeAmounts(out, registryAccess, descriptor.byproducts(), counts);
         writeAmounts(out, registryAccess, descriptor.guaranteedByproducts(), counts);
+        string(out, com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.encode(descriptor.craftingSource()), counts);
     }
 
     private static void writeAmounts(DataOutputStream out, RegistryAccess registryAccess, List<KeyAmount> values,
@@ -284,7 +285,7 @@ public final class ClientJeiRecipeCache
                 {
                     if (input.readInt() != MAGIC) throw new IOException("invalid JEI cache magic");
                     int version = input.readInt();
-                    if (version < 1 || version > VERSION) throw new IOException("incompatible JEI cache format");
+                    if (version != VERSION) throw new IOException("incompatible JEI cache format");
                     boolean legacyIdentity = version == 1;
                     needsRewrite = legacyIdentity;
                     Map<ResourceLocation, ResourceLocation> migrations = new HashMap<>();
@@ -313,7 +314,7 @@ public final class ClientJeiRecipeCache
                     for (int i = 0; i < totalRecipes && !cancelled; i++)
                     {
                         EncodedDescriptor encoded = readDescriptor(input);
-                        String family = encoded.family();
+                        String family = encoded.craftingSource().isEmpty() ? encoded.family() : "minecraft:crafting";
                         if (reusable.contains(family))
                         {
                             try
@@ -383,7 +384,7 @@ public final class ClientJeiRecipeCache
             List<EncodedSlot> slots = new ArrayList<>();
             for (int i = 0; i < slotCount; i++)
                 slots.add(new EncodedSlot(string(input), string(input), input.readInt(), readAmounts(input)));
-            return new EncodedDescriptor(id, family, output, amount, slots, readAmounts(input), readAmounts(input));
+            return new EncodedDescriptor(id, family, output, amount, slots, readAmounts(input), readAmounts(input), string(input));
         }
         private List<EncodedAmount> readAmounts(DataInputStream input) throws IOException
         {
@@ -400,7 +401,8 @@ public final class ClientJeiRecipeCache
                 slots.add(new VirtualProvisionerRecipeRegistry.InputSlot(slot.group(), decodeAmounts(slot.candidates()),
                         new VirtualInputUse(VirtualInputUse.Kind.valueOf(slot.kind()), slot.damage())));
             return new VirtualProvisionerRecipeRegistry.Descriptor(value.family(), key(value.output()), value.amount(),
-                    slots, decodeAmounts(value.byproducts()), decodeAmounts(value.guaranteed()));
+                    slots, decodeAmounts(value.byproducts()), decodeAmounts(value.guaranteed()),
+                    com.amicbeam.beyondcraftlines.common.crafting.CapturedCraftingSource.decode(value.craftingSource()));
         }
         private IStackKey<?> key(ClientPlanningCatalogCache.EncodedKey encoded) throws IOException
         {
@@ -420,5 +422,5 @@ public final class ClientJeiRecipeCache
     private record EncodedAmount(ClientPlanningCatalogCache.EncodedKey key, long amount) {}
     private record EncodedSlot(String group, String kind, int damage, List<EncodedAmount> candidates) {}
     private record EncodedDescriptor(String id, String family, ClientPlanningCatalogCache.EncodedKey output, long amount,
-                                     List<EncodedSlot> slots, List<EncodedAmount> byproducts, List<EncodedAmount> guaranteed) {}
+                                     List<EncodedSlot> slots, List<EncodedAmount> byproducts, List<EncodedAmount> guaranteed, String craftingSource) {}
 }

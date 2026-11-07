@@ -20,11 +20,13 @@ public final class CacheTestKeys
                     case "getTypeId" -> Identifier.fromNamespaceAndPath("test", "persistent_cache_resource");
                     case "getModId" -> "test";
                     case "isEmpty" -> false;
-                    case "getSource", "getReadOnlyStack", "toString" -> name;
+                    case "getSource", "toString" -> name;
+                    case "getReadOnlyStack" -> name.startsWith("item:")
+                            ? new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE) : name;
                     case "getStackClass", "getSourceClass" -> String.class;
                     case "hashCode" -> name.hashCode();
                     case "equals", "isSame", "isSameTypeSameComponents" -> args[0] instanceof IStackKey<?> other
-                            && name.equals(other.getReadOnlyStack());
+                            && name.equals(other.toString());
                     case "serializeNBT" -> { CompoundTag tag = new CompoundTag(); tag.putString("name", name); yield tag; }
                     case "deserializeNBT" -> key(((CompoundTag) args[0]).getString("name").orElseThrow());
                     default -> throw new UnsupportedOperationException(method.getName());

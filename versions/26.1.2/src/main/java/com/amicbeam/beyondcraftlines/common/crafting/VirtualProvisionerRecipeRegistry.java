@@ -94,7 +94,7 @@ public final class VirtualProvisionerRecipeRegistry
             int before = CLIENT_CATALOG.size();
             CLIENT_CATALOG.entrySet().removeIf(entry -> {
                 Descriptor descriptor = DESCRIPTORS.get(entry.getValue().value());
-                if (descriptor == null || !families.contains(descriptor.family())) return false;
+                if (descriptor == null || !families.contains(descriptor.category())) return false;
                 DESCRIPTORS.remove(entry.getValue().value());
                 return true;
             });
@@ -234,8 +234,12 @@ public final class VirtualProvisionerRecipeRegistry
     }
 
     public record Descriptor(String family, IStackKey<?> output, long outputAmount,
-                             List<InputSlot> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
+                             List<InputSlot> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts,
+                             CapturedCraftingSource craftingSource)
     {
+        public Descriptor(String family, IStackKey<?> output, long outputAmount, List<InputSlot> inputs,
+                          List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts)
+        { this(family, output, outputAmount, inputs, byproducts, guaranteedByproducts, null); }
         public Descriptor(String family, IStackKey<?> output, long outputAmount, List<InputSlot> inputs)
         { this(family, output, outputAmount, inputs, List.of(), List.of()); }
 
@@ -246,6 +250,11 @@ public final class VirtualProvisionerRecipeRegistry
                     || inputs == null || inputs.isEmpty() || inputs.size() > VirtualRecipeLimits.INPUTS)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");
             inputs = List.copyOf(inputs);
+            if (craftingSource != null && (!"crafting".equals(family) || craftingSource.slots().size() != inputs.size()
+                    || !(output.getReadOnlyStack() instanceof ItemStack) || !byproducts.isEmpty()
+                    || inputs.stream().anyMatch(slot -> slot.candidates().stream().anyMatch(value ->
+                    !(value.key().getReadOnlyStack() instanceof ItemStack) || value.amount() != 1))))
+                throw new IllegalArgumentException("invalid captured crafting variant");
             VirtualRecipeLimits.requireInputs(inputs.size(), inputs.stream().mapToLong(slot -> slot.candidates().size()).sum());
             if (byproducts == null || byproducts.size() >= VirtualRecipeLimits.OUTPUTS
                     || byproducts.stream().anyMatch(value -> value == null || value.isEmpty()
@@ -263,10 +272,13 @@ public final class VirtualProvisionerRecipeRegistry
                     throw new IllegalArgumentException("guaranteed output is not a declared byproduct");
         }
 
+        public String category() { return craftingSource == null ? family : "minecraft:crafting"; }
+
         public Identifier id()
         {
             StringBuilder canonical = new StringBuilder(family).append('|')
                     .append(VirtualRecipeIdentity.key(output)).append('@').append(outputAmount);
+            if (craftingSource != null) canonical.append("|crafting-source:").append(craftingSource.encode());
             for (InputSlot slot : inputs)
             {
                 canonical.append('|').append(slot.inputGroup()).append(':')

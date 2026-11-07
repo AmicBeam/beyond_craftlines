@@ -204,11 +204,13 @@ tasks.named('prepareVersionResources') {
 }
 sourceSets.main.resources.srcDir prepareVersionResources
 def prepareVersionTests = tasks.register('prepareVersionTests', Sync) {
+    inputs.property('craftingInputTestApi', 'compat-1.20.1')
     from '../../src/test/java'
     exclude 'com/amicbeam/beyondcraftlines/common/crafting/DynamicCraftingFixtures.java'
     into layout.buildDirectory.dir('generated/versionSources/test/java')
     filteringCharset = 'UTF-8'
-    filter { line -> line.replace('.getFirst()', '.get(0)') }
+    filter { line -> line.replace('.getFirst()', '.get(0)')
+            .replace('net.minecraft.world.item.crafting.CraftingInput', 'com.amicbeam.beyondcraftlines.compat.crafting.CraftingInput') }
 }
 sourceSets.test.java.setSrcDirs([prepareVersionTests, 'src/test/java'])
 

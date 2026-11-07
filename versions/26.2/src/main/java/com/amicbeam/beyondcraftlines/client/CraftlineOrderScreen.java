@@ -822,10 +822,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         else
         {
             graphics.setTooltipForNextFrame(font, lines, Optional.<TooltipComponent>of(
-                    new RecipePreviewTooltip(singleCraftInputs(node.recipe, node.key),
-                            singleCraftOutput(node.recipe, node.key))),
+                    nodeRecipePreview(node.recipe, node.key)),
                     node.stack, mouseX, mouseY);
         }
+    }
+
+    private RecipePreviewTooltip nodeRecipePreview(RecipeHolder<?> recipe, IStackKey<?> output)
+    {
+        if (!(recipe.value() instanceof net.minecraft.world.item.crafting.ShapedRecipe))
+            return new RecipePreviewTooltip(singleCraftInputs(recipe, output), singleCraftOutput(recipe, output));
+        var ingredients = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                .ingredientsForOutput(recipe.value(), output);
+        var inputs = ingredients.stream().map(ingredient -> selectedResource(recipe.id().identifier(), ingredient.slot(), ingredient)).toList();
+        return new RecipePreviewTooltip(inputs, singleCraftOutput(recipe, output)).withShape(recipe.value(),
+                ingredients.stream().map(ingredient -> ingredient.slot()).toList());
     }
 
     private List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> singleCraftInputs(
@@ -1755,7 +1765,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                 .outputs(recipe.value(), minecraft.level).stream()
                                 .filter(value -> com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                                         .exact(output, value.key())).findFirst()
-                        .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))),
+                        .orElse(new com.wintercogs.beyonddimensions.api.storage.key.KeyAmount(output, 1)))
+                        .withShape(recipe.value(), com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                                .ingredientsForOutput(recipe.value(), output).stream().map(ingredient -> ingredient.slot()).toList())),
                 output instanceof ItemStackKey itemKey ? itemKey.getReadOnlyStack() : ItemStack.EMPTY,
                 mouseX, mouseY);
     }

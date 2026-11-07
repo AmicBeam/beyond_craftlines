@@ -388,6 +388,8 @@ final class ClientPlanningCatalogCache
                             encoded = new EncodedRecipe(migratedId, encoded.family(), encoded.output(),
                                     encoded.outputCount(), encoded.outputMatch(), encoded.slots(), encoded.byproducts());
                         }
+                        if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlockedFamily(encoded.family()))
+                        { decodedRecipes = i + 1; continue; }
                         if (currentIds != null && !currentIds.contains(encoded.id().toString()))
                         {
                             removedIds.add(encoded.id());

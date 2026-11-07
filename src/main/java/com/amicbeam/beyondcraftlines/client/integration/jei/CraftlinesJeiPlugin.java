@@ -63,6 +63,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
                 return JeiRecipeGuard.get(() -> {
                     ResourceLocation recipeType = recipeLayoutDrawable.getRecipeCategory()
                             .getRecipeType().getUid();
+                    if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(recipeType)) return null;
                     ResourceLocation craftingRecipe = serverRecipeId(recipeLayoutDrawable);
                     if (craftingRecipe != null)
                     {
@@ -126,6 +127,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingIn()
     {
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clearSynced();
         JeiCatalystIndex.refresh();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
@@ -135,6 +137,7 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     public static void onLoggingOut()
     {
+        com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clearSynced();
         networkAvailability = NetworkAvailability.UNKNOWN;
         nextNetworkCheckNanos = 0L;
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.pause();
@@ -256,7 +259,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
         java.util.List<mezz.jei.api.recipe.IFocus<?>> focuses = java.util.List.of(focus);
         var focusGroup = focusFactory.createFocusGroup(focuses);
         var categories = current.getRecipeManager().createRecipeCategoryLookup()
-                .limitFocus(focuses).includeHidden().get().toList();
+                .limitFocus(focuses).includeHidden().get().filter(category -> !com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeCategoryBlacklist.clientBlocked(category.getRecipeType().getUid())).toList();
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                 "{} client JEI focused search target={} categories={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,

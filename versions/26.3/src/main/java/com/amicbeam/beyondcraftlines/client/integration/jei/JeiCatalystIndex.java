@@ -82,6 +82,7 @@ public final class JeiCatalystIndex
             {
                 var recipeType = category.getRecipeType();
                 Identifier typeId = recipeType.getUid();
+                if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(typeId)) return;
                 categories.put(typeId, category);
                 titles.put(typeId, category.getTitle());
                 manager.createCraftingStationLookup(recipeType).includeHidden().getItemStack()
@@ -120,7 +121,8 @@ public final class JeiCatalystIndex
         IJeiRuntime current = runtime;
         if (current == null) return;
         var categories = current.getRecipeManager().createRecipeCategoryLookup()
-                .includeHidden().get().collect(java.util.stream.Collectors.toMap(
+                .includeHidden().get().filter(category -> !com.amicbeam.beyondcraftlines.common.crafting
+                        .RecipeCategoryBlacklist.clientBlocked(category.getRecipeType().getUid())).collect(java.util.stream.Collectors.toMap(
                         category -> category.getRecipeType().getUid(), category -> category));
         if (!categories.equals(CATEGORIES_BY_TYPE)) rebuild(current);
     }
@@ -135,7 +137,8 @@ public final class JeiCatalystIndex
     {
         return com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalogScope.select(
                 com.amicbeam.beyondcraftlines.CraftlinesConfig.PRELOAD_ALL_RECIPE_TYPES.get(),
-                networkFamilies, allPlanningFamilies);
+                networkFamilies, allPlanningFamilies).stream().filter(family -> !com.amicbeam.beyondcraftlines.common.crafting
+                .RecipeCategoryBlacklist.clientBlockedFamily(family)).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     /** Once per runtime; it does not depend on having a network or bound machines. */
@@ -186,6 +189,8 @@ public final class JeiCatalystIndex
     {
         for (Identifier type : types)
         {
+            if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(type))
+            { TYPE_STATE.complete(type); continue; }
             IRecipeCategory<?> category = CATEGORIES_BY_TYPE.get(type);
             if (category == null) TYPE_STATE.complete(type);
             else TYPE_QUEUE.addLast(new SearchTask(category, type));

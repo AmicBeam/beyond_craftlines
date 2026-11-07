@@ -466,6 +466,7 @@ public final class DeviceBindingRegistry
             else if (record.deviceType() == DeviceType.PROVISIONER_RECIPE_BINDING
                     && validProvisionerTarget(server, record).isPresent())
                 record.recipeFamilies().stream().filter(record::acceptsAnyInputGroup).forEach(result::add);
+        result.removeIf(com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist::serverBlockedFamily);
         return Set.copyOf(result);
     }
 

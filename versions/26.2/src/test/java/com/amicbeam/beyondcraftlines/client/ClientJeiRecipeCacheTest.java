@@ -59,6 +59,22 @@ final class ClientJeiRecipeCacheTest
         assertEquals("crafting", restored.family());
     }
 
+    @Test void cachedBlockedCategoryCannotReturnEvenWithMatchingSourceIds() throws Exception
+    {
+        var blocked = descriptor("create:automatic_shaped", "generated");
+        var original = descriptor("create:mechanical_crafting", "exclusive");
+        var sources = Map.of("create:automatic_shaped", List.of("id:a"),
+                "create:mechanical_crafting", List.of("id:b"));
+        Path path = save(sources, List.of(blocked, original));
+        var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, sources);
+        await(loaded);
+        assertFalse(loaded.failed);
+        assertEquals(Set.of("create:mechanical_crafting"), loaded.result.types());
+        assertEquals(1, loaded.result.recipes());
+        assertTrue(VirtualProvisionerRecipeRegistry.find(blocked.id()).isEmpty());
+        assertTrue(VirtualProvisionerRecipeRegistry.find(original.id()).isPresent());
+    }
+
     @Test void onlyChangedCategoryNeedsRematerialization() throws Exception
     {
         var original = descriptor("test:crusher", "crushed");

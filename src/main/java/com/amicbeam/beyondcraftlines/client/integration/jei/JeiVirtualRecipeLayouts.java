@@ -40,6 +40,7 @@ public final class JeiVirtualRecipeLayouts
 
     public static List<Captured> captures(ResourceLocation type, IRecipeLayoutDrawable<?> layout)
     {
+        if (RecipeCategoryBlacklist.clientBlocked(type)) return List.of();
         return JeiRecipeGuard.get(() -> {
             var uncertain = RecipeOutputProbabilities.uncertain(layout.getRecipe());
             var ignored = RecipePresentationOutputs.ignored(layout.getRecipe());
@@ -223,6 +224,8 @@ public final class JeiVirtualRecipeLayouts
 
     public static RecipeHolder<?> register(Captured captured)
     {
+        if (RecipeCategoryBlacklist.clientBlocked(captured.type()))
+            throw new IllegalArgumentException("recipe category is blacklisted");
         String family = captured.craftingSource() != null ? "crafting" : com.amicbeam.beyondcraftlines.common.runtime.NativeFurnaceRecipeFamilies
                 .executionFamily(captured.type().toString());
         return VirtualProvisionerRecipeRegistry.retainForClientCatalog(

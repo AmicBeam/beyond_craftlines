@@ -126,6 +126,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
                 || payload.pageIndex() < 0 || payload.pageIndex() >= payload.pageCount()) return;
         for (Entry recipe : payload.recipes())
         {
+            if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.serverBlockedFamily(recipe.family())) return;
             if (recipe.craftingSource() != null && recipe.craftingSource().resolve(player.level()) == null) return;
             if (!("crafting".equals(recipe.family()) && recipe.craftingSource() != null)
                     && !menu.availableFamilies().contains(recipe.family()))

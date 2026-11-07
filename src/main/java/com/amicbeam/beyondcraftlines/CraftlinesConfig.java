@@ -87,6 +87,12 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.enable_smithing_and_stonecutting_recipe_proxy")
             .define("enableSmithingAndStonecuttingRecipeProxy", true);
 
+    public static final ModConfigSpec.ConfigValue<java.util.List<? extends String>> RECIPE_CATEGORY_BLACKLIST = SERVER_BUILDER
+            .comment("Exact JEI category IDs excluded from Craftlines indexing, recipe selection and new execution. Up to 1024 entries; [] disables the blacklist. Does not hide recipes from JEI or disable their original categories.")
+            .translation("config.beyond_craftlines.recipe_category_blacklist")
+            .define("recipeCategoryBlacklist", com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.DEFAULTS,
+                    com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist::validList);
+
     public static final ModConfigSpec.IntValue MAX_PROVISIONER_CONNECTIONS = SERVER_BUILDER
             .pop()
             .push("provisioner")
@@ -179,4 +185,19 @@ public final class CraftlinesConfig
 
     public static boolean isClientConfig(ModConfig config)
     { return config.getSpec() == CLIENT_SPEC; }
+
+    public static java.util.List<? extends String> recipeCategoryBlacklist()
+    { return SERVER_SPEC.isLoaded() ? RECIPE_CATEGORY_BLACKLIST.get()
+            : com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.DEFAULTS; }
+
+    public static void reloadServerPolicy(net.neoforged.fml.event.config.ModConfigEvent.Reloading event)
+    {
+        if (event.getConfig().getSpec() != SERVER_SPEC) return;
+        var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return;
+        server.execute(() -> {
+            com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService.clearRecipeCache();
+            com.amicbeam.beyondcraftlines.common.network.RecipeIoProfilePayload.broadcast(server);
+        });
+    }
 }

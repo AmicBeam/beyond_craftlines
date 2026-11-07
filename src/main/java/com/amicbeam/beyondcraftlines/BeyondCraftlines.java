@@ -18,6 +18,7 @@ public final class BeyondCraftlines
     public BeyondCraftlines(IEventBus modBus, ModContainer container)
     {
         CraftlinesConfig.register(container);
+        modBus.addListener(CraftlinesConfig::reloadServerPolicy);
         CraftlinesBlocks.register(modBus);
         CraftlinesBlockEntities.register(modBus);
         CraftlinesItems.register(modBus);

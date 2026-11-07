@@ -90,19 +90,22 @@ public final class EmiClientIntegration
     {
         if (workstation.isEmpty()) return Set.of();
         refreshMetadata();
-        return typesByWorkstation.getOrDefault(workstation.getItem(), Set.of());
+        return typesByWorkstation.getOrDefault(workstation.getItem(), Set.of()).stream()
+                .filter(type -> !com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(type))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public static Optional<Component> recipeTypeTitle(ResourceLocation type)
     {
         refreshMetadata();
-        return Optional.ofNullable(titlesByType.get(type));
+        return com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(type) ? Optional.empty() : Optional.ofNullable(titlesByType.get(type));
     }
 
     public static Set<ResourceLocation> recipeTypes()
     {
         refreshMetadata();
-        return titlesByType.keySet();
+        return titlesByType.keySet().stream().filter(type -> !com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(type))
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     public static void refreshMetadata()
@@ -150,7 +153,7 @@ public final class EmiClientIntegration
         EmiRecipe added = BoM.addedRecipes.get(output);
         if (added != null && added.getId() != null) syncPreferenceFromEmi(output, null, true);
         EmiRecipe recipe = BoM.getRecipe(output);
-        return recipe == null ? null : EmiRecipeId.normalize(recipe.getId());
+        return !categoryAllowed(recipe) ? null : EmiRecipeId.normalize(recipe.getId());
     }
 
     public static boolean setPreferredRecipe(IStackKey<?> target, ResourceLocation recipeId)
@@ -184,6 +187,7 @@ public final class EmiClientIntegration
         {
             if (output == null || output.isEmpty()) return;
             EmiRecipe current = BoM.getRecipe(output);
+            if (current != null && !categoryAllowed(current)) return;
             ResourceLocation currentId = current == null ? null : EmiRecipeId.normalize(current.getId());
             ResourceLocation removedId = removedRecipe == null
                     ? null : EmiRecipeId.normalize(removedRecipe.getId());
@@ -252,7 +256,7 @@ public final class EmiClientIntegration
     public static void renderRecipeButton(Screen screen, GuiGraphics graphics, int x, int y,
                                           EmiRecipe recipe, int mouseX, int mouseY, float partialTick)
     {
-        if (screen != recipeButtonScreen || graphics == null || recipe == null) return;
+        if (screen != recipeButtonScreen || graphics == null || !categoryAllowed(recipe)) return;
         boolean hovered = mouseX >= x && mouseX < x + RECIPE_BUTTON_SIZE
                 && mouseY >= y && mouseY < y + RECIPE_BUTTON_SIZE;
         EmiDrawContext context = EmiDrawContext.wrap(graphics);
@@ -301,8 +305,12 @@ public final class EmiClientIntegration
         return null;
     }
 
+    private static boolean categoryAllowed(EmiRecipe recipe)
+    { return recipe != null && !com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(recipe.getCategory().getId()); }
+
     private static boolean recipeMatchesOutput(EmiRecipe recipe, EmiStack requested)
     {
+        if (!categoryAllowed(recipe)) return false;
         ItemStack stack = requested.getItemStack();
         if (stack.isEmpty()) return false;
         ItemStackKey key = new ItemStackKey(stack.copyWithCount(1));
@@ -317,7 +325,7 @@ public final class EmiClientIntegration
 
     private static @Nullable RecipeTarget recipeTarget(EmiRecipe recipe)
     {
-        if (recipe == null) return null;
+        if (!categoryAllowed(recipe)) return null;
         ResourceLocation rawId = recipe.getId();
         var backing = recipe.getBackingRecipe();
         ResourceLocation recipeId = backing != null || EmiRecipeId.isWrappedJei(rawId)

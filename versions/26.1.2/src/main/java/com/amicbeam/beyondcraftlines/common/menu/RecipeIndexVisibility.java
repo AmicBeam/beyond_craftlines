@@ -10,7 +10,8 @@ public final class RecipeIndexVisibility
     private RecipeIndexVisibility() {}
 
     public static boolean includes(String family, Set<String> availableFamilies)
-    { return "crafting".equals(family) || availableFamilies.contains(family); }
+    { return !com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlockedFamily(family)
+            && ("crafting".equals(family) || availableFamilies.contains(family)); }
 
     /**
      * Native recipes require an explicit network proxy, while a JEI virtual recipe already

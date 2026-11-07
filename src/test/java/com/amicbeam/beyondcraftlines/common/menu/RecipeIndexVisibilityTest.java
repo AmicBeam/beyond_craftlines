@@ -44,4 +44,13 @@ final class RecipeIndexVisibilityTest
         assertTrue(RecipeIndexVisibility.includesPlanningRecipe(
                 "crafting", false, available));
     }
+    @Test void blacklistPreservesMachineExclusiveAndOriginalCraftingRoutes()
+    {
+        Set<String> families = Set.of("create:automatic_shaped", "create:mechanical_crafting", "create:mixing", "create:fan_blasting");
+        assertFalse(RecipeIndexVisibility.includesPlanningRecipe("create:automatic_shaped", true, families));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe("create:mechanical_crafting", true, families));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe("create:mixing", true, families));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe("create:fan_blasting", true, families));
+        assertTrue(RecipeIndexVisibility.includesPlanningRecipe("crafting", false, families));
+    }
 }

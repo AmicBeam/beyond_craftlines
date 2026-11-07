@@ -39,8 +39,10 @@ public final class VanillaProvisionerRecipeTypes
 
     public static <T> Set<T> accepted(Set<T> requested, Set<T> mapped)
     {
-        LinkedHashSet<T> accepted = new LinkedHashSet<>(mapped);
-        requested.stream().filter(type -> isProvisionerOnly(type) || isJeiOnly(type)).forEach(accepted::add);
+        LinkedHashSet<T> accepted = mapped.stream().filter(type -> !RecipeCategoryBlacklist.serverBlocked(type))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        requested.stream().filter(type -> !RecipeCategoryBlacklist.serverBlocked(type))
+                .filter(type -> isProvisionerOnly(type) || isJeiOnly(type)).forEach(accepted::add);
         return Set.copyOf(accepted);
     }
 
@@ -65,7 +67,8 @@ public final class VanillaProvisionerRecipeTypes
 
     public static <T> Set<T> directBindable(Set<T> requested)
     {
-        return requested.stream().filter(type -> !isProvisionerOnly(type))
+        return requested.stream().filter(type -> !RecipeCategoryBlacklist.serverBlocked(type))
+                .filter(type -> !isProvisionerOnly(type))
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 

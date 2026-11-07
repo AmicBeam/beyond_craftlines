@@ -169,6 +169,7 @@ public final class RecipePlanningService
         for (RecipeHolder<?> holder : candidates)
         {
             String family = family(holder);
+            if (RecipeCategoryBlacklist.serverBlockedFamily(family)) continue;
             if (!"crafting".equals(family) && !availableFamilies.contains(family)) continue;
             byOutput.add(holder, RecipeOutputResolver.outputs(holder.value(), level.registryAccess()));
         }

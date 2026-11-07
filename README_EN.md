@@ -134,3 +134,15 @@ This project is licensed as a whole under GNU General Public License version 3. 
 provisioner binding interaction references and adapts LGPL-3.0 source from
 [AE2 Lightning Tech](https://github.com/ae2lt/AE2-Lightning-Tech); attribution and relevant files are
 listed in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). No CC BY-NC-SA assets from that project are included.
+
+
+### Recipe category blacklist
+
+All supported Minecraft versions and both BD 0.8 builds read this world server configuration from `serverconfig/beyond_craftlines-server.toml`:
+
+```toml
+[crafting]
+recipeCategoryBlacklist = ["create:automatic_shaped", "create:automatic_shapeless"]
+```
+
+The defaults exclude Create categories generated from ordinary shaped and shapeless crafting. Vanilla crafting, Create machine-exclusive mechanical crafting, native mixing/packing, and fan blasting remain available. Use complete JEI category IDs, without wildcards; `[]` disables the blacklist. The server synchronizes this policy to clients and refreshes Craftlines categories and indexing on reload. Cached blocked categories are filtered, while JEI itself can still display their recipes.

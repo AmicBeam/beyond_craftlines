@@ -131,3 +131,15 @@ BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根�
 
 本项目整体采用 GNU General Public License version 3。无线供给器绑定交互参考并改编自
 [AE2 Lightning Tech](https://github.com/ae2lt/AE2-Lightning-Tech) 的 LGPL-3.0 源码实现；作者归属和相关文件见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。本项目未包含其 CC BY-NC-SA 材质。
+
+
+### 配方类别黑名单
+
+所有支持版本及 BD 0.8 构建均可在存档的 `serverconfig/beyond_craftlines-server.toml` 中配置：
+
+```toml
+[crafting]
+recipeCategoryBlacklist = ["create:automatic_shaped", "create:automatic_shapeless"]
+```
+
+默认只排除 Create 动态生成的自动有序、无序合成类别；原版工作台合成、Create 机器专用的动力合成、原生搅拌和压块、风扇批量熔炼仍可使用。填写完整 JEI 类别 ID，不支持通配符；设为 `[]` 可取消屏蔽。服务端配置同步给客户端，重载后刷新 Craftlines 类别和索引，并过滤旧缓存；JEI 自身仍可显示这些配方。

@@ -122,7 +122,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                 player.sendSystemMessage(Component.translatable("error.beyond_craftlines.invalid_order_target"));
                 return;
             }
-            boolean malformedRequest=!payload.jeiRecipeType().isBlank()&&requestedType==null
+            boolean malformedRequest= com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.serverBlocked(requestedType)
+                    || !payload.jeiRecipeType().isBlank()&&requestedType==null
                     ||!payload.recipeId().isBlank()&&requestedRecipe==null;
             DimensionsNet network = com.amicbeam.beyondcraftlines.common.data
                     .CraftlineNetworkContext.resolve(player);

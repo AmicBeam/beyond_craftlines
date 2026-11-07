@@ -19,6 +19,7 @@ public final class BeyondCraftlines {
     public BeyondCraftlines() {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         CraftlinesConfig.register();
+        modBus.addListener(CraftlinesConfig::reloadServerPolicy);
         CraftlinesBlocks.register(modBus);
         CraftlinesBlockEntities.register(modBus);
         CraftlinesItems.register(modBus);

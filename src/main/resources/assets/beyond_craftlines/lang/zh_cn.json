@@ -327,5 +327,7 @@
   "gui.beyond_craftlines.filter.nbt_ignore": "忽略 NBT／组件",
   "gui.beyond_craftlines.filter.nbt_match": "匹配 NBT／组件",
   "gui.beyond_craftlines.filter.match_inputs": "匹配原料",
-  "gui.beyond_craftlines.filter.match_outputs": "匹配产物"
+  "gui.beyond_craftlines.filter.match_outputs": "匹配产物",
+  "config.beyond_craftlines.recipe_category_blacklist": "配方类别黑名单",
+  "gui.beyond_craftlines.order_message.recipe_category_blacklisted": "配方类别 %s 已被加入黑名单"
 }

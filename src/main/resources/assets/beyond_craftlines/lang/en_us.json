@@ -327,5 +327,7 @@
   "gui.beyond_craftlines.filter.nbt_ignore": "Ignore NBT / components",
   "gui.beyond_craftlines.filter.nbt_match": "Match NBT / components",
   "gui.beyond_craftlines.filter.match_inputs": "Match ingredients",
-  "gui.beyond_craftlines.filter.match_outputs": "Match products"
+  "gui.beyond_craftlines.filter.match_outputs": "Match products",
+  "config.beyond_craftlines.recipe_category_blacklist": "Recipe category blacklist",
+  "gui.beyond_craftlines.order_message.recipe_category_blacklisted": "Recipe category %s is blacklisted"
 }

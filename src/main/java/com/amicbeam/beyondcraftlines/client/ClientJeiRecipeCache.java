@@ -303,7 +303,8 @@ public final class ClientJeiRecipeCache
                         Set<String> values = new HashSet<>();
                         int groupCount = count(input);
                         for (int g = 0; g < groupCount; g++) values.add(string(input));
-                        if (fingerprint.equals(current.get(type)) || legacyIdentity && fingerprint.equals(legacy.get(type)))
+                        if (!com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.clientBlocked(type)
+                                && (fingerprint.equals(current.get(type)) || legacyIdentity && fingerprint.equals(legacy.get(type))))
                         {
                             reusable.add(type);
                             groups.put(type, Set.copyOf(values));
@@ -315,7 +316,8 @@ public final class ClientJeiRecipeCache
                     {
                         EncodedDescriptor encoded = readDescriptor(input);
                         String family = encoded.craftingSource().isEmpty() ? encoded.family() : "minecraft:crafting";
-                        if (reusable.contains(family))
+                        if (reusable.contains(family) && !com.amicbeam.beyondcraftlines.common.crafting
+                                .RecipeCategoryBlacklist.clientBlockedFamily(encoded.family()))
                         {
                             try
                             {

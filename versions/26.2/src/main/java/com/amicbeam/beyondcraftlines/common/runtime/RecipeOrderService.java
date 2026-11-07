@@ -404,6 +404,8 @@ public final class RecipeOrderService
                 ? tickNativeFurnace(server, network, job) : tickBoundMachine(server, network, job);
         if (job.nextStep() >= job.stepCount()) return job.with(RecipeOrderJob.Status.COMPLETE, "");
         RecipePlan.Step step = job.step(job.nextStep());
+        if (com.amicbeam.beyondcraftlines.common.crafting.RecipeCategoryBlacklist.serverBlockedFamily(step.family()))
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("recipe_category_blacklisted", step.family()));
         if (com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes
                 .isProxyFamily(step.family()) && com.amicbeam.beyondcraftlines.common.crafting
                 .VanillaProvisionerRecipeTypes.isNetworkExecutable(step.family(),

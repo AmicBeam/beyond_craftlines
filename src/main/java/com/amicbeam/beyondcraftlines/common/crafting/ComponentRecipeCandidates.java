@@ -41,6 +41,10 @@ public final class ComponentRecipeCandidates
             cost += left.containsKey(key) && right.containsKey(key) ? 2 : 1;
         return cost;
     }
+    /** Bounded, read-only projection for on-demand diagnostics; never used as inventory equality. */
+    public static Map<String, String> diagnosticFields(IStackKey<?> key)
+    { return FIELDS.computeIfAbsent(key, ComponentRecipeCandidates::fields); }
+
     private static Map<String, String> fields(IStackKey<?> key)
     {
         try

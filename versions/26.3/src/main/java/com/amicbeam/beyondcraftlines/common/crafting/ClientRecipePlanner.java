@@ -498,6 +498,26 @@ public final class ClientRecipePlanner
         }
 
         /** Reuses existing coarse buckets; ordinary capture stores no extra per-recipe component projection. */
+        /** Unscoped captured evidence for a user-selected diagnostic category, including disabled families. */
+        public List<Recipe> diagnosticRecipes(IStackKey<?> resource)
+        {
+            List<Recipe> result = new ArrayList<>();
+            for (var entry : byOutput.byCoarse.getOrDefault(RecipeResourceResolver.sortKey(resource), List.of()))
+                result.addAll(entry.getValue());
+            return List.copyOf(result);
+        }
+
+        /** Inspect only the current resource bucket, including ambiguous component variants. */
+        public List<KeyAmount> diagnosticOutputs(String recipeId, IStackKey<?> resource)
+        {
+            List<KeyAmount> outputs = new ArrayList<>();
+            for (var entry : byOutput.byCoarse.getOrDefault(RecipeResourceResolver.sortKey(resource), List.of()))
+                for (Recipe recipe : entry.getValue())
+                    if (recipe.id().toString().equals(recipeId))
+                        outputs.add(new KeyAmount(recipe.output(), recipe.outputCount()));
+            return List.copyOf(outputs);
+        }
+
         public IStackKey<?> candidateOutput(String recipeId, IStackKey<?> resource)
         { return candidateOutputs(resource).get(recipeId); }
         public Map<String, IStackKey<?>> candidateOutputs(IStackKey<?> resource)

@@ -52,6 +52,7 @@ public final class JeiCatalystIndex
     {
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
         JeiVirtualRecipeLayouts.resetDiagnostics();
+        DIAGNOSTIC_FAILURES.clear();
         RecipeIndexDiagnostics.reset();
         resetPersistentCache();
         Set<ResourceLocation> previousActiveTypes = TYPE_STATE.activeTypes();
@@ -408,6 +409,15 @@ public final class JeiCatalystIndex
         }
     }
 
+    private static final Map<ResourceLocation, Integer> DIAGNOSTIC_FAILURES = new HashMap<>();
+    public static boolean diagnosticRuntimeAvailable() { return runtime != null; }
+    public static Map<String, Integer> diagnosticFailures()
+    {
+        Map<String, Integer> result = new java.util.TreeMap<>();
+        DIAGNOSTIC_FAILURES.forEach((type, count) -> result.put(type.toString(), count));
+        return Map.copyOf(result);
+    }
+
     public static boolean idle() { return TYPE_QUEUE.isEmpty(); }
 
     public static Set<ResourceLocation> recipeTypesFor(ItemStack catalyst)
@@ -449,6 +459,7 @@ public final class JeiCatalystIndex
 
     public static void clear()
     {
+        DIAGNOSTIC_FAILURES.clear();
         RecipeIndexDiagnostics.reset();
         resetPersistentCache();
         runtime = null;
@@ -548,6 +559,7 @@ public final class JeiCatalystIndex
             catch (RuntimeException | LinkageError exception)
             {
                 // A consumed bad recipe must not prevent the remaining recipes in this category from loading.
+                DIAGNOSTIC_FAILURES.merge(recipeType, 1, Integer::sum);
                 complete = recipe == null;
                 if (++failedRecipes <= 8)
                     LOGGER.warn("Unable to index JEI recipe type={} ordinal={} category={} error={} action={}",

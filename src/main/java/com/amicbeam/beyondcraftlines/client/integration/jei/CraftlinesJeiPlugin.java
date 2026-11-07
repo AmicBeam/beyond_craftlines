@@ -86,6 +86,8 @@ public final class CraftlinesJeiPlugin implements IModPlugin
 
     @Override public void registerGuiHandlers(IGuiHandlerRegistration registration)
     {
+        registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.CraftlineOrderScreen.class,
+                new DiagnosticGhostIngredientHandler());
         registration.addGhostIngredientHandler(com.amicbeam.beyondcraftlines.client.ProvisionerConfigScreen.class,
                 new ResourceFilterGhostIngredientHandler());
         registration.addGhostIngredientHandler(

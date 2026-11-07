@@ -152,6 +152,13 @@ public final class RecipeIoProfileRegistry
         return result;
     }
 
+    /** Only profiles that actually match this recipe; no unrelated configuration in feedback. */
+    public static List<String> diagnosticProfiles(Recipe<?> recipe, String recipeId)
+    {
+        return entries.stream().filter(entry -> matchesProfile(recipe, recipeId, entry.profile()))
+                .map(Entry::encoded).toList();
+    }
+
     public static List<String> encodedEntries()
     { return entries.stream().limit(128).map(Entry::encoded).toList(); }
 

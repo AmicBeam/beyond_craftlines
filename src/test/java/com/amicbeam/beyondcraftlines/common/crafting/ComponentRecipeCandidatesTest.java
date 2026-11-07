@@ -47,4 +47,29 @@ final class ComponentRecipeCandidatesTest
         assertTrue(ComponentRecipeCandidates.distance(Map.of("id","iron","state","x"), Map.of("id","iron"))
                 < ComponentRecipeCandidates.distance(Map.of("id","iron","state","x"), Map.of("id","gold")));
     }
+    @Test void diagnosticsKeepAllAmbiguousOutputsWithoutChangingCandidateSelection()
+    {
+        var a = DynamicCraftingFixtures.key(DynamicCraftingFixtures.blade("a"));
+        var b = DynamicCraftingFixtures.key(DynamicCraftingFixtures.blade("b"));
+        var wanted = DynamicCraftingFixtures.key(DynamicCraftingFixtures.blade("wanted"));
+        var id = DynamicCraftingFixtures.id("test:ambiguous");
+        var first = new ClientRecipePlanner.Recipe(id, "test:disabled", a, 1,
+                RecipeIoProfileRegistry.OutputMatchSemantics.EXACT, List.of());
+        var second = new ClientRecipePlanner.Recipe(id, "test:disabled", b, 2,
+                RecipeIoProfileRegistry.OutputMatchSemantics.EXACT, List.of());
+        var catalog = new ClientRecipePlanner.Catalog(List.of(first, second));
+        assertNull(catalog.candidateOutput(id.toString(), wanted));
+        var outputs = catalog.diagnosticOutputs(id.toString(), wanted);
+        assertEquals(2, outputs.size());
+        var scoped = catalog.forFamilies(java.util.Set.of());
+        assertTrue(scoped.recipes().isEmpty());
+        assertEquals(2, scoped.diagnosticRecipes(wanted).size(),
+                "A missing-category question must see captured candidates even when their type is disabled");
+        assertEquals(3, outputs.stream().mapToLong(KeyAmount::amount).sum());
+        assertNull(catalog.candidateOutput(id.toString(), wanted), "Diagnostics cannot select an ambiguous output");
+        assertEquals(a, catalog.candidateOutput(id.toString(), a));
+        assertTrue(catalog.diagnosticOutputs("test:unrelated", wanted).isEmpty());
+        assertThrows(UnsupportedOperationException.class, () -> outputs.clear());
+    }
+
 }

@@ -73,6 +73,18 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private static final long[] AMOUNT_STEPS = {1, 10, 100, 1_000};
     private static final double DEFAULT_TREE_ZOOM = TreeViewScale.DEFAULT_ZOOM;
 
+    private IStackKey<?> diagnosticSample;
+    private String diagnosticProblem = "";
+    private FilteredEditBox diagnosticItem;
+    private FilteredEditBox diagnosticExpected;
+    private boolean diagnosticInputsDirty;
+    private final List<Button> diagnosticTypes = new ArrayList<>();
+    private boolean diagnosticsOpen;
+    private RootRecipeDiagnostics.Report diagnosticReport;
+    private List<net.minecraft.util.FormattedCharSequence> diagnosticLines = List.of();
+    private int diagnosticScroll;
+    private List<net.minecraft.client.gui.components.AbstractWidget> orderWidgets = List.of();
+    private final List<Button> diagnosticWidgets = new ArrayList<>();
     private FilteredEditBox amount;
     private RecipeHolder<?> selected;
     private int refreshTicks;
@@ -212,6 +224,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
+        initDiagnostics();
         if(terminalMenuError){enterTerminalMenuError(menu.initialError());return;}
         JeiCatalystIndex.prewarmRecipeTypes(menu.availableFamilies());
         ClientPlanningCatalogWarmup.request(menu.availableFamilies());
@@ -223,6 +236,209 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             else if (menu.recipeIndexComplete()) finishRecipeIndex();
             else loadingStatus = recipeLookupIndexingText();
         }
+    }
+
+    private void initDiagnostics()
+    {
+        addRenderableWidget(Button.builder(Component.literal("!"), ignored -> {
+            closeIngredientPicker();
+            amount.setFocused(false);
+            setFocused(null);
+            diagnosticsOpen = true;
+            diagnosticProblem = "";
+            diagnosticReport = null;
+            diagnosticLines = List.of();
+            updateDiagnosticVisibility();
+        }).bounds(treeRight() - 18, topPos + 5, 18, 18)
+                .tooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.title"))).build());
+        orderWidgets = children().stream()
+                .filter(child -> child instanceof net.minecraft.client.gui.components.AbstractWidget)
+                .map(child -> (net.minecraft.client.gui.components.AbstractWidget) child).toList();
+        String retainedItem = diagnosticItem == null ? RootRecipeDiagnostics.initialItem(menu.initialTarget()) : diagnosticItem.getValue();
+        String retainedExpected = diagnosticExpected == null ? "" : diagnosticExpected.getValue();
+        int fieldWidth = (imageWidth - 30) / 2;
+        diagnosticItem = addRenderableWidget(new FilteredEditBox(font, leftPos + 10, topPos + 62, fieldWidth, 18,
+                Component.translatable("gui.beyond_craftlines.diagnostics.item_input")));
+        diagnosticExpected = addRenderableWidget(new FilteredEditBox(font, leftPos + 20 + fieldWidth, topPos + 62, fieldWidth, 18,
+                Component.translatable("gui.beyond_craftlines.diagnostics.expected_input")));
+        diagnosticItem.setMaxLength(256);
+        diagnosticExpected.setMaxLength(256);
+        diagnosticItem.setValue(retainedItem);
+        diagnosticItem.setHint(Component.translatable("gui.beyond_craftlines.diagnostics.current_sample"));
+        diagnosticExpected.setValue(retainedExpected);
+        diagnosticItem.setResponder(ignored -> { diagnosticSample = null; markDiagnosticInputsDirty(); });
+        diagnosticExpected.setResponder(ignored -> markDiagnosticInputsDirty());
+        diagnosticItem.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.item_help")));
+        diagnosticExpected.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.expected_help")));
+        diagnosticTypes.clear();
+        String[] types = {"root", "category", "components"};
+        int typeWidth = (imageWidth - 28) / 3;
+        for (int i = 0; i < types.length; i++)
+        {
+            String type = types[i];
+            diagnosticTypes.add(addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.diagnostics.type_" + type),
+                    ignored -> chooseDiagnosticProblem(type)).bounds(leftPos + 10 + i * (typeWidth + 4), topPos + 28, typeWidth, 18)
+                    .tooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.problem_" + type))).build()));
+        }
+        diagnosticWidgets.clear();
+        int y = topPos + imageHeight - 28;
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.literal("<"), ignored ->
+                diagnosticScroll = Math.max(0, diagnosticScroll - diagnosticPageSize()))
+                .bounds(leftPos + 10, y, 18, 18).build()));
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.literal(">"), ignored ->
+                diagnosticScroll = Math.min(diagnosticMaxScroll(), diagnosticScroll + diagnosticPageSize()))
+                .bounds(leftPos + 30, y, 18, 18).build()));
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.diagnostics.copy"), ignored -> {
+            if (diagnosticReport != null)
+            {
+                minecraft.keyboardHandler.setClipboard(diagnosticReport.text());
+                ignored.setMessage(Component.translatable("gui.beyond_craftlines.diagnostics.copied"));
+            }
+        }).bounds(leftPos + 52, y, 72, 18).build()));
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.diagnostics.profile"), ignored -> {
+            if (diagnosticReport != null && !diagnosticReport.profile().isBlank())
+            {
+                minecraft.keyboardHandler.setClipboard(diagnosticReport.profile());
+                ignored.setMessage(Component.translatable("gui.beyond_craftlines.diagnostics.copied"));
+            }
+        }).bounds(leftPos + 128, y, 82, 18)
+                .tooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.profile_help"))).build()));
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.translatable("gui.back"), ignored -> onClose())
+                .bounds(leftPos + imageWidth - 70, y, 60, 18).build()));
+        diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.diagnostics.start"), ignored -> refreshDiagnostics())
+                .bounds(leftPos + imageWidth - 82, topPos + 5, 72, 18).build()));
+        if (diagnosticsOpen && diagnosticReport != null) wrapDiagnosticReport();
+        updateDiagnosticVisibility();
+    }
+
+    public boolean acceptsDiagnosticTarget()
+    { return diagnosticsOpen && !diagnosticProblem.isBlank(); }
+
+    public net.minecraft.client.renderer.Rect2i diagnosticTargetArea()
+    { return new net.minecraft.client.renderer.Rect2i(diagnosticItem.getX(), diagnosticItem.getY(), diagnosticItem.getWidth(), 18); }
+
+    public void setDiagnosticSample(IStackKey<?> sample)
+    {
+        if (!acceptsDiagnosticTarget() || sample == null || sample.isEmpty()) return;
+        diagnosticItem.setValue(RootRecipeDiagnostics.initialItem(sample));
+        diagnosticSample = sample;
+        diagnosticItem.setHint(sample.getRender().getDisplayName(sample));
+        markDiagnosticInputsDirty();
+    }
+
+    private void chooseDiagnosticProblem(String problem)
+    {
+        diagnosticProblem = problem;
+        diagnosticReport = null;
+        diagnosticLines = List.of();
+        String expected = "";
+        if (problem.equals("category") && menu.initialRecipeHolder() != null)
+            expected = RecipePlanningService.family(menu.initialRecipeHolder());
+        else if (problem.equals("components") && treeRoot != null && treeRoot.recipe != null)
+            expected = treeRoot.recipe.id().identifier().toString();
+        else if (!problem.equals("category") && menu.initialRecipe() != null)
+            expected = menu.initialRecipe().toString();
+        diagnosticExpected.setValue(expected);
+        diagnosticInputsDirty = false;
+        setFocused(diagnosticItem);
+        updateDiagnosticVisibility();
+    }
+
+    private void markDiagnosticInputsDirty()
+    {
+        diagnosticInputsDirty = true;
+        updateDiagnosticVisibility();
+    }
+
+    private void updateDiagnosticVisibility()
+    {
+        orderWidgets.forEach(widget -> widget.visible = !diagnosticsOpen);
+        diagnosticTypes.forEach(widget -> widget.visible = diagnosticsOpen);
+        String[] types = {"root", "category", "components"};
+        for (int i = 0; i < diagnosticTypes.size(); i++)
+            diagnosticTypes.get(i).setMessage(Component.literal(diagnosticProblem.equals(types[i]) ? "> " : "")
+                    .append(Component.translatable("gui.beyond_craftlines.diagnostics.type_" + types[i])));
+        boolean chosen = diagnosticsOpen && !diagnosticProblem.isBlank();
+        if (diagnosticItem != null) diagnosticItem.visible = chosen;
+        if (diagnosticExpected != null) diagnosticExpected.visible = chosen;
+        for (int i = 0; i < diagnosticWidgets.size(); i++)
+            diagnosticWidgets.get(i).visible = diagnosticsOpen && (i == 4 || chosen && (i == 5 || diagnosticReport != null));
+        if (diagnosticWidgets.size() > 5)
+            diagnosticWidgets.get(5).active = chosen && (!diagnosticProblem.equals("category")
+                    || !diagnosticExpected.getValue().isBlank());
+        if (diagnosticWidgets.size() > 3)
+        {
+            diagnosticWidgets.get(2).active = diagnosticReport != null && !diagnosticInputsDirty;
+            diagnosticWidgets.get(3).active = diagnosticReport != null && !diagnosticInputsDirty
+                    && !diagnosticReport.profile().isBlank();
+        }
+    }
+
+    private void refreshDiagnostics()
+    {
+        if (diagnosticProblem.isBlank()) return;
+        diagnosticReport = RootRecipeDiagnostics.capture(menu, treeRoot == null ? null : treeRoot.key,
+                treeRoot == null ? null : treeRoot.recipe, planningCatalog, amountValue(),
+                planningOutcome.toString(), previewError, loadingStatus, planningSnapshotValid,
+                diagnosticSample, diagnosticProblem, diagnosticItem.getValue().trim(), diagnosticExpected.getValue().trim());
+        diagnosticInputsDirty = false;
+        wrapDiagnosticReport();
+        if (diagnosticWidgets.size() > 3)
+        {
+            diagnosticWidgets.get(2).setMessage(Component.translatable("gui.beyond_craftlines.diagnostics.copy"));
+            diagnosticWidgets.get(3).setMessage(Component.translatable("gui.beyond_craftlines.diagnostics.profile"));
+        }
+        updateDiagnosticVisibility();
+    }
+
+    private void wrapDiagnosticReport()
+    {
+        List<net.minecraft.util.FormattedCharSequence> wrapped = new ArrayList<>();
+        for (Component line : diagnosticReport.lines()) wrapped.addAll(font.split(line, imageWidth - 24));
+        diagnosticLines = List.copyOf(wrapped);
+        diagnosticScroll = 0;
+    }
+
+    private int diagnosticPageSize() { return Math.max(1, (imageHeight - 144) / 11); }
+    private int diagnosticMaxScroll() { return Math.max(0, diagnosticLines.size() - diagnosticPageSize()); }
+
+    private void renderDiagnostics(GuiGraphicsExtractor graphics)
+    {
+        graphics.text(font, Component.translatable("gui.beyond_craftlines.diagnostics.title"),
+                leftPos + 10, topPos + 10, 0x253545, false);
+        if (diagnosticProblem.isBlank())
+        {
+            int y = topPos + 64;
+            for (var line : font.split(Component.translatable("gui.beyond_craftlines.diagnostics.choose_problem"), imageWidth - 24))
+            { graphics.text(font, line, leftPos + 12, y, 0x253545, false); y += 11; }
+            return;
+        }
+        int fieldWidth = (imageWidth - 30) / 2;
+        graphics.text(font, Component.translatable("gui.beyond_craftlines.diagnostics.item_input"),
+                leftPos + 10, topPos + 51, 0x253545, false);
+        graphics.text(font, Component.translatable("gui.beyond_craftlines.diagnostics.expected_"
+                + (diagnosticProblem.equals("category") ? "category" : "recipe")),
+                leftPos + 20 + fieldWidth, topPos + 51, 0x253545, false);
+        if (diagnosticInputsDirty || diagnosticReport == null)
+            graphics.text(font, Component.translatable("gui.beyond_craftlines.diagnostics.run_prompt"),
+                    leftPos + 12, topPos + 85, 0xA34C00, false);
+        for (int row = 0; row < diagnosticPageSize() && diagnosticScroll + row < diagnosticLines.size(); row++)
+            graphics.text(font, diagnosticLines.get(diagnosticScroll + row),
+                    leftPos + 12, topPos + 99 + row * 11, 0x253545, false);
+        if (diagnosticReport != null) graphics.text(font, (diagnosticScroll + 1) + " / " + diagnosticLines.size(),
+                leftPos + imageWidth - 80, topPos + imageHeight - 43, 0x465564, false);
+    }
+
+    @Override public void onClose()
+    {
+        if (diagnosticsOpen)
+        {
+            diagnosticsOpen = false;
+            setFocused(null);
+            updateDiagnosticVisibility();
+            return;
+        }
+        super.onClose();
     }
 
     private int rightPanelWidth() { return imageWidth < 520 ? 126 : 154; }
@@ -508,7 +724,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         hoveredMaterial = null;
         hoveredTreeNode = null;
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        graphics.text(font, title, leftPos + 10, topPos + 9, 0x253545, false);
+        if (diagnosticsOpen) { renderDiagnostics(graphics); return; }
+        graphics.text(font, font.plainSubstrByWidth(title.getString(), treeRight() - leftPos - 34), leftPos + 10, topPos + 9, 0x253545, false);
         renderTarget(graphics);
         renderMaterials(graphics, mouseX, mouseY);
         renderTree(graphics, mouseX, mouseY);
@@ -1793,6 +2010,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
+        if (diagnosticsOpen) return super.mouseClicked(event, doubleClick);
         if (TreeViewScale.previewOnly(treeZoom) && overTree(mouseX, mouseY)) return true;
         if (pickerOpen())
         {
@@ -2584,6 +2802,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY)
     {
+        if (diagnosticsOpen) return super.mouseDragged(event, dragX, dragY);
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
@@ -2601,6 +2820,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY)
     {
+        if (diagnosticsOpen)
+        {
+            diagnosticScroll = Math.max(0, Math.min(diagnosticMaxScroll(),
+                    diagnosticScroll + (scrollY < 0 ? 3 : scrollY > 0 ? -3 : 0)));
+            return true;
+        }
         if (overMaterials(mouseX, mouseY) && visibleMaterials().size() > materialPageSize())
         {
             int columns = materialColumns();
@@ -2632,6 +2857,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         graphics.fill(leftPos - 2, topPos - 2, leftPos + imageWidth + 2, topPos + imageHeight + 2, PANEL_SHADOW);
         graphics.fill(leftPos, topPos, leftPos + imageWidth, topPos + imageHeight, PANEL);
+        if (diagnosticsOpen) return;
         graphics.fill(treeLeft(), treeTop(), treeRight(), treeBottom(), CANVAS);
         for (int x = treeLeft() + 8; x < treeRight(); x += 16)
             graphics.fill(x, treeTop() + 1, x + 1, treeBottom() - 1, CANVAS_GRID);

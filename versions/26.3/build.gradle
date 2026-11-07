@@ -22,6 +22,9 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeCatalogScope.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/VirtualRecipeIdentity.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/RootDiagnosticRules.java'
+    include 'com/amicbeam/beyondcraftlines/client/RootRecipeDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/client/integration/jei/DiagnosticGhostIngredientHandler.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/NativeRecipeFallbackPolicy.java'
     into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
@@ -29,6 +32,9 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     filter { line -> line
             .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
             .replace('ResourceLocation', 'Identifier')
+            .replace('holder.id().toString()', 'holder.id().identifier().toString()')
+            .replace('candidate.id().toString()', 'candidate.id().identifier().toString()')
+            .replace('BuiltInRegistries.ITEM.get(id)', 'BuiltInRegistries.ITEM.getValue(id)')
             .replace('level.getRecipeManager()', 'level')
             .replace('elapsed, holder.id(), family,', 'elapsed, holder.id().identifier(), family,')
             .replace('SharedConstants.getCurrentVersion().getName()', 'SharedConstants.getCurrentVersion().name()')

@@ -89,7 +89,8 @@ public final class RootRecipeDiagnostics
                 boolean virtual = VirtualProvisionerRecipeRegistry.descriptor(holder.value()) != null;
                 lines.add(Component.literal("family: " + family + "; source=" + (virtual ? "JEI/EMI layout" : "native")));
                 lines.add(Component.literal("recipe class: " + holder.value().getClass().getName()));
-                if (!RecipeIndexVisibility.includes(family, menu.availableFamilies())) add(lines, "family_disabled");
+                if (!RecipeIndexVisibility.includes(family, menu.availableFamilies()))
+                { add(lines, "family_disabled"); lines.add(Component.translatable("gui.beyond_craftlines.solution.enable_type")); }
                 if (!virtual && !RecipePlanningService.isNativeExecutable(holder)) add(lines, "not_executable");
                 lines.add(Component.literal("input groups: " + new java.util.TreeSet<>(JeiInputGroupRegistry.groups(family))));
                 var descriptor = VirtualProvisionerRecipeRegistry.descriptor(holder.value());
@@ -184,6 +185,7 @@ public final class RootRecipeDiagnostics
             boolean enabled = RecipeIndexVisibility.includes(wanted, menu.availableFamilies());
             var candidates = recipes.stream().filter(recipe -> canonicalFamily(recipe.family()).equals(wanted)).toList();
             add(lines, RootDiagnosticRules.expectedCategoryStatus(ready, known, enabled, candidates.size()));
+            if (known && !enabled) lines.add(Component.translatable("gui.beyond_craftlines.solution.enable_type"));
             lines.add(Component.literal("expected category captured outputs=" + candidates.size()
                     + "; exact=" + candidates.stream().filter(recipe -> StackKeyMatch.exact(target, recipe.output())).count()));
             candidates.stream().map(recipe -> recipe.id().toString()).distinct().sorted().limit(8)

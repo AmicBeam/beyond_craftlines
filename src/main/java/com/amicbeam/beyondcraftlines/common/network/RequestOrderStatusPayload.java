@@ -108,6 +108,34 @@ public record RequestOrderStatusPayload(int networkId, UUID sessionId, int page)
         value.putString("origin", job.origin().id());
         value.putString("status", job.status().name());
         value.putString("message", job.message());
+        // Bounded read-only context from saved execution state, never world/device probing.
+        ListTag context = new ListTag();
+        for (int index = 0; index < job.executions().size() && context.size() < 4; index++)
+        {
+            var execution = job.executions().get(index);
+            if (execution.complete()) continue;
+            CompoundTag entry = new CompoundTag();
+            entry.putInt("step", index + 1);
+            entry.putString("recipe", execution.step().recipe().toString());
+            entry.putString("family", execution.step().family());
+            var wait = execution.externalWait();
+            if (wait != null)
+            {
+                entry.putLong("collected", wait.collected());
+                entry.putLong("amount", wait.amount());
+                StringBuilder endpoints = new StringBuilder();
+                for (var machine : wait.occupiedMachines().stream().limit(4).toList())
+                    endpoints.append(machine.dimension().location()).append(" ")
+                            .append(machine.position().toShortString()).append(" [")
+                            .append(machine.inputGroup()).append("] ");
+                if (endpoints.isEmpty()) endpoints.append(wait.machineDimension().location()).append(" ")
+                        .append(wait.machinePosition().toShortString());
+                entry.putString("endpoints", endpoints.substring(0, Math.min(1024, endpoints.length())));
+            }
+            context.add(entry);
+        }
+        value.put("diagnostic_context", context);
+
 
         boolean terminal = terminal(job.status());
         boolean resetSteps = previous == null || terminal || previous.executions().size() != job.executions().size();

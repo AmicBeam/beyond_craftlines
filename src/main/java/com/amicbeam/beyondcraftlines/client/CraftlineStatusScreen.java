@@ -50,6 +50,13 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     private int orderPage;
     private int orderPageCount = 1;
     private boolean pagePending;
+    private boolean statusReceived;
+    private boolean diagnosticsOpen;
+    private int diagnosticScroll;
+    private Button diagnoseButton;
+    private Button diagnosticBack;
+    private Button diagnosticCopy;
+    private Button diagnosticRefresh;
 
     public CraftlineStatusScreen(CraftlineStatusMenu menu, Inventory inventory, Component title)
     {
@@ -58,7 +65,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         if (initial != null)
         {
             orders = List.of(new OrderView(initial.id(), initial.target(), initial.targetKey(), initial.requested(), 0, 0,
-                    initial.blockingMode(), "manual", "QUEUED", "", 0, List.of()));
+                    initial.blockingMode(), "manual", "QUEUED", "", 0, List.of(), List.of()));
             selectedOrder = initial.id();
         }
     }
@@ -84,6 +91,24 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 .bounds(leftPos + 58, topPos + imageHeight - 30, 40, 20).build());
         nextPageButton.setTooltip(Tooltip.create(Component.translatable(
                 "gui.beyond_craftlines.order_next_page")));
+        diagnoseButton = addRenderableWidget(Button.builder(Component.translatable(
+                "gui.beyond_craftlines.diagnostics.title"), ignored -> {
+                    diagnosticsOpen = true;
+                    diagnosticScroll = 0;
+                    updateDiagnosticButtons();
+                    requestStatus();
+                }).bounds(leftPos + 100, topPos + 5, 80, 20).build());
+        diagnosticBack = addRenderableWidget(Button.builder(Component.translatable("gui.back"), ignored -> {
+                    diagnosticsOpen = false; updateDiagnosticButtons();
+                }).bounds(leftPos + imageWidth - 70, topPos + imageHeight - 30, 60, 20).build());
+        diagnosticCopy = addRenderableWidget(Button.builder(Component.translatable(
+                "gui.beyond_craftlines.diagnostics.copy"), ignored -> minecraft.keyboardHandler.setClipboard(
+                String.join("\n", diagnosticEvidence().stream().map(Component::getString).toList())))
+                .bounds(leftPos + 12, topPos + imageHeight - 30, 80, 20).build());
+        diagnosticRefresh = addRenderableWidget(Button.builder(Component.translatable(
+                "gui.beyond_craftlines.diagnostics.refresh"), ignored -> requestStatus())
+                .bounds(leftPos + 98, topPos + imageHeight - 30, 80, 20).build());
+        updateDiagnosticButtons();
         updatePageButtons();
         OrderStatusPayload.clientReceiver = this::receiveOrders;
         requestStatus();
@@ -113,6 +138,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         collapsedOrders.clear();
         defaultExpansionApplied = false;
         cancelButton.active = false;
+        updateDiagnosticButtons();
         updatePageButtons();
         requestStatus();
     }
@@ -160,10 +186,22 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
             }
             IStackKey<?> targetKey = decodeKey(value.getCompound("target_key"));
             if (targetKey == null && previous != null) targetKey = previous.targetKey();
+            List<Component> evidence = new ArrayList<>();
+            var contexts = value.getList("diagnostic_context", Tag.TAG_COMPOUND);
+            for (int at = 0; at < Math.min(4, contexts.size()); at++)
+            {
+                var encoded = contexts.getCompound(at);
+                evidence.add(Component.translatable("gui.beyond_craftlines.diagnostics.step_context",
+                        encoded.getInt("step"), encoded.getString("recipe"), encoded.getString("family")));
+                String endpoints = encoded.getString("endpoints");
+                if (!endpoints.isEmpty()) evidence.add(Component.translatable(
+                        "gui.beyond_craftlines.diagnostics.endpoint_context", endpoints,
+                        encoded.getLong("collected"), encoded.getLong("amount")));
+            }
             cached.put(id, new OrderView(id, value.getString("target"), targetKey, value.getLong("requested"),
                     value.getInt("next"), value.getInt("total"), value.getBoolean("blocking_mode"),
                     value.getString("origin"), value.getString("status"), value.getString("message"), value.getLong("revision"),
-                    List.copyOf(steps)));
+                    List.copyOf(steps), List.copyOf(evidence)));
         }
 
         List<OrderView> next = new ArrayList<>();
@@ -190,6 +228,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         orderPage = receivedPage;
         orderPageCount = Math.max(1, root.getInt("page_count"));
         pagePending = false;
+        statusReceived = true;
         updatePageButtons();
         orders = List.copyOf(next);
         if (!defaultExpansionApplied)
@@ -198,11 +237,63 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 collapsedOrders.add(orders.get(index).id());
             defaultExpansionApplied = true;
         }
-        if (selectedOrder == null || orders.stream().noneMatch(order -> order.id().equals(selectedOrder)))
+        if (!diagnosticsOpen && (selectedOrder == null || orders.stream().noneMatch(order -> order.id().equals(selectedOrder))))
             selectedOrder = orders.stream().filter(OrderView::active).findFirst()
                     .or(() -> orders.stream().findFirst()).map(OrderView::id).orElse(null);
+        updateDiagnosticButtons();
         clampScroll();
         if (cancelButton != null) cancelButton.active = selectedActive();
+    }
+
+    private void updateDiagnosticButtons()
+    {
+        if (diagnoseButton == null) return;
+        diagnoseButton.visible = !diagnosticsOpen;
+        diagnoseButton.active = statusReceived && !pagePending && orders.stream().anyMatch(order -> order.id().equals(selectedOrder));
+        cancelButton.visible = previousPageButton.visible = nextPageButton.visible = !diagnosticsOpen;
+        diagnosticBack.visible = diagnosticCopy.visible = diagnosticRefresh.visible = diagnosticsOpen;
+    }
+
+    private List<Component> diagnosticEvidence()
+    {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.translatable("gui.beyond_craftlines.diagnostics.problem_stalled"));
+        OrderView order = orders.stream().filter(value -> value.id().equals(selectedOrder)).findFirst().orElse(null);
+        if (order == null || pagePending || !statusReceived)
+        {
+            lines.add(Component.translatable("gui.beyond_craftlines.solution.status_unavailable"));
+            return lines;
+        }
+        lines.add(Component.translatable("gui.beyond_craftlines.solution." +
+                com.amicbeam.beyondcraftlines.common.crafting.TroubleshootingRules.execution(order.status(), order.message())));
+        lines.add(Component.translatable("gui.beyond_craftlines.diagnostics.order_evidence",
+                menu.networkId(), order.id().toString(), order.next(), order.total()));
+        lines.add(Component.literal(order.target() + " ×" + order.requested()));
+        lines.add(Component.translatable("gui.beyond_craftlines.status." + order.status().toLowerCase(Locale.ROOT)));
+        lines.add(orderMessage(order.message()));
+        if (!order.evidence().isEmpty())
+        {
+            lines.add(Component.translatable("gui.beyond_craftlines.diagnostics.context_scope"));
+            lines.addAll(order.evidence());
+        }
+        lines.add(Component.translatable("gui.beyond_craftlines.solution.verify_execution"));
+        return List.copyOf(lines);
+    }
+
+    private void renderDiagnostics(GuiGraphics graphics)
+    {
+        List<net.minecraft.util.FormattedCharSequence> wrapped = new ArrayList<>();
+        for (Component line : diagnosticEvidence()) wrapped.addAll(font.split(line, imageWidth - 28));
+        int rows = Math.max(1, viewportHeight() / 11);
+        diagnosticScroll = Math.max(0, Math.min(diagnosticScroll, Math.max(0, wrapped.size() - rows)));
+        for (int i = 0; i < rows && diagnosticScroll + i < wrapped.size(); i++)
+            graphics.drawString(font, wrapped.get(diagnosticScroll + i), leftPos + 14, listTop() + i * 11, 0x253545, false);
+    }
+
+    @Override public void onClose()
+    {
+        if (diagnosticsOpen) { diagnosticsOpen = false; updateDiagnosticButtons(); return; }
+        super.onClose();
     }
 
     private boolean selectedActive()
@@ -245,8 +336,8 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         graphics.drawString(font, Component.translatable("gui.beyond_craftlines.status.network", menu.networkId()),
                 leftPos + imageWidth - 12 - font.width(Component.translatable(
                         "gui.beyond_craftlines.status.network", menu.networkId())), topPos + 12, 0x687784, false);
-        renderOrders(graphics);
-        graphics.drawString(font, font.plainSubstrByWidth((orderPage + 1) + "/" + orderPageCount,
+        if (diagnosticsOpen) renderDiagnostics(graphics); else renderOrders(graphics);
+        if (!diagnosticsOpen) graphics.drawString(font, font.plainSubstrByWidth((orderPage + 1) + "/" + orderPageCount,
                         imageWidth - 240), leftPos + 104, topPos + imageHeight - 24, 0x687784, false);
         renderTooltip(graphics, mouseX, mouseY);
     }
@@ -359,7 +450,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button)
     {
-        if (!pagePending && button == 0 && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
+        if (!diagnosticsOpen && !pagePending && button == 0 && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
                 && mouseY >= listTop() && mouseY < listBottom())
         {
             int y = listTop() - scrollOffset;
@@ -385,6 +476,14 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY)
     {
+        if (diagnosticsOpen)
+        {
+            int size = diagnosticEvidence().stream().mapToInt(line -> font.split(line, imageWidth - 28).size()).sum();
+            int rows = Math.max(1, viewportHeight() / 11);
+            diagnosticScroll = Math.max(0, Math.min(Math.max(0, size - rows),
+                    diagnosticScroll - (int) Math.signum(scrollY) * 3));
+            return true;
+        }
         if (!pagePending && mouseX >= leftPos + 10 && mouseX < leftPos + imageWidth - 10
                 && mouseY >= listTop() && mouseY < listBottom() && maxScroll() > 0)
         {
@@ -414,7 +513,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
 
     private record OrderView(UUID id, String target, IStackKey<?> targetKey, long requested, int next, int total,
                              boolean blockingMode, String origin, String status, String message, long revision,
-                             List<StepView> steps)
+                             List<StepView> steps, List<Component> evidence)
     {
         boolean active() { return status.equals("QUEUED") || status.equals("RUNNING") || status.equals("PAUSED"); }
     }

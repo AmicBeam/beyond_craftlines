@@ -51,7 +51,7 @@ public final class ClientPlannerPreferences
         if (migrations.isEmpty()) return true;
         Snapshot old = load();
         Snapshot migrated = remapRecipeIds(old, migrations);
-        return migrated == old || write(migrated.recipes(), migrated.ingredients(), migrated.outputDestination());
+        return migrated == old || write(migrated.recipes(), migrated.ingredients(), migrated.outputDestination(), migrated.hideApproximate());
     }
 
     static Snapshot remapRecipeIds(Snapshot old, Map<ResourceLocation, ResourceLocation> migrations)
@@ -69,7 +69,7 @@ public final class ClientPlannerPreferences
             ingredients.putIfAbsent(replacement + key.substring(separator), selection);
         });
         if (recipes.equals(old.recipes()) && ingredients.equals(old.ingredients())) return old;
-        return new Snapshot(Map.copyOf(recipes), Map.copyOf(ingredients), old.outputDestination());
+        return new Snapshot(Map.copyOf(recipes), Map.copyOf(ingredients), old.outputDestination(), old.hideApproximate());
     }
 
     public static synchronized boolean setRecipe(String output, ResourceLocation recipe)
@@ -77,7 +77,7 @@ public final class ClientPlannerPreferences
         Snapshot old = load();
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
         if (recipe == null) recipes.remove(output); else recipes.put(output, recipe);
-        return write(recipes, old.ingredients(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination(), old.hideApproximate());
     }
 
     public static synchronized boolean clearRecipe(String output, ResourceLocation legacyOutput)
@@ -86,7 +86,7 @@ public final class ClientPlannerPreferences
         LinkedHashMap<String, ResourceLocation> recipes = new LinkedHashMap<>(old.recipes());
         recipes.remove(output);
         if (legacyOutput != null) recipes.remove(legacyOutput.toString());
-        return write(recipes, old.ingredients(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination(), old.hideApproximate());
     }
 
     public static synchronized boolean setIngredients(ResourceLocation recipe, Iterable<Integer> slots,
@@ -99,13 +99,19 @@ public final class ClientPlannerPreferences
             String key = ingredientKey(recipe, slot);
             if (selection == null) ingredients.remove(key); else ingredients.put(key, selection);
         }
-        return write(old.recipes(), ingredients, old.outputDestination());
+        return write(old.recipes(), ingredients, old.outputDestination(), old.hideApproximate());
     }
 
     public static synchronized boolean setOutputDestination(OrderOutputDestination destination)
     {
         Snapshot old = load();
-        return write(old.recipes(), old.ingredients(), destination);
+        return write(old.recipes(), old.ingredients(), destination, old.hideApproximate());
+    }
+
+    public static synchronized boolean setHideApproximate(boolean hidden)
+    {
+        Snapshot old = load();
+        return write(old.recipes(), old.ingredients(), old.outputDestination(), hidden);
     }
 
     public static String ingredientKey(ResourceLocation recipe, int slot)
@@ -139,7 +145,7 @@ public final class ClientPlannerPreferences
         return Map.copyOf(result);
     }
 
-    private static Snapshot read(Path path) throws IOException
+    static Snapshot read(Path path) throws IOException
     {
         try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8))
         {
@@ -147,24 +153,30 @@ public final class ClientPlannerPreferences
             return new Snapshot(readResourceMap(root.getAsJsonObject("recipes")),
                     readSelectionMap(root.getAsJsonObject("ingredients")),
                     OrderOutputDestination.byId(root.has("output_destination")
-                            ? root.get("output_destination").getAsString() : "network"));
+                            ? root.get("output_destination").getAsString() : "network"),
+                    root.has("hide_approximate") && root.get("hide_approximate").getAsBoolean());
         }
     }
 
     private static boolean write(Map<String, ResourceLocation> recipes,
                                  Map<String, String> ingredients,
-                                 OrderOutputDestination outputDestination)
+                                 OrderOutputDestination outputDestination, boolean hideApproximate)
     {
-        Path path = path();
+        return writeTo(path(), new Snapshot(recipes, ingredients, outputDestination, hideApproximate));
+    }
+
+    static boolean writeTo(Path path, Snapshot snapshot)
+    {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
         {
             Files.createDirectories(path.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("version", 1);
-            root.addProperty("output_destination", outputDestination.id());
-            root.add("recipes", toJson(recipes));
-            root.add("ingredients", toStringJson(ingredients));
+            root.addProperty("output_destination", snapshot.outputDestination().id());
+            root.addProperty("hide_approximate", snapshot.hideApproximate());
+            root.add("recipes", toJson(snapshot.recipes()));
+            root.add("ingredients", toStringJson(snapshot.ingredients()));
             try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
                  Writer writer = Channels.newWriter(channel, StandardCharsets.UTF_8))
@@ -215,8 +227,12 @@ public final class ClientPlannerPreferences
 
     public record Snapshot(Map<String, ResourceLocation> recipes,
                            Map<String, String> ingredients,
-                           OrderOutputDestination outputDestination)
+                           OrderOutputDestination outputDestination, boolean hideApproximate)
     {
+        public Snapshot(Map<String, ResourceLocation> recipes, Map<String, String> ingredients,
+                        OrderOutputDestination outputDestination)
+        { this(recipes, ingredients, outputDestination, false); }
+
         private static final Snapshot EMPTY = new Snapshot(
                 Map.of(), Map.of(), OrderOutputDestination.NETWORK);
     }

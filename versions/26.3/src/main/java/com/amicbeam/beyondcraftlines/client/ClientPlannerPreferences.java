@@ -14,8 +14,12 @@ import org.slf4j.Logger;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.StandardCopyOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -30,18 +34,11 @@ public final class ClientPlannerPreferences
 
     private ClientPlannerPreferences() {}
 
-    public static Snapshot load()
+    public static synchronized Snapshot load()
     {
         Path path = path();
         if (!Files.isRegularFile(path)) return Snapshot.EMPTY;
-        try (Reader reader = Files.newBufferedReader(path))
-        {
-            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
-            return new Snapshot(readResourceMap(root.getAsJsonObject("recipes")),
-                    readSelectionMap(root.getAsJsonObject("ingredients")),
-                    OrderOutputDestination.byId(root.has("output_destination")
-                            ? root.get("output_destination").getAsString() : "network"));
-        }
+        try { return read(path); }
         catch (IOException | RuntimeException exception)
         {
             LOGGER.warn("Unable to read Craftlines client planner preferences", exception);
@@ -54,7 +51,7 @@ public final class ClientPlannerPreferences
         if (migrations.isEmpty()) return true;
         Snapshot old = load();
         Snapshot migrated = remapRecipeIds(old, migrations);
-        return migrated == old || write(migrated.recipes(), migrated.ingredients(), migrated.outputDestination());
+        return migrated == old || write(migrated.recipes(), migrated.ingredients(), migrated.outputDestination(), migrated.hideApproximate());
     }
 
     static Snapshot remapRecipeIds(Snapshot old, Map<Identifier, Identifier> migrations)
@@ -72,27 +69,28 @@ public final class ClientPlannerPreferences
             ingredients.putIfAbsent(replacement + key.substring(separator), selection);
         });
         if (recipes.equals(old.recipes()) && ingredients.equals(old.ingredients())) return old;
-        return new Snapshot(Map.copyOf(recipes), Map.copyOf(ingredients), old.outputDestination());
+        return new Snapshot(Map.copyOf(recipes), Map.copyOf(ingredients), old.outputDestination(), old.hideApproximate());
     }
 
-    public static boolean setRecipe(String output, Identifier recipe)
+    public static synchronized boolean setRecipe(String output, Identifier recipe)
     {
         Snapshot old = load();
         LinkedHashMap<String, Identifier> recipes = new LinkedHashMap<>(old.recipes());
         if (recipe == null) recipes.remove(output); else recipes.put(output, recipe);
-        return write(recipes, old.ingredients(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination(), old.hideApproximate());
     }
 
-    public static boolean clearRecipe(String output, Identifier legacyOutput)
+    public static synchronized boolean clearRecipe(String output, Identifier legacyOutput)
     {
         Snapshot old = load();
         LinkedHashMap<String, Identifier> recipes = new LinkedHashMap<>(old.recipes());
         recipes.remove(output);
         if (legacyOutput != null) recipes.remove(legacyOutput.toString());
-        return write(recipes, old.ingredients(), old.outputDestination());
+        return write(recipes, old.ingredients(), old.outputDestination(), old.hideApproximate());
     }
 
-    public static boolean setIngredients(Identifier recipe, Iterable<Integer> slots, String selection)
+    public static synchronized boolean setIngredients(Identifier recipe, Iterable<Integer> slots,
+                                                      String selection)
     {
         Snapshot old = load();
         LinkedHashMap<String, String> ingredients = new LinkedHashMap<>(old.ingredients());
@@ -101,13 +99,19 @@ public final class ClientPlannerPreferences
             String key = ingredientKey(recipe, slot);
             if (selection == null) ingredients.remove(key); else ingredients.put(key, selection);
         }
-        return write(old.recipes(), ingredients, old.outputDestination());
+        return write(old.recipes(), ingredients, old.outputDestination(), old.hideApproximate());
     }
 
-    public static boolean setOutputDestination(OrderOutputDestination destination)
+    public static synchronized boolean setOutputDestination(OrderOutputDestination destination)
     {
         Snapshot old = load();
-        return write(old.recipes(), old.ingredients(), destination);
+        return write(old.recipes(), old.ingredients(), destination, old.hideApproximate());
+    }
+
+    public static synchronized boolean setHideApproximate(boolean hidden)
+    {
+        Snapshot old = load();
+        return write(old.recipes(), old.ingredients(), old.outputDestination(), hidden);
     }
 
     public static String ingredientKey(Identifier recipe, int slot)
@@ -127,33 +131,61 @@ public final class ClientPlannerPreferences
         return Map.copyOf(result);
     }
 
-    private static Map<String,String> readSelectionMap(JsonObject object){if(object==null)return Map.of();LinkedHashMap<String,String> result=new LinkedHashMap<>();
-        for(Map.Entry<String,JsonElement> entry:object.entrySet()){if(result.size()>=MAX_ENTRIES)break;if(!entry.getValue().isJsonPrimitive())continue;String value=entry.getValue().getAsString();if(!value.isBlank()&&value.length()<=512)result.put(entry.getKey(),value);}return Map.copyOf(result);}
+    private static Map<String, String> readSelectionMap(JsonObject object)
+    {
+        if (object == null) return Map.of();
+        LinkedHashMap<String, String> result = new LinkedHashMap<>();
+        for (Map.Entry<String, JsonElement> entry : object.entrySet())
+        {
+            if (result.size() >= MAX_ENTRIES) break;
+            if (!entry.getValue().isJsonPrimitive()) continue;
+            String value = entry.getValue().getAsString();
+            if (!value.isBlank() && value.length() <= 512) result.put(entry.getKey(), value);
+        }
+        return Map.copyOf(result);
+    }
+
+    static Snapshot read(Path path) throws IOException
+    {
+        try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8))
+        {
+            JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
+            return new Snapshot(readResourceMap(root.getAsJsonObject("recipes")),
+                    readSelectionMap(root.getAsJsonObject("ingredients")),
+                    OrderOutputDestination.byId(root.has("output_destination")
+                            ? root.get("output_destination").getAsString() : "network"),
+                    root.has("hide_approximate") && root.get("hide_approximate").getAsBoolean());
+        }
+    }
 
     private static boolean write(Map<String, Identifier> recipes,
                                  Map<String, String> ingredients,
-                                 OrderOutputDestination outputDestination)
+                                 OrderOutputDestination outputDestination, boolean hideApproximate)
     {
-        Path path = path();
+        return writeTo(path(), new Snapshot(recipes, ingredients, outputDestination, hideApproximate));
+    }
+
+    static boolean writeTo(Path path, Snapshot snapshot)
+    {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try
         {
             Files.createDirectories(path.getParent());
             JsonObject root = new JsonObject();
             root.addProperty("version", 1);
-            root.addProperty("output_destination", outputDestination.id());
-            root.add("recipes", toJson(recipes));
-            root.add("ingredients", toStringJson(ingredients));
-            try (Writer writer = Files.newBufferedWriter(temporary)) { GSON.toJson(root, writer); }
-            try
+            root.addProperty("output_destination", snapshot.outputDestination().id());
+            root.addProperty("hide_approximate", snapshot.hideApproximate());
+            root.add("recipes", toJson(snapshot.recipes()));
+            root.add("ingredients", toStringJson(snapshot.ingredients()));
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 Writer writer = Channels.newWriter(channel, StandardCharsets.UTF_8))
             {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE);
+                GSON.toJson(root, writer);
+                writer.flush();
+                channel.force(true);
             }
-            catch (java.nio.file.AtomicMoveNotSupportedException ignored)
-            {
-                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
-            }
+            moveReplacing(temporary, path);
             return true;
         }
         catch (IOException exception)
@@ -163,6 +195,17 @@ public final class ClientPlannerPreferences
         }
     }
 
+    private static void moveReplacing(Path source, Path target) throws IOException
+    {
+        try
+        {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        }
+        catch (java.nio.file.AtomicMoveNotSupportedException ignored)
+        { Files.move(source, target, StandardCopyOption.REPLACE_EXISTING); }
+    }
+
     private static JsonObject toJson(Map<String, Identifier> values)
     {
         JsonObject result = new JsonObject();
@@ -170,15 +213,26 @@ public final class ClientPlannerPreferences
                 .forEach(entry -> result.addProperty(entry.getKey(), entry.getValue().toString()));
         return result;
     }
-    private static JsonObject toStringJson(Map<String,String> values){JsonObject result=new JsonObject();values.entrySet().stream().limit(MAX_ENTRIES).forEach(entry->result.addProperty(entry.getKey(),entry.getValue()));return result;}
+
+    private static JsonObject toStringJson(Map<String, String> values)
+    {
+        JsonObject result = new JsonObject();
+        values.entrySet().stream().limit(MAX_ENTRIES)
+                .forEach(entry -> result.addProperty(entry.getKey(), entry.getValue()));
+        return result;
+    }
 
     private static Path path()
     { return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve(FILE_NAME); }
 
     public record Snapshot(Map<String, Identifier> recipes,
                            Map<String, String> ingredients,
-                           OrderOutputDestination outputDestination)
+                           OrderOutputDestination outputDestination, boolean hideApproximate)
     {
+        public Snapshot(Map<String, Identifier> recipes, Map<String, String> ingredients,
+                        OrderOutputDestination outputDestination)
+        { this(recipes, ingredients, outputDestination, false); }
+
         private static final Snapshot EMPTY = new Snapshot(
                 Map.of(), Map.of(), OrderOutputDestination.NETWORK);
     }

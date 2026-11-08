@@ -482,7 +482,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         for (int i = 0; i < diagnosticWidgets.size(); i++)
             diagnosticWidgets.get(i).visible = diagnosticsOpen && (i == 4 || chosen && (i == 5 || diagnosticReport != null));
         if (diagnosticWidgets.size() > 6)
-            diagnosticWidgets.get(6).visible = chosen && orderProblem;
+            diagnosticWidgets.get(6).visible = chosen && diagnosticProblem.equals("stalled");
         if (diagnosticWidgets.size() > 5)
             diagnosticWidgets.get(5).active = chosen && (!diagnosticProblem.equals("category")
                     || !diagnosticExpected.getValue().isBlank());
@@ -1810,7 +1810,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         recipePickerRecipes = List.of();
         recipePickerAllRecipes = List.of();
         recipePickerHasApproximate = false;
-        recipePickerHideApproximate = false;
         ingredientPickerNode = node;
         ingredientPickerItems = candidates;
         int selectedIndex = 0;
@@ -1830,13 +1829,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         ingredientPickerItems = List.of();
         recipePickerNode = node;
         recipePickerAllRecipes = candidates;
-        recipePickerRecipes = candidates;
-        recipePickerHideApproximate = false;
         recipePickerHasApproximate = candidates.stream().anyMatch(this::approximateRecipeCandidate);
+        recipePickerRecipes = com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.visibleCandidates(
+                candidates, recipePickerHideApproximate, this::approximateRecipeCandidate);
         int selectedIndex = 0;
         if (node.recipe != null)
-            for (int i = 0; i < candidates.size(); i++)
-                if (candidates.get(i).id().identifier().equals(node.recipe.id().identifier())) { selectedIndex = i + 1; break; }
+            for (int i = 0; i < recipePickerRecipes.size(); i++)
+                if (recipePickerRecipes.get(i).id().identifier().equals(node.recipe.id().identifier())) { selectedIndex = i + 1; break; }
         ingredientPickerPage = selectedIndex / PICKER_PAGE_SIZE;
         positionPicker(node);
         return true;
@@ -1986,6 +1985,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (overApproximateToggle(mouseX, mouseY))
         {
             recipePickerHideApproximate = !recipePickerHideApproximate;
+            if (!ClientPlannerPreferences.setHideApproximate(recipePickerHideApproximate) && minecraft.player != null)
+                minecraft.player.sendOverlayMessage(Component.translatable(
+                        "error.beyond_craftlines.client_planner_preference_save_failed"));
             recipePickerRecipes = com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.visibleCandidates(
                     recipePickerAllRecipes, recipePickerHideApproximate, this::approximateRecipeCandidate);
             ingredientPickerPage = 0;
@@ -2148,7 +2150,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         recipePickerRecipes = List.of();
         recipePickerAllRecipes = List.of();
         recipePickerHasApproximate = false;
-        recipePickerHideApproximate = false;
         ingredientPickerPage = 0;
     }
 
@@ -2292,6 +2293,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
         outputDestination = snapshot.outputDestination();
+        recipePickerHideApproximate = snapshot.hideApproximate();
         if (!(menu.initialTarget() instanceof ItemStackKey))
             outputDestination = OrderOutputDestination.NETWORK;
         updateOutputDestinationButton();

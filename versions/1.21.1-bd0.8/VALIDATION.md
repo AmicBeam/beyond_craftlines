@@ -1,4 +1,6 @@
-# for BD 0.8 构建验证
+# for BD 0.8 构建验证历史
+
+以下为初始适配及后续本地化的历史验证记录，依赖版本、大小、哈希与测试数不代表当前发行产物。当前 0.7.0 重发要求 BD `[0.8.8,0.9)` 和 CompixelUI 0.1.18 或以上；支持矩阵和当前行为见[根目录 README](../../README.md)与[0.7.0 更新日志](../../docs/CHANGELOG_0.7.0.md)。
 
 - 目标：Minecraft 1.21.1 NeoForge / Beyond Dimensions 0.8.0 / CompixelUI 0.1.12。
 - 模组版本：0.7.0；文件：`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`；大小：1,228,624 字节。

@@ -1,10 +1,10 @@
 # Minecraft 1.21.1 — Beyond Dimensions 0.8 专用构建
 
 模组 ID 仍为 `beyond_craftlines`，模组版本仍为 `0.7.0`。成品名为
-`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`，仅支持本体 `[0.8.0,0.9)`。
+`beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`，仅支持本体 `[0.8.8,0.9)`。
 用此 jar 替换普通 1.21.1 版本，不要同时安装两个 Craftlines jar。
 
-前置：Minecraft 1.21.1、NeoForge、本体 0.8.0、JEI、CompixelUI 0.1.12 或以上。
+前置：Minecraft 1.21.1、NeoForge、本体 0.8.8 或以上（低于 0.9）、JEI、CompixelUI 0.1.18 或以上。
 Kotlin 使用两种安装方式之一：普通 CompixelUI + Kotlin for Forge，或自带 Kotlin 的
 CompixelUI `-with-kotlin` 版；不要同时安装 `-with-kotlin` 与 Kotlin for Forge。
 

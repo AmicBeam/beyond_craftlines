@@ -24,7 +24,7 @@
 
 ### 升级说明与验证
 
-- 网络协议升级为 **34**；客户端和服务端需使用同一版本。
+- 网络协议升级为 **34**；客户端和服务端需使用同一版本。规划缓存格式升级至 6，旧格式缓存会自动失效并重建；自行修改配方、标签或 I/O profile 后可用 `/craftlines reload` 刷新。
 - 1.20.1、1.21.1 与 26.1.2 需要对应版本的 Beyond Dimensions **0.7.30+**；26.2 与 26.3 需要 **0.7.31+**。常规包的 BD 上限均为 `<0.8`；BD 0.8 专用包要求 `[0.8.8,0.9)`。五个版本均需 JEI；EMI 为 1.20.1、1.21.1 的可选联动，三个 26.x 版本目前不提供 EMI 运行支持。
 - NBT 选项作用于物品；NeoForge 比较组件，Forge 比较 NBT，均忽略耐久。流体与化学品沿用完整资源键匹配。旧开发版过滤配置默认迁移为原料模式，保留列表与 NBT 选项，旧耐久开关不再生效。
 - Minecraft 26.3 使用 NeoForge 同步配置：全局配置位于 `config/beyond_craftlines-server.toml`，世界覆盖位于 `syncedconfig/beyond_craftlines-server.toml`。从旧开发构建升级时，可将原世界 `serverconfig` 中需要保留的配置复制到 `syncedconfig`。

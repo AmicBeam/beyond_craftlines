@@ -78,6 +78,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private EditBox diagnosticItem;
     private EditBox diagnosticExpected;
     private boolean diagnosticInputsDirty;
+    private boolean diagnosticCategoryOpen;
+    private int diagnosticCategoryScroll;
+    private int diagnosticCategoryCursor = -1;
+    private Set<Identifier> diagnosticCategorySource = Set.of();
+    private List<Identifier> diagnosticCategoryMatches = List.of();
+    private String diagnosticCategoryQuery;
+    private static final int DIAGNOSTIC_CATEGORY_ROWS = 5;
+    private static final int DIAGNOSTIC_CATEGORY_ROW_HEIGHT = 12;
     private final List<Button> diagnosticTypes = new ArrayList<>();
     private boolean diagnosticsOpen;
     private RootRecipeDiagnostics.Report diagnosticReport;
@@ -268,7 +276,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         diagnosticItem.setHint(Component.translatable("gui.beyond_craftlines.diagnostics.current_sample"));
         diagnosticExpected.setValue(retainedExpected);
         diagnosticItem.setResponder(ignored -> { diagnosticSample = null; markDiagnosticInputsDirty(); });
-        diagnosticExpected.setResponder(ignored -> markDiagnosticInputsDirty());
+        diagnosticCategoryQuery = null;
+        diagnosticExpected.setResponder(ignored -> {
+            if (diagnosticProblem.equals("category")) refreshDiagnosticCategoryOptions();
+            diagnosticCategoryScroll = 0;
+            diagnosticCategoryCursor = -1;
+            diagnosticCategoryOpen = diagnosticsOpen && diagnosticProblem.equals("category") && diagnosticExpected.isFocused();
+            markDiagnosticInputsDirty();
+        });
         diagnosticItem.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.item_help")));
         diagnosticExpected.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.expected_help")));
         diagnosticTypes.clear();
@@ -339,7 +354,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             expected = treeRoot.recipe.id().identifier().toString();
         else if (!problem.equals("category") && menu.initialRecipe() != null)
             expected = menu.initialRecipe().toString();
+        diagnosticCategoryOpen = false;
+        diagnosticCategoryScroll = 0;
+        diagnosticCategoryCursor = -1;
         diagnosticExpected.setValue(expected);
+        diagnosticExpected.setTooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics."
+                + (problem.equals("category") ? "category_search_help" : "expected_help"))));
         diagnosticInputsDirty = false;
         setFocused(diagnosticItem);
         updateDiagnosticVisibility();
@@ -378,6 +398,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void refreshDiagnostics()
     {
         if (diagnosticProblem.isBlank()) return;
+        diagnosticCategoryOpen = false;
         diagnosticReport = RootRecipeDiagnostics.capture(menu, treeRoot == null ? null : treeRoot.key,
                 treeRoot == null ? null : treeRoot.recipe, planningCatalog, amountValue(),
                 planningOutcome.toString(), previewError, loadingStatus, planningSnapshotValid,
@@ -402,6 +423,137 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private int diagnosticPageSize() { return Math.max(1, (imageHeight - 144) / 11); }
     private int diagnosticMaxScroll() { return Math.max(0, diagnosticLines.size() - diagnosticPageSize()); }
+
+    private List<Identifier> diagnosticCategoryOptions() { return diagnosticCategoryMatches; }
+
+    private void refreshDiagnosticCategoryOptions()
+    {
+        var types = JeiCatalystIndex.recipeTypes();
+        String query = diagnosticExpected.getValue();
+        if (query.equals(diagnosticCategoryQuery) && types.equals(diagnosticCategorySource)) return;
+        diagnosticCategoryQuery = query;
+        diagnosticCategorySource = types;
+        diagnosticCategoryMatches = types.stream()
+                .filter(type -> RecipeCategorySearch.matches(query, type.toString(),
+                        JeiCatalystIndex.recipeTypeTitle(type).map(Component::getString).orElse("")))
+                .sorted(java.util.Comparator.comparing(Identifier::toString)).toList();
+        diagnosticCategoryScroll = 0;
+        diagnosticCategoryCursor = -1;
+    }
+
+    private int diagnosticCategoryY() { return diagnosticExpected.getY() + diagnosticExpected.getHeight() + 1; }
+    private int diagnosticCategoryRows()
+    { return Math.max(1, Math.min(DIAGNOSTIC_CATEGORY_ROWS,
+            (topPos + imageHeight - 36 - diagnosticCategoryY() - 2) / DIAGNOSTIC_CATEGORY_ROW_HEIGHT)); }
+    private boolean diagnosticCategoryVisible()
+    { return diagnosticsOpen && diagnosticProblem.equals("category") && diagnosticCategoryOpen
+            && diagnosticExpected != null && diagnosticExpected.isFocused(); }
+
+    private boolean overDiagnosticCategoryDropdown(double mouseX, double mouseY)
+    {
+        if (!diagnosticCategoryVisible()) return false;
+        int rows = Math.max(1, Math.min(diagnosticCategoryRows(), diagnosticCategoryOptions().size()));
+        return mouseX >= diagnosticExpected.getX() && mouseX < diagnosticExpected.getX() + diagnosticExpected.getWidth()
+                && mouseY >= diagnosticCategoryY() && mouseY < diagnosticCategoryY() + rows * DIAGNOSTIC_CATEGORY_ROW_HEIGHT + 2;
+    }
+
+    private int diagnosticCategoryHovered(double mouseX, double mouseY)
+    {
+        if (!overDiagnosticCategoryDropdown(mouseX, mouseY) || mouseY < diagnosticCategoryY() + 1) return -1;
+        int index = diagnosticCategoryScroll + (int) (mouseY - diagnosticCategoryY() - 1) / DIAGNOSTIC_CATEGORY_ROW_HEIGHT;
+        return index >= diagnosticCategoryOptions().size() ? -1 : index;
+    }
+
+    private boolean clickDiagnosticCategoryDropdown(double mouseX, double mouseY, int button)
+    {
+        if (!overDiagnosticCategoryDropdown(mouseX, mouseY)) return false;
+        int option = diagnosticCategoryHovered(mouseX, mouseY);
+        if (button == 0 && option >= 0) selectDiagnosticCategory(option);
+        return true;
+    }
+
+    private void selectDiagnosticCategory(int index)
+    {
+        var options = diagnosticCategoryOptions();
+        if (index < 0 || index >= options.size()) return;
+        // Diagnostics consumes a category UID, never the localized display title.
+        diagnosticExpected.setValue(options.get(index).toString());
+        diagnosticCategoryOpen = false;
+        diagnosticCategoryCursor = -1;
+    }
+
+    private void renderDiagnosticCategoryDropdown(GuiGraphicsExtractor graphics, int mouseX, int mouseY)
+    {
+        if (!diagnosticCategoryVisible()) return;
+        refreshDiagnosticCategoryOptions();
+        var options = diagnosticCategoryOptions();
+        int visibleRows = diagnosticCategoryRows();
+        diagnosticCategoryScroll = Math.max(0, Math.min(diagnosticCategoryScroll, Math.max(0, options.size() - visibleRows)));
+        int rows = Math.max(1, Math.min(visibleRows, options.size()));
+        int x = diagnosticExpected.getX(), y = diagnosticCategoryY(), width = diagnosticExpected.getWidth();
+        graphics.fill(x, y, x + width, y + rows * DIAGNOSTIC_CATEGORY_ROW_HEIGHT + 2, 0xFF55D5DA);
+        graphics.fill(x + 1, y + 1, x + width - 1, y + rows * DIAGNOSTIC_CATEGORY_ROW_HEIGHT + 1, 0xFF0E1D24);
+        if (options.isEmpty())
+        {
+            graphics.text(font, Component.translatable("gui.beyond_craftlines.provisioner.manual_no_matches"),
+                    x + 4, y + 3, 0xFF9CB0B8, false);
+            return;
+        }
+        int hovered = diagnosticCategoryHovered(mouseX, mouseY);
+        for (int row = 0; row < rows; row++)
+        {
+            int index = diagnosticCategoryScroll + row;
+            int rowY = y + 1 + row * DIAGNOSTIC_CATEGORY_ROW_HEIGHT;
+            if (index == hovered || hovered < 0 && index == diagnosticCategoryCursor)
+                graphics.fill(x + 1, rowY, x + width - 1, rowY + DIAGNOSTIC_CATEGORY_ROW_HEIGHT, 0xFF3A6972);
+            Identifier type = options.get(index);
+            String title = JeiCatalystIndex.recipeTypeTitle(type).map(Component::getString).orElse(type.toString());
+            graphics.text(font, font.plainSubstrByWidth(title + "  ·  " + type, width - 8),
+                    x + 4, rowY + 2, 0xFFD8F3FF, false);
+        }
+        if (hovered >= 0)
+        {
+            Identifier type = options.get(hovered);
+            var tooltip = List.of(JeiCatalystIndex.recipeTypeTitle(type).orElse(Component.literal(type.toString())),
+                    Component.literal(type.toString()).withStyle(ChatFormatting.GRAY));
+            graphics.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
+        }
+    }
+
+    private boolean diagnosticCategoryKey(int key)
+    {
+        if (!diagnosticsOpen || !diagnosticProblem.equals("category") || diagnosticExpected == null
+                || !diagnosticExpected.isFocused()) return false;
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE && diagnosticCategoryOpen) { diagnosticCategoryOpen = false; return true; }
+        if (key == com.mojang.blaze3d.platform.InputConstants.KEY_DOWN || key == com.mojang.blaze3d.platform.InputConstants.KEY_UP)
+        {
+            diagnosticCategoryOpen = true;
+            refreshDiagnosticCategoryOptions();
+            int size = diagnosticCategoryOptions().size();
+            if (size == 0) return true;
+            int start = diagnosticCategoryCursor < 0 ? diagnosticCategoryScroll : diagnosticCategoryCursor + (key == com.mojang.blaze3d.platform.InputConstants.KEY_DOWN ? 1 : -1);
+            diagnosticCategoryCursor = Math.max(0, Math.min(size - 1, start));
+            diagnosticCategoryScroll = Math.max(0, Math.min(diagnosticCategoryScroll, diagnosticCategoryCursor));
+            if (diagnosticCategoryCursor >= diagnosticCategoryScroll + diagnosticCategoryRows())
+                diagnosticCategoryScroll = diagnosticCategoryCursor - diagnosticCategoryRows() + 1;
+            return true;
+        }
+        if ((key == com.mojang.blaze3d.platform.InputConstants.KEY_RETURN || key == com.mojang.blaze3d.platform.InputConstants.KEY_TAB || key == com.mojang.blaze3d.platform.InputConstants.KEY_NUMPADENTER) && diagnosticCategoryOpen && !diagnosticCategoryOptions().isEmpty())
+        {
+            selectDiagnosticCategory(diagnosticCategoryCursor >= 0 ? diagnosticCategoryCursor : diagnosticCategoryScroll);
+            return true;
+        }
+        return false;
+    }
+
+    @Override public boolean keyPressed(net.minecraft.client.input.KeyEvent event)
+    {
+        if (diagnosticCategoryKey(event.key())) return true;
+        if (diagnosticsOpen && minecraft != null && (diagnosticItem != null && diagnosticItem.isFocused()
+                || diagnosticExpected != null && diagnosticExpected.isFocused())
+                && minecraft.options.keyInventory.matches(event)) return true;
+        return super.keyPressed(event);
+    }
 
     private void renderDiagnostics(GuiGraphicsExtractor graphics)
     {
@@ -435,6 +587,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (diagnosticsOpen)
         {
             diagnosticsOpen = false;
+            diagnosticCategoryOpen = false;
             setFocused(null);
             updateDiagnosticVisibility();
             return;
@@ -731,7 +884,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         hoveredMaterial = null;
         hoveredTreeNode = null;
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        if (diagnosticsOpen) { renderDiagnostics(graphics); return; }
+        if (diagnosticsOpen) { renderDiagnostics(graphics); renderDiagnosticCategoryDropdown(graphics, mouseX, mouseY); return; }
         graphics.text(font, font.plainSubstrByWidth(title.getString(), treeRight() - leftPos - 34), leftPos + 10, topPos + 9, 0x253545, false);
         renderTarget(graphics);
         renderMaterials(graphics, mouseX, mouseY);
@@ -2018,7 +2171,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
-        if (diagnosticsOpen) return super.mouseClicked(event, doubleClick);
+        if (diagnosticsOpen)
+        {
+            if (clickDiagnosticCategoryDropdown(mouseX, mouseY, button)) return true;
+            diagnosticCategoryOpen = diagnosticProblem.equals("category") && diagnosticExpected != null
+                    && diagnosticExpected.isMouseOver(mouseX, mouseY);
+            return super.mouseClicked(event, doubleClick);
+        }
         if (TreeViewScale.previewOnly(treeZoom) && overTree(mouseX, mouseY)) return true;
         if (pickerOpen())
         {
@@ -2830,6 +2989,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         if (diagnosticsOpen)
         {
+            if (overDiagnosticCategoryDropdown(mouseX, mouseY))
+            {
+                diagnosticCategoryScroll = Math.max(0, Math.min(Math.max(0,
+                        diagnosticCategoryOptions().size() - diagnosticCategoryRows()),
+                        diagnosticCategoryScroll - (int) Math.signum(scrollY)));
+                diagnosticCategoryCursor = -1;
+                return true;
+            }
             diagnosticScroll = Math.max(0, Math.min(diagnosticMaxScroll(),
                     diagnosticScroll + (scrollY < 0 ? 3 : scrollY > 0 ? -3 : 0)));
             return true;

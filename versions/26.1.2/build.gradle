@@ -24,6 +24,7 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RootDiagnosticRules.java'
     include 'com/amicbeam/beyondcraftlines/client/RootRecipeDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/client/RecipeCategorySearch.java'
     include 'com/amicbeam/beyondcraftlines/client/integration/jei/DiagnosticGhostIngredientHandler.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/NativeRecipeFallbackPolicy.java'

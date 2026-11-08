@@ -27,7 +27,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.Map;
 import java.util.HashMap;
@@ -436,10 +435,8 @@ public final class ProvisionerConfigScreen extends AbstractContainerScreen<Provi
     private List<Identifier> visibleCandidates()
     {
         if (!manualFallback || search == null || search.getValue().isBlank()) return candidates;
-        String query = search.getValue().strip().toLowerCase(Locale.ROOT);
-        return candidates.stream().filter(type -> type.toString().toLowerCase(Locale.ROOT).contains(query)
-                || JeiCatalystIndex.recipeTypeTitle(type).map(Component::getString).orElse("")
-                .toLowerCase(Locale.ROOT).contains(query)).toList();
+        return candidates.stream().filter(type -> RecipeCategorySearch.matches(search.getValue(), type.toString(),
+                JeiCatalystIndex.recipeTypeTitle(type).map(Component::getString).orElse(""))).toList();
     }
 
     private List<Identifier> manualOptions()

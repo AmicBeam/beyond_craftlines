@@ -391,5 +391,6 @@
   "gui.beyond_craftlines.diagnostics.root_recipe_ok": "[通过] 当前 root 配方 ID 与玩家填写的期望一致。",
   "gui.beyond_craftlines.diagnostics.current_sample": "当前目标样本",
   "gui.beyond_craftlines.diagnostics.profile_not_target": "[建议] 当前 root 不对应期望配方/分类，或目标产物尚未采集，因此暂不提供这条 root 的 profile 模板。请复制报告反馈期望分类或配方，避免修错对象。",
-  "gui.beyond_craftlines.diagnostics.expected_category_blacklisted": "[定位] 此类别已被服务端 crafting.recipeCategoryBlacklist 屏蔽；请核对黑名单配置，不需要为此添加兼容 profile。"
+  "gui.beyond_craftlines.diagnostics.expected_category_blacklisted": "[定位] 此类别已被服务端 crafting.recipeCategoryBlacklist 屏蔽；请核对黑名单配置，不需要为此添加兼容 profile。",
+  "gui.beyond_craftlines.diagnostics.category_search_help": "按分类 ID 或名称搜索，点击下拉候选填入完整 ID。支持滚轮、↑↓ 和 Enter/Tab；Esc 收起列表。也可直接输入未知分类 ID 进行排查。"
 }

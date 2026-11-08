@@ -391,5 +391,6 @@
   "gui.beyond_craftlines.diagnostics.root_recipe_ok": "[Pass] Root recipe ID matches the stated expectation.",
   "gui.beyond_craftlines.diagnostics.current_sample": "Current target sample",
   "gui.beyond_craftlines.diagnostics.profile_not_target": "[Advice] This root differs from the expected recipe/category, or its target output has not been captured. Its profile template is withheld; report the expected category/recipe to avoid editing the wrong compatibility rule.",
-  "gui.beyond_craftlines.diagnostics.expected_category_blacklisted": "[Finding] This category is blocked by the server crafting.recipeCategoryBlacklist setting. Check that setting; a compatibility profile is not needed for this exclusion."
+  "gui.beyond_craftlines.diagnostics.expected_category_blacklisted": "[Finding] This category is blocked by the server crafting.recipeCategoryBlacklist setting. Check that setting; a compatibility profile is not needed for this exclusion.",
+  "gui.beyond_craftlines.diagnostics.category_search_help": "Search category IDs or names, then select a suggestion to fill its complete ID. Use the mouse wheel, arrow keys and Enter/Tab; Esc closes the list. Unknown category IDs can still be entered manually."
 }

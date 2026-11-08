@@ -38,8 +38,7 @@ public final class RecipeResolutionOverrides
 
     public Identifier recipeFor(IStackKey<?> output)
     {
-        Identifier exact = recipes.get(RecipeResourceResolver.resolutionKey(output));
-        return exact == null ? recipes.get(RecipeResourceResolver.sortKey(output)) : exact;
+        return recipes.get(RecipeResourceResolver.resolutionKey(output));
     }
     public Identifier recipeFor(Identifier output)
     { return recipeFor(new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(output)))); }

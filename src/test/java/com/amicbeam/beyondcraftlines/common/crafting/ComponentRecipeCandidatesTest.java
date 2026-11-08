@@ -11,6 +11,15 @@ import static org.junit.jupiter.api.Assertions.*;
 final class ComponentRecipeCandidatesTest
 {
     @BeforeAll static void bootstrap() { DynamicCraftingFixtures.bootstrap(); }
+    @Test void hidingApproximateCandidatesIsReversibleAndKeepsUnknownAndExactEntries()
+    {
+        var original = java.util.List.of("exact", "similar", "unknown");
+        assertEquals(java.util.List.of("exact", "unknown"), ComponentRecipeCandidates.visibleCandidates(
+                original, true, "similar"::equals));
+        assertEquals(original, ComponentRecipeCandidates.visibleCandidates(original, false, "similar"::equals));
+        assertEquals(java.util.List.of("exact", "similar", "unknown"), original);
+    }
+
     @Test void missingComponentsRequireAChoiceAndAnExplicitRecipeThenPlansNormally()
     {
         var requested = DynamicCraftingFixtures.key(DynamicCraftingFixtures.blade("requested"));

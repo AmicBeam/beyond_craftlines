@@ -111,6 +111,14 @@ public final class RecipeResourceResolver
     public static String sortKey(IStackKey<?> key)
     { return key.getTypeId() + "|" + key.getModId() + "|" + key.getSource(); }
 
+    /** Legacy ID/coarse preferences lack a component digest and cannot select a concrete state. */
+    public static boolean isExactChoiceKey(String key)
+    {
+        if (key == null) return false;
+        int separator = key.lastIndexOf('|');
+        return separator >= 0 && key.substring(separator + 1).matches("[0-9a-f]{64}");
+    }
+
     /** Component-aware identity used only for concrete recipe choices, never coarse discovery. */
     public static String resolutionKey(IStackKey<?> key)
     { return RESOLUTION_KEYS.computeIfAbsent(key, RecipeResourceResolver::encodeResolutionKey); }

@@ -91,13 +91,13 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
                 .bounds(leftPos + 58, topPos + imageHeight - 30, 40, 20).build());
         nextPageButton.setTooltip(Tooltip.create(Component.translatable(
                 "gui.beyond_craftlines.order_next_page")));
-        diagnoseButton = addRenderableWidget(Button.builder(Component.translatable(
-                "gui.beyond_craftlines.diagnostics.title"), ignored -> {
+        diagnoseButton = addRenderableWidget(Button.builder(Component.literal("!"), ignored -> {
                     diagnosticsOpen = true;
                     diagnosticScroll = 0;
                     updateDiagnosticButtons();
                     requestStatus();
-                }).bounds(leftPos + 100, topPos + 5, 80, 20).build());
+                }).bounds(leftPos + imageWidth - 28, topPos + 5, 18, 20)
+                .tooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.title"))).build());
         diagnosticBack = addRenderableWidget(Button.builder(Component.translatable("gui.back"), ignored -> {
                     diagnosticsOpen = false; updateDiagnosticButtons();
                 }).bounds(leftPos + imageWidth - 70, topPos + imageHeight - 30, 60, 20).build());
@@ -339,7 +339,7 @@ public final class CraftlineStatusScreen extends AbstractContainerScreen<Craftli
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         graphics.text(font, title, leftPos + 12, topPos + 12, 0x253545, false);
         graphics.text(font, Component.translatable("gui.beyond_craftlines.status.network", menu.networkId()),
-                leftPos + imageWidth - 12 - font.width(Component.translatable(
+                leftPos + imageWidth - 36 - font.width(Component.translatable(
                         "gui.beyond_craftlines.status.network", menu.networkId())), topPos + 12, 0x687784, false);
         if (diagnosticsOpen) renderDiagnostics(graphics); else renderOrders(graphics);
         if (!diagnosticsOpen) graphics.text(font, font.plainSubstrByWidth((orderPage + 1) + "/" + orderPageCount,

@@ -454,5 +454,8 @@
   "gui.beyond_craftlines.diagnostics.category_provisioner_steps": "B — Provisioner:\n1. Connect a provisioner to this network, search and enable %s in its type dropdown. If existing scan candidates omit it, sneak-right-click the provisioner with the connector, then right-click %s and enable the new type in its GUI.\n2. Assign input groups and deliver through wireless target faces or pipes.\n3. Return outputs to this network; reopen the tree and verify.",
   "gui.beyond_craftlines.diagnostics.category_actual_device": "the category’s actual device/catalyst block",
   "gui.beyond_craftlines.diagnostics.category_device_boundary": "Workstation suggestions use browser metadata; capabilities, energy and slots are unverified. Configure actual input delivery and output collection after enabling the category. Diagnostics do not change bindings.",
-  "gui.beyond_craftlines.diagnostics.binding_snapshot_changed": "Bindings changed since this menu opened. Reopen the tree from the network to refresh the catalog; the old catalog cannot prove a missing target recipe."
+  "gui.beyond_craftlines.diagnostics.binding_snapshot_changed": "Bindings changed since this menu opened. Reopen the tree from the network to refresh the catalog; the old catalog cannot prove a missing target recipe.",
+  "gui.beyond_craftlines.hide_approximate": "Hide ~",
+  "gui.beyond_craftlines.show_approximate": "Show ~",
+  "tooltip.beyond_craftlines.toggle_approximate": "Hide or show approximate NBT/component candidates. This only filters the list; selections and preferences stay unchanged."
 }

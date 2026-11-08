@@ -112,6 +112,13 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
                 holder.value(), player.level().registryAccess()).stream().anyMatch(value ->
                 com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(output, value.key()))).toList();
     }
+    public List<RecipeHolder<?>> recipeCandidatesForResource(IStackKey<?> output)
+    {
+        return player.level().isClientSide() ? clientRecipes(com.amicbeam.beyondcraftlines.common.crafting
+                .ClientRecipeLookupIndex.recipeIdsForCandidates(output)) : recipesForResourceOutput(output);
+    }
+    public IStackKey<?> candidateOutput(ResourceLocation recipe, IStackKey<?> requested)
+    { return com.amicbeam.beyondcraftlines.common.crafting.ClientRecipeLookupIndex.candidateOutput(recipe.toString(), requested); }
     public RecipeHolder<?> recipeForResourceOutput(IStackKey<?> output)
     { return recipesForResourceOutput(output).stream().findFirst().orElse(null); }
     public boolean canPlanTarget(IStackKey<?> output)
@@ -195,7 +202,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
     private static List<RecipeHolder<?>> baseClientRecipes(net.minecraft.world.level.Level level)
     {
         // Output resolution is performed lazily by the query/capture that actually needs it.
-        return RecipePlanningService.allRecipes(level).stream()
+        return com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.planningRecipes(level).stream()
                 .filter(RecipePlanningService::supported)
                 .filter(holder -> RecipePlanningService.isNativeExecutable(holder)).toList();
     }
@@ -208,7 +215,7 @@ public final class CraftlineOrderMenu extends AbstractContainerMenu
 
     private static RecipeHolder<?> findDisplayRecipe(net.minecraft.world.level.Level level, ResourceLocation id)
     {
-        return level.getRecipeManager().byKey(id).filter(holder ->
+        return level.getRecipeManager().byKey(id).or(() -> com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.find(level, id)).filter(holder ->
                         RecipePlanningService.isNativeExecutable(holder))
                 .or(() -> com.amicbeam.beyondcraftlines.common.crafting
                         .VirtualProvisionerRecipeRegistry.find(id)).orElse(null);

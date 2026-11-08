@@ -181,10 +181,22 @@ public final class SimulatedCrafting
                                      List<RecipePlan.ReservedMaterial> orderReserved,
                                      boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot,
                                      List<RecipePlan.Material> plannedInputs)
+    { return craftBatch(level, storage, recipeId, expectedOutput, requestedCrafts, selections,
+            orderReserved, escrowOutput, networkSnapshot, plannedInputs, (selection, key) -> false, null, 0); }
+
+    public static Attempt craftBatch(ServerLevel level, UnifiedStorage storage, Identifier recipeId,
+                                     Identifier expectedOutput, long requestedCrafts,
+                                     List<RecipePlan.IngredientSelection> selections,
+                                     List<RecipePlan.ReservedMaterial> orderReserved,
+                                     boolean escrowOutput, PlanningSnapshotService.Snapshot networkSnapshot,
+                                     List<RecipePlan.Material> plannedInputs,
+                                     java.util.function.BiPredicate<String, IStackKey<?>> producedSelection,
+                                     IStackKey<?> declaredOutput, long declaredOutputCount)
     {
         if (requestedCrafts < 1) return Attempt.failed(encode("crafting_invalid_batch"));
         var holder = level.recipeAccess().byKey(net.minecraft.resources.ResourceKey.create(
-                net.minecraft.core.registries.Registries.RECIPE, recipeId)).orElse(null);
+                net.minecraft.core.registries.Registries.RECIPE, recipeId))
+                .or(() -> FireworkRocketRecipeVariants.find(level, recipeId)).orElse(null);
         if (holder == null || !(holder.value() instanceof CraftingRecipe recipe))
             return Attempt.failed(encode("crafting_recipe_unavailable", recipeId));
 
@@ -200,7 +212,7 @@ public final class SimulatedCrafting
         }
         VirtualInputUse[] inputUses=inputUses(holder,level,selections);
         Prepared prepared = prepare(storage, recipe, level, selections, reservedAmounts,
-                networkSnapshot, activeProxies,inputUses);
+                networkSnapshot, activeProxies,inputUses, producedSelection);
         if (prepared == null) return Attempt.failed(encode("crafting_waiting_inputs"));
 
         ItemStack output;
@@ -217,6 +229,14 @@ public final class SimulatedCrafting
         if (output.isEmpty() || !BuiltInRegistries.ITEM.getKey(output.getItem()).equals(expectedOutput))
             return Attempt.failed(encode("crafting_unexpected_output"));
 
+        ItemStackKey actualOutputKey = new ItemStackKey(output);
+        boolean changedOutput = declaredOutput != null && !StackKeyMatch.exact(declaredOutput, actualOutputKey);
+        if (changedOutput && declaredOutputCount > 0 && output.getCount() != declaredOutputCount)
+            return Attempt.failed(encode("crafting_unexpected_output"));
+
+        if (recipe instanceof FireworkRocketCraftingVariant variant && !variant.acceptsOutput(output))
+            return Attempt.failed(encode("crafting_unexpected_output"));
+
         boolean[] persistentSlots = new boolean[prepared.input().size()];
         boolean statefulRemainder = false;
         for (int i = 0; i < prepared.input().size(); i++)
@@ -228,7 +248,7 @@ public final class SimulatedCrafting
             else if (ItemStack.isSameItem(input, remainder)) statefulRemainder = true;
         }
 
-        long batch = statefulRemainder ? 1 : availableBatch(
+        long batch = statefulRemainder || changedOutput ? 1 : availableBatch(
                 storage, networkSnapshot, reservedAmounts, prepared, persistentSlots, requestedCrafts);
         if (batch < 1) return Attempt.failed(encode("crafting_waiting_inputs"));
 
@@ -276,14 +296,15 @@ public final class SimulatedCrafting
                 consumedReserved.entrySet().stream().map(entry ->
                         new RecipePlan.ReservedMaterial(entry.getKey(), entry.getValue())).toList(),
                 escrowOutput ? List.of(new RecipePlan.ReservedMaterial(new ItemStackKey(output),
-                        SaturatingLongMath.multiply(output.getCount(), batch))) : List.of());
+                        SaturatingLongMath.multiply(output.getCount(), batch))) : List.of(),
+                new KeyAmount(actualOutputKey, SaturatingLongMath.multiply(output.getCount(), batch)));
     }
 
     private static Prepared prepare(UnifiedStorage storage, CraftingRecipe recipe, ServerLevel level,
                                     List<RecipePlan.IngredientSelection> selections,
                                     Map<IStackKey<?>, Long> orderReserved,
                                     PlanningSnapshotService.Snapshot networkSnapshot,
-                                    Map<Integer, KeyAmount> fluidProxies,VirtualInputUse[] inputUses)
+                                    Map<Integer, KeyAmount> fluidProxies,VirtualInputUse[] inputUses, java.util.function.BiPredicate<String, IStackKey<?>> producedSelection)
     {
         List<Ingredient> ingredients = recipe.placementInfo().ingredients();
         List<ItemStack> chosen = new ArrayList<>(ingredients.size());
@@ -526,13 +547,13 @@ public final class SimulatedCrafting
 
     public record Attempt(boolean success, String reason, long output, long crafts,
                           List<RecipePlan.ReservedMaterial> consumedReserved,
-                          List<RecipePlan.ReservedMaterial> producedReserved) {
+                          List<RecipePlan.ReservedMaterial> producedReserved, KeyAmount actualOutput) {
         public Attempt
         {
             consumedReserved = List.copyOf(consumedReserved);
             producedReserved = List.copyOf(producedReserved);
         }
         static Attempt failed(String reason)
-        { return new Attempt(false, reason, 0, 0, List.of(), List.of()); }
+        { return new Attempt(false, reason, 0, 0, List.of(), List.of(), null); }
     }
 }

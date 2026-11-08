@@ -100,7 +100,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             if (!(context.player() instanceof ServerPlayer player)) return;
             IStackKey<?> target = payload.target();
             Identifier requestedRecipe = payload.recipeId().isBlank()
-                    ? null : Identifier.tryParse(payload.recipeId());
+                    ? null : com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants.targetRecipeId(player.level(),
+                            Identifier.tryParse(payload.recipeId()), target);
             Identifier requestedType = payload.jeiRecipeType().isBlank()
                     ? null : Identifier.tryParse(payload.jeiRecipeType());
             com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -172,8 +173,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
             var candidates = requestedRecipe == null
                     ? java.util.List.<net.minecraft.world.item.crafting.RecipeHolder<?>>of()
                     : java.util.stream.Stream.concat(
-                            com.amicbeam.beyondcraftlines.common.crafting.RecipeCatalog
-                                    .forLevel(player.level()).stream()
+                            com.amicbeam.beyondcraftlines.common.crafting.FireworkRocketRecipeVariants
+                                    .planningRecipes(player.level()).stream()
                                     .filter(holder -> holder.id().identifier().equals(requestedRecipe))
                                     .filter(holder -> RecipePlanningService.isNativeExecutable(holder)),
                             com.amicbeam.beyondcraftlines.common.crafting.VirtualProvisionerRecipeRegistry
@@ -182,10 +183,8 @@ public record OpenOrderMenuPayload(IStackKey<?> target, String recipeId, String 
                     .filter(RecipePlanningService::supported)
                     .filter(holder -> "crafting".equals(RecipePlanningService.family(holder))
                             || availableFamilies.contains(RecipePlanningService.family(holder)))
-                    .filter(holder -> RecipeOutputResolver.outputs(holder.value(), player.level()).stream()
-                            .anyMatch(output -> com.amicbeam.beyondcraftlines.common.crafting.RecipeIoProfileRegistry
-                                    .outputMatches(holder.value(), holder.id().identifier().toString(),
-                                            target, output.key())))
+                    .filter(holder -> com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates
+                    .selectedOutput(target, RecipeOutputResolver.outputs(holder.value(), player.level())) != null)
                     .findFirst().orElse(null);
             // The JEI category id is presentation metadata, not an execution capability. A single
             // server RecipeType may be split across multiple JEI subcategories whose ids cannot be

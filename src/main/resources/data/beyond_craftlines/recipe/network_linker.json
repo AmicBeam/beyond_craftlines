@@ -7,15 +7,9 @@
     " I "
   ],
   "key": {
-    "I": {
-      "tag": "c:ingots/iron"
-    },
-    "R": {
-      "tag": "c:dusts/redstone"
-    },
-    "C": {
-      "item": "beyonddimensions:space_time_stable_frame"
-    }
+    "I": {"tag": "c:ingots/iron"},
+    "R": {"tag": "c:dusts/redstone"},
+    "C": {"item": "beyonddimensions:space_time_stable_frame"}
   },
   "result": {
     "id": "beyond_craftlines:network_linker",

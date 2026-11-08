@@ -26,8 +26,13 @@ public record OpenOrderStatusMenuPayload() implements CustomPacketPayload
     public static void handle(OpenOrderStatusMenuPayload payload, IPayloadContext context)
     {
         context.enqueueWork(() -> {
-            if (!(context.player() instanceof ServerPlayer player)
-                    || !(player.containerMenu instanceof DimensionsNetMenu dimensionsMenu)) return;
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            if (player.containerMenu instanceof com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu orderMenu)
+            {
+                if (orderMenu.canAccessNetwork(player)) open(player, orderMenu.networkId());
+                return;
+            }
+            if (!(player.containerMenu instanceof DimensionsNetMenu dimensionsMenu)) return;
             DimensionsNet network = dimensionsMenu.storage instanceof UnifiedStorage storage ? storage.getNet() : null;
             if (network == null)
             {

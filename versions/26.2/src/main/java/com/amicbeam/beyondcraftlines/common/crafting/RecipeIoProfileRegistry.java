@@ -120,6 +120,9 @@ public final class RecipeIoProfileRegistry
     public static boolean allowsSameResourceOutput(String recipeId)
     { return resolved(null, recipeId).outputMatch() == OutputMatchSemantics.SAME_RESOURCE; }
 
+    public static boolean hasDynamicOutputProfiles()
+    { return entries.stream().anyMatch(entry -> entry.profile().outputMatch() == OutputMatchSemantics.SAME_RESOURCE); }
+
     public static boolean allowsSameResourceMaterial(String namespace)
     {
         return namespace != null && entries.stream().map(Entry::profile)
@@ -147,6 +150,13 @@ public final class RecipeIoProfileRegistry
             result = SaturatingLongMath.multiply(result, rule.factor());
         }
         return result;
+    }
+
+    /** Only profiles that actually match this recipe; no unrelated configuration in feedback. */
+    public static List<String> diagnosticProfiles(Recipe<?> recipe, String recipeId)
+    {
+        return entries.stream().filter(entry -> matchesProfile(recipe, recipeId, entry.profile()))
+                .map(Entry::encoded).toList();
     }
 
     public static List<String> encodedEntries()

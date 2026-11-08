@@ -4,10 +4,11 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.7.0 improves preference-first inventory-feasible search, adds stock-only recipe choices, compact previews and order pagination, and introduces 36-slot device filters and dashboard container-resource markers. It also adds Minecraft 26.2 and 26.3 support. See the [0.7.0 changelog](docs/CHANGELOG_0.7.0.md), [previous JEI exception fixes](docs/CHANGELOG_0.6.1.md), and [cache and incremental recovery notes](docs/CHANGELOG_0.6.0.md).
+Version 0.7.0 adds smart troubleshooting with live category-binding checks, named workstation suggestions and concrete setup steps; expands order diagnostics; and improves selected-tree validation, component candidates and dynamic output handling. It supports five Minecraft versions plus two dedicated BD 0.8 builds. See the [0.7.0 changelog](docs/CHANGELOG_0.7.0.md), [previous JEI exception fixes](docs/CHANGELOG_0.6.1.md), and [cache and incremental recovery notes](docs/CHANGELOG_0.6.0.md).
 
 ## Features
 
+- **Smart troubleshooting**: The recipe-tree `!` covers root mismatch, missing category, components, failed submission and stalled execution. Its searchable category dropdown and live server binding check produce named workstation and configuration steps, alongside input-group, space, filter and delivery guidance. Select an order in crafting status for live advice and bounded recipe/endpoint evidence; reports and draft I/O profiles remain available. Applies to all five Minecraft versions and both BD 0.8 builds. See [smart troubleshooting](docs/SMART_TROUBLESHOOTING.md).
 - **Preference-first inventory feasibility**: With search enabled, try saved recipe preferences first and backtrack earlier recipe or ingredient choices when a later branch runs out of stock. Stop at the first complete craftable plan, keep one production recipe per resource, and use shorter chains only as a secondary heuristic. Explicit choices in the current tree remain fixed.
 - **Order directly from JEI, EMI, or the network**: JEI and optional EMI recipe pages expose a Craftlines button. One configurable “Order hovered resource” control (middle mouse by default) works across JEI, EMI recipe slots/index entries/favorites, and BD network slots. Recipe defaults synchronize both ways between the Craftlines tree and EMI BoM: selecting or forgetting a preference on either side updates the other, while the selected recipe is still revalidated by the JEI execution backend.
 - **Persistent recipe cache**: In `config/beyond_craftlines-client.toml`, `[planning] preloadAllRecipeTypes = true` is enabled by default: the first world entry preloads all supported types in the background, and machine binding changes only network availability. Set it to `false` for network-based preloading. The planning catalog persists across logins and game restarts, separately for each Minecraft version and single-player world or multiplayer server. After changing recipes, KubeJS, tags, or IO profiles without changing recipe IDs, run the client command `/craftlines reload` to clear the current scope and rebuild it; no operator permission is required. JEI descriptions also persist by category: matching categories restore directly, while changed categories reload. Planning catalogs reconcile recipe ID additions and removals. Cache hits still require source checks, disk reading, decompression, resource decoding, and lookup preparation; the UI distinguishes these stages.
@@ -51,7 +52,7 @@ Unless explicitly scoped to one version, feature descriptions and development ch
 Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.0`, sharing the `0.7` feature version.
 
 - `mod_id`: `beyond_craftlines`
-- Required dependencies: Beyond Dimensions (0.7.30 or newer for 1.20.1, 1.21.1, and 26.1.2; 0.7.31 or newer for 26.2 and 26.3) and JEI (for all five Minecraft versions above)
+- Required dependencies: Beyond Dimensions and JEI on all five Minecraft versions. `for-bd0.7` artifacts require BD `<0.8`: at least 0.7.30 on 1.20.1, 1.21.1 and 26.1.2, or 0.7.31 on 26.2 and 26.3. Separate `for-bd0.8` artifacts on 1.20.1 Forge and 1.21.1 NeoForge require BD `[0.8.8,0.9)`, CompixelUI and Kotlin. Install only one matching Craftlines JAR per instance. The 1.20.1 BD 0.8 runtime requires Forge 47.2.18 or newer.
 - Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2, 26.2, and 26.3 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
 
 Server configuration paths: 1.20.1, 1.21.1, 26.1.2, and 26.2 use `serverconfig/beyond_craftlines-server.toml` inside the world directory. Minecraft 26.3 uses NeoForge synced configuration: the global default is `config/beyond_craftlines-server.toml`, with a per-world override at `syncedconfig/beyond_craftlines-server.toml`, synchronized to clients on connection. When upgrading a world, copy any previous world-specific file from `serverconfig` into that world’s `syncedconfig`; the filename and settings remain unchanged.
@@ -83,11 +84,24 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 The five artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1.jar`
-- `build/libs/beyond_craftlines-0.7.0+1.21.1.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.0+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.0+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.0+26.3-for-bd0.7.jar`
+
+The two BD 0.8 builds share recipe logic and common tests. Run from the repository root with JDK 17 / 21 respectively:
+
+```bash
+./gradlew -p versions/1.20.1-bd0.8 --no-daemon build
+./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
+```
+
+Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.0+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
+
+Ordinary firework rockets have server-derived recipe variants for flight durations 1, 2 and 3. Each consumes one paper and the corresponding number of separate gunpowder slots, and delegates assembly to the real vanilla recipe. Rockets with explosions are never silently replaced by ordinary rockets. See [dynamic crafting acceptance](docs/DYNAMIC_CRAFTING.md) for brewing, rockets and White Sheath policy test coverage and limitations.
+
+When exact recipe matching fails, right-click the resource node to select a component variant. The bundled SlashBlade profile has been removed; actual dynamic outputs are tracked per order. Ordinary exact indexing and batching retain their existing paths. See [component matching](docs/COMPONENT_MATCHING.md). Clients and servers must use matching protocol 34 builds.
 
 ## Usage Overview
 

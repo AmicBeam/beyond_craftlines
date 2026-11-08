@@ -1,6 +1,7 @@
 package com.amicbeam.beyondcraftlines.common.network;
 
 import com.amicbeam.beyondcraftlines.BeyondCraftlines;
+import net.neoforged.neoforge.network.PacketDistributor;
 import com.amicbeam.beyondcraftlines.common.menu.CraftlineOrderMenu;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipeResolutionOverrides;
 import com.amicbeam.beyondcraftlines.common.crafting.RecipePlanningService;
@@ -129,35 +130,37 @@ public record SubmitOrderPayload(String itemId, long count, boolean blockingMode
                         player.getGameProfile().getName(), payload.proposalNonce(),
                         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.resource(menu.initialTarget()),
                         exception.toString(), exception);
-                player.displayClientMessage(localizedFailure(exception.getMessage()), false);
+                PacketDistributor.sendToPlayer(player,
+                        new SubmissionFailurePayload(menu.containerId, payload.proposalNonce(), failureKey(exception.getMessage())));
+                player.displayClientMessage(Component.translatable(failureKey(exception.getMessage())), false);
             }
         });
     }
 
-    private static Component localizedFailure(String error)
+    private static String failureKey(String error)
     {
         if ("orders are being submitted too quickly".equals(error))
-            return Component.translatable("error.beyond_craftlines.order_submit_cooldown");
+            return "error.beyond_craftlines.order_submit_cooldown";
         if ("too many active recipe orders".equals(error))
-            return Component.translatable("error.beyond_craftlines.order_limit");
+            return "error.beyond_craftlines.order_limit";
         if ("network unavailable".equals(error) || "network not found".equals(error))
-            return Component.translatable("error.beyond_craftlines.planning_network_unavailable");
+            return "error.beyond_craftlines.planning_network_unavailable";
         if ("target is not available in this order menu".equals(error))
-            return Component.translatable("error.beyond_craftlines.planning_target_unavailable");
+            return "error.beyond_craftlines.planning_target_unavailable";
         if (error != null && (error.contains("refresh the preview") || error.equals("recipes changed")))
-            return Component.translatable("error.beyond_craftlines.planning_stale");
+            return "error.beyond_craftlines.planning_stale";
         if (error != null && (error.startsWith("missing:")
                 || error.startsWith("required ingredients changed:")
                 || error.startsWith("required resource changed:")))
-            return Component.translatable("error.beyond_craftlines.planning_materials_changed");
+            return "error.beyond_craftlines.planning_materials_changed";
         if (error != null && error.startsWith("network has no room to return reserved resource:"))
-            return Component.translatable("error.beyond_craftlines.order_network_capacity");
+            return "error.beyond_craftlines.order_network_capacity";
         if ("inventory delivery is unsupported for this resource".equals(error))
-            return Component.translatable("error.beyond_craftlines.order_inventory_unsupported");
+            return "error.beyond_craftlines.order_inventory_unsupported";
         if ("client plan is incomplete".equals(error)
                 || "validated plan does not match the order".equals(error))
-            return Component.translatable("error.beyond_craftlines.planning_protocol_invalid");
-        return Component.translatable("error.beyond_craftlines.order_failed_generic");
+            return "error.beyond_craftlines.planning_protocol_invalid";
+        return "error.beyond_craftlines.order_failed_generic";
     }
 
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }

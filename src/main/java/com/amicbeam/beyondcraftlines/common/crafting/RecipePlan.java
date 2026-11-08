@@ -78,8 +78,16 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
     public record Step(ResourceLocation recipe, String family, IStackKey<?> outputKey,
                        long outputPerCraft, long crafts, List<Material> inputs,
                        List<IngredientSelection> ingredientSelections, List<Integer> dependencies,
-                       long selfIncrementSeed, List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts)
+                       long selfIncrementSeed, List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts,
+                       IStackKey<?> executionOutputKey)
     {
+        public Step(ResourceLocation recipe, String family, IStackKey<?> outputKey,
+                    long outputPerCraft, long crafts, List<Material> inputs,
+                    List<IngredientSelection> ingredientSelections, List<Integer> dependencies,
+                    long selfIncrementSeed, List<com.wintercogs.beyonddimensions.api.storage.key.KeyAmount> byproducts)
+        { this(recipe, family, outputKey, outputPerCraft, crafts, inputs, ingredientSelections,
+                dependencies, selfIncrementSeed, byproducts, outputKey); }
+
         public Step(ResourceLocation recipe, String family, IStackKey<?> outputKey,
                     long outputPerCraft, long crafts, List<Material> inputs,
                     List<IngredientSelection> ingredientSelections, List<Integer> dependencies, long selfIncrementSeed)
@@ -110,6 +118,9 @@ public record RecipePlan(IStackKey<?> targetKey, long requested, List<Step> step
             if (recipe == null || family == null || family.isBlank() || outputKey == null || outputKey.isEmpty()
                     || outputPerCraft < 1 || crafts < 1 || selfIncrementSeed < 0)
                 throw new IllegalArgumentException("invalid recipe step");
+            if (executionOutputKey == null) executionOutputKey = outputKey;
+            if (executionOutputKey != outputKey && !ComponentRecipeCandidates.sameResource(outputKey, executionOutputKey))
+                throw new IllegalArgumentException("selected output changed resource type");
             inputs = List.copyOf(inputs);
             ingredientSelections = List.copyOf(ingredientSelections);
             dependencies = List.copyOf(dependencies);

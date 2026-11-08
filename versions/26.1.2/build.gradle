@@ -3,7 +3,7 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.141'
 }
 
-version = "${mod_version}+${minecraft_version}"
+version = "${mod_version}+${minecraft_version}-for-bd0.7"
 group = mod_group_id
 base { archivesName = mod_id }
 java.toolchain.languageVersion = JavaLanguageVersion.of(25)
@@ -22,6 +22,13 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeCatalogScope.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/VirtualRecipeIdentity.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/RecipeIndexDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/RootDiagnosticRules.java'
+    include 'com/amicbeam/beyondcraftlines/common/crafting/TroubleshootingRules.java'
+    include 'com/amicbeam/beyondcraftlines/common/network/SubmissionFailurePayload.java'
+    include 'com/amicbeam/beyondcraftlines/common/network/CategoryBindingStatusPayload.java'
+    include 'com/amicbeam/beyondcraftlines/common/network/RequestCategoryBindingPayload.java'
+    include 'com/amicbeam/beyondcraftlines/client/RootRecipeDiagnostics.java'
+    include 'com/amicbeam/beyondcraftlines/client/integration/jei/DiagnosticGhostIngredientHandler.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/SlowRecipeLogLimiter.java'
     include 'com/amicbeam/beyondcraftlines/common/crafting/NativeRecipeFallbackPolicy.java'
     into layout.buildDirectory.dir('generated/sharedPlanningCatalogCache/main/java')
@@ -29,14 +36,24 @@ def preparePlanningCatalogCache = tasks.register('preparePlanningCatalogCache', 
     filter { line -> line
             .replace('net.minecraft.resources.ResourceLocation', 'net.minecraft.resources.Identifier')
             .replace('ResourceLocation', 'Identifier')
+            .replace('dimension.location()', 'dimension.identifier()')
+            .replace('player.getServer()', 'player.level().getServer()')
+            .replace('holder.id().toString()', 'holder.id().identifier().toString()')
+            .replace('candidate.id().toString()', 'candidate.id().identifier().toString()')
+            .replace('BuiltInRegistries.ITEM.get(id)', 'BuiltInRegistries.ITEM.getValue(id)')
             .replace('level.getRecipeManager()', 'level')
             .replace('elapsed, holder.id(), family,', 'elapsed, holder.id().identifier(), family,')
             .replace('SharedConstants.getCurrentVersion().getName()', 'SharedConstants.getCurrentVersion().name()')
     }
 }
 sourceSets.main.java.srcDir preparePlanningCatalogCache
+def prepareSharedTests = tasks.register('prepareSharedTests', Sync) {
+    from '../../src/test/java'
+    exclude 'com/amicbeam/beyondcraftlines/common/crafting/DynamicCraftingFixtures.java'
+    into layout.buildDirectory.dir('generated/sharedTests')
+}
 sourceSets.test.java {
-    srcDir '../../src/test/java'
+    srcDir prepareSharedTests
     // EMI is not available for 26.1.2, so its shared integration-only tests do not apply here.
     exclude 'com/amicbeam/beyondcraftlines/client/integration/emi/**'
 }
@@ -94,6 +111,11 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
 sourceSets.main.resources.srcDir generateModMetadata
 neoForge.ideSyncTask generateModMetadata
 tasks.named('processResources', ProcessResources) {
+    // Modern Ingredient codecs use item strings and #tag strings instead of legacy objects.
+    filesMatching('data/beyond_craftlines/recipe/*.json') {
+        filter { line -> line.replaceAll(/\{"tag": "([^"]+)"\}/, '"#$1"')
+                .replaceAll(/\{"item": "([^"]+)"\}/, '"$1"') }
+    }
     filesMatching('beyond_craftlines.mixins.json') {
         // JEI layout links apply to all versions; EMI is not available on 26.1.2.
         filter { String line -> line.contains('"emi.') ? '' : line }

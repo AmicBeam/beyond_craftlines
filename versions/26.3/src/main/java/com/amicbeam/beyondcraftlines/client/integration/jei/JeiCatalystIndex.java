@@ -60,6 +60,7 @@ public final class JeiCatalystIndex
     {
         com.amicbeam.beyondcraftlines.client.ClientPlanningCatalogWarmup.invalidate();
         JeiVirtualRecipeLayouts.resetDiagnostics();
+        DIAGNOSTIC_FAILURES.clear();
         RecipeIndexDiagnostics.reset();
         resetPersistentCache();
         Set<Identifier> previousActiveTypes = TYPE_STATE.activeTypes();
@@ -417,6 +418,15 @@ public final class JeiCatalystIndex
         }
     }
 
+    private static final Map<Identifier, Integer> DIAGNOSTIC_FAILURES = new HashMap<>();
+    public static boolean diagnosticRuntimeAvailable() { return runtime != null; }
+    public static Map<String, Integer> diagnosticFailures()
+    {
+        Map<String, Integer> result = new java.util.TreeMap<>();
+        DIAGNOSTIC_FAILURES.forEach((type, count) -> result.put(type.toString(), count));
+        return Map.copyOf(result);
+    }
+
     public static boolean idle() { return TYPE_QUEUE.isEmpty() && !recipesDirty; }
 
     public static Set<Identifier> recipeTypesFor(ItemStack catalyst)
@@ -427,6 +437,18 @@ public final class JeiCatalystIndex
         result.addAll(com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration
                 .recipeTypesFor(catalyst));
         return Set.copyOf(result);
+    }
+
+    /** Reverse lookup of captured browser metadata only; does not enumerate the world or recipes. */
+    public static java.util.List<ItemStack> diagnosticCatalysts(Identifier type)
+    {
+        java.util.Map<String, ItemStack> result = new java.util.TreeMap<>();
+        TYPES_BY_CATALYST.entrySet().stream().filter(entry -> entry.getValue().contains(type))
+                .map(entry -> BuiltInRegistries.ITEM.getValue(entry.getKey()).getDefaultInstance()).forEach(stack -> result.put(
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack));
+        com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.workstationsFor(type)
+                .forEach(stack -> result.put(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack));
+        return result.values().stream().limit(64).map(ItemStack::copy).toList();
     }
 
     public static Optional<Component> recipeTypeTitle(Identifier type)
@@ -458,6 +480,7 @@ public final class JeiCatalystIndex
 
     public static void clear()
     {
+        DIAGNOSTIC_FAILURES.clear();
         RecipeIndexDiagnostics.reset();
         resetPersistentCache();
         runtime = null;
@@ -578,6 +601,7 @@ public final class JeiCatalystIndex
             catch (RuntimeException | LinkageError exception)
             {
                 // A consumed bad recipe must not prevent the remaining recipes in this category from loading.
+                DIAGNOSTIC_FAILURES.merge(recipeType, 1, Integer::sum);
                 complete = recipe == null;
                 if (++failedRecipes <= 8)
                     LOGGER.warn("Unable to index JEI recipe type={} ordinal={} category={} error={} action={}",

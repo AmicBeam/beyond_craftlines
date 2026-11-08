@@ -46,11 +46,12 @@ public final class ClientRecipePreviewTooltip implements ClientTooltipComponent
         int contentX = x + PADDING;
         int contentY = y + PADDING;
         int inputHeight = rows() * SLOT;
-        for (int index = 0; index < data.inputs().size(); index++)
+        for (int index = 0; index < (data.cells().isEmpty() ? data.inputs().size() : data.cells().size()); index++)
         {
-            int slotX = contentX + index % COLUMNS * SLOT;
-            int slotY = contentY + index / COLUMNS * SLOT;
-            renderSlot(graphics, font, data.inputs().get(index), slotX, slotY, 0xFF526273);
+            int slotX = contentX + index % columns() * SLOT;
+            int slotY = contentY + index / columns() * SLOT;
+            int input = data.cells().isEmpty() ? index : data.cells().get(index);
+            renderSlot(graphics, font, input < 0 ? null : data.inputs().get(input), slotX, slotY, 0xFF526273);
         }
 
         int inputWidth = columns() * SLOT;
@@ -63,12 +64,12 @@ public final class ClientRecipePreviewTooltip implements ClientTooltipComponent
 
     private int columns()
     {
-        return Math.max(1, Math.min(COLUMNS, data.inputs().size()));
+        return data.gridWidth() > 0 ? data.gridWidth() : Math.max(1, Math.min(COLUMNS, data.inputs().size()));
     }
 
     private int rows()
     {
-        return Math.max(1, (data.inputs().size() + COLUMNS - 1) / COLUMNS);
+        return data.gridHeight() > 0 ? data.gridHeight() : Math.max(1, (data.inputs().size() + COLUMNS - 1) / COLUMNS);
     }
 
     private static void renderSlot(GuiGraphicsExtractor graphics, Font font, KeyAmount stack,
@@ -76,6 +77,7 @@ public final class ClientRecipePreviewTooltip implements ClientTooltipComponent
     {
         graphics.fill(x, y, x + 18, y + 18, 0xFF111923);
         graphics.outline(x, y, 18, 18, outline);
+        if (stack == null) return;
         stack.key().getRender().render(graphics, stack.key(), x + 1, y + 1);
         if (stack.amount() > 1) stack.key().getRender().renderAmount(
                 graphics, stack.amount(), x + 1, y + 1);

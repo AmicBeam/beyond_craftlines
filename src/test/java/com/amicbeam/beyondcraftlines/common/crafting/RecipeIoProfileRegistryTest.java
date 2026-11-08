@@ -14,9 +14,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 final class RecipeIoProfileRegistryTest
 {
-    @Test void shipsSlashBladeDynamicOutputPolicy()
+    @Test void allowsExplicitDynamicProfilesWithoutShippingASlashBladeException()
     {
         RecipeIoProfileRegistry.Profile profile = read("slashblade.json");
+        org.junit.jupiter.api.Assertions.assertNull(getClass().getResource("/data/beyond_craftlines/recipe_io_profiles/slashblade.json"));
 
         assertEquals(Set.of("slashblade:"), profile.recipeIdPrefixes());
         assertEquals(Set.of("slashblade"), profile.resourceNamespaces());
@@ -104,6 +105,7 @@ final class RecipeIoProfileRegistryTest
 
     private static RecipeIoProfileRegistry.Profile read(String name)
     {
+        if (name.equals("slashblade.json")) return RecipeIoProfileRegistry.parse(JsonParser.parseString(readText(name)).getAsJsonObject());
         try (var stream = RecipeIoProfileRegistryTest.class.getResourceAsStream(
                 "/data/beyond_craftlines/recipe_io_profiles/" + name))
         {
@@ -116,6 +118,10 @@ final class RecipeIoProfileRegistryTest
 
     private static String readText(String name)
     {
+        if (name.equals("slashblade.json")) return """
+                {"recipe_id_prefixes":["slashblade:"],"resource_namespaces":["slashblade"],
+                 "dynamic_output":{"source":"jei_focus","identity":"exact","planning_fallback":"same_resource","execution":"assemble_selected_inputs"}}
+                """;
         try (var stream = RecipeIoProfileRegistryTest.class.getResourceAsStream(
                 "/data/beyond_craftlines/recipe_io_profiles/" + name))
         {

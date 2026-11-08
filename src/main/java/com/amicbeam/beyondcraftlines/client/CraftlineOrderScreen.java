@@ -77,6 +77,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private EditBox diagnosticItem;
     private EditBox diagnosticExpected;
     private boolean diagnosticInputsDirty;
+    private long diagnosticBindingNonce;
+    private com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload diagnosticBindingStatus;
+    private boolean diagnosticCategoryOpen;
+    private Button diagnosticCategoryToggle;
+    private EditBox diagnosticCategorySearch;
+    private final List<Button> diagnosticCategoryRows = new ArrayList<>();
+    private List<DiagnosticCategoryChoice> diagnosticCategoryChoices = List.of();
+    private List<DiagnosticCategoryChoice> diagnosticCategoryMatches = List.of();
+    private int diagnosticCategoryOffset;
+    private record DiagnosticCategoryChoice(String id, String title) {}
     private final List<Button> diagnosticTypes = new ArrayList<>();
     private boolean diagnosticsOpen;
     private RootRecipeDiagnostics.Report diagnosticReport;
@@ -233,6 +243,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             submissionFailure = failure.error();
             if (diagnosticsOpen) markDiagnosticInputsDirty();
         };
+        com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload.clientReceiver = status -> {
+            if (!status.matchesRequest(menu.containerId, diagnosticBindingNonce, diagnosticExpected.getValue().trim())
+                    || !diagnosticsOpen || !diagnosticProblem.equals("category") || diagnosticInputsDirty) return;
+            diagnosticBindingStatus = status;
+            captureDiagnostics();
+        };
         NetworkAmountPayload.clientReceiver = this::receiveNetworkAmount;
         PlanPreviewPayload.clientReceiver = this::receivePlanPreview;
         PlanningSnapshotPayload.clientReceiver = this::receivePlanningSnapshot;
@@ -299,10 +315,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         diagnosticWidgets.clear();
         int y = topPos + imageHeight - 28;
         diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.literal("<"), ignored ->
-                diagnosticScroll = Math.max(0, diagnosticScroll - diagnosticPageSize()))
+                scrollDiagnostics(-1))
                 .bounds(leftPos + 10, y, 18, 18).build()));
         diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.literal(">"), ignored ->
-                diagnosticScroll = Math.min(diagnosticMaxScroll(), diagnosticScroll + diagnosticPageSize()))
+                scrollDiagnostics(1))
                 .bounds(leftPos + 30, y, 18, 18).build()));
         diagnosticWidgets.add(addRenderableWidget(Button.builder(Component.translatable("gui.beyond_craftlines.diagnostics.copy"), ignored -> {
             if (diagnosticReport != null)
@@ -327,6 +343,30 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 "gui.beyond_craftlines.diagnostics.open_status"), ignored -> PacketDistributor.sendToServer(
                 new com.amicbeam.beyondcraftlines.common.network.OpenOrderStatusMenuPayload()))
                 .bounds(leftPos + 10, topPos + 62, fieldWidth, 18).build()));
+        String categoryQuery = diagnosticCategorySearch == null ? "" : diagnosticCategorySearch.getValue();
+        diagnosticCategoryToggle = addRenderableWidget(Button.builder(Component.literal("v"),
+                ignored -> toggleDiagnosticCategories()).bounds(leftPos + imageWidth - 28, topPos + 62, 18, 18)
+                .tooltip(Tooltip.create(Component.translatable("gui.beyond_craftlines.diagnostics.category_dropdown"))).build());
+        diagnosticCategorySearch = addRenderableWidget(new EditBox(font, leftPos + 10, topPos + 86,
+                imageWidth - 20, 18, Component.translatable("gui.beyond_craftlines.diagnostics.category_search")));
+        diagnosticCategorySearch.setMaxLength(256);
+        diagnosticCategorySearch.setHint(Component.translatable("gui.beyond_craftlines.diagnostics.category_search"));
+        diagnosticCategorySearch.setValue(categoryQuery);
+        diagnosticCategorySearch.setResponder(ignored -> filterDiagnosticCategories());
+        diagnosticCategoryRows.clear();
+        for (int index = 0; index < diagnosticCategoryPageSize(); index++)
+        {
+            final int row = index;
+            diagnosticCategoryRows.add(addRenderableWidget(Button.builder(Component.empty(), ignored -> {
+                int at = diagnosticCategoryOffset + row;
+                if (at >= diagnosticCategoryMatches.size()) return;
+                diagnosticExpected.setValue(diagnosticCategoryMatches.get(at).id());
+                diagnosticCategoryOpen = false;
+                setFocused(diagnosticExpected);
+                updateDiagnosticVisibility();
+            }).bounds(leftPos + 10, topPos + 108 + index * 18, imageWidth - 20, 18).build()));
+        }
+        updateDiagnosticCategoryRows();
         if (diagnosticsOpen && diagnosticReport != null) wrapDiagnosticReport();
         updateDiagnosticVisibility();
     }
@@ -350,6 +390,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private void chooseDiagnosticProblem(String problem)
     {
         diagnosticProblem = problem;
+        diagnosticCategoryOpen = false;
         diagnosticReport = null;
         diagnosticLines = List.of();
         String expected = "";
@@ -365,8 +406,71 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         updateDiagnosticVisibility();
     }
 
+    private int diagnosticCategoryPageSize() { return Math.max(1, Math.min(8, (imageHeight - 150) / 18)); }
+    private int diagnosticCategoryMaxOffset()
+    { return Math.max(0, diagnosticCategoryMatches.size() - diagnosticCategoryPageSize()); }
+
+    private void toggleDiagnosticCategories()
+    {
+        diagnosticCategoryOpen = !diagnosticCategoryOpen;
+        if (diagnosticCategoryOpen)
+        {
+            diagnosticCategoryChoices = JeiCatalystIndex.recipeTypes().stream()
+                    .map(id -> new DiagnosticCategoryChoice(id.toString(),
+                            JeiCatalystIndex.recipeTypeTitle(id).map(Component::getString).orElse(id.toString())))
+                    .sorted(java.util.Comparator.comparing(DiagnosticCategoryChoice::id)).toList();
+            diagnosticCategorySearch.setValue("");
+            filterDiagnosticCategories();
+            setFocused(diagnosticCategorySearch);
+        }
+        else setFocused(diagnosticExpected);
+        updateDiagnosticVisibility();
+    }
+
+    private void filterDiagnosticCategories()
+    {
+        String query = diagnosticCategorySearch.getValue().strip().toLowerCase(java.util.Locale.ROOT);
+        diagnosticCategoryMatches = diagnosticCategoryChoices.stream().filter(option ->
+                option.id().toLowerCase(java.util.Locale.ROOT).contains(query)
+                        || com.amicbeam.beyondcraftlines.common.crafting.VanillaProvisionerRecipeTypes.runtimeFamily(option.id())
+                        .toLowerCase(java.util.Locale.ROOT).contains(query)
+                        || option.title().toLowerCase(java.util.Locale.ROOT).contains(query)).toList();
+        diagnosticCategoryOffset = 0;
+        updateDiagnosticCategoryRows();
+    }
+
+    private void updateDiagnosticCategoryRows()
+    {
+        diagnosticCategoryOffset = Math.max(0, Math.min(diagnosticCategoryOffset, diagnosticCategoryMaxOffset()));
+        for (int row = 0; row < diagnosticCategoryRows.size(); row++)
+        {
+            Button button = diagnosticCategoryRows.get(row);
+            int at = diagnosticCategoryOffset + row;
+            button.visible = diagnosticsOpen && diagnosticCategoryOpen && at < diagnosticCategoryMatches.size();
+            if (!button.visible) continue;
+            var option = diagnosticCategoryMatches.get(at);
+            String label = option.title() + " · " + option.id();
+            button.setMessage(Component.literal(font.plainSubstrByWidth(label, imageWidth - 30)));
+            button.setTooltip(Tooltip.create(Component.literal(label)));
+        }
+    }
+
+    private void scrollDiagnostics(int direction)
+    {
+        if (diagnosticCategoryOpen)
+        {
+            diagnosticCategoryOffset = Math.max(0, Math.min(diagnosticCategoryMaxOffset(),
+                    diagnosticCategoryOffset + direction * diagnosticCategoryPageSize()));
+            updateDiagnosticCategoryRows();
+        }
+        else diagnosticScroll = Math.max(0, Math.min(diagnosticMaxScroll(),
+                diagnosticScroll + direction * diagnosticPageSize()));
+    }
+
     private void markDiagnosticInputsDirty()
     {
+        diagnosticBindingStatus = null;
+        diagnosticBindingNonce++;
         diagnosticInputsDirty = true;
         updateDiagnosticVisibility();
     }
@@ -390,6 +494,20 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (diagnosticWidgets.size() > 5)
             diagnosticWidgets.get(5).active = chosen && (!diagnosticProblem.equals("category")
                     || !diagnosticExpected.getValue().isBlank());
+        if (diagnosticCategoryToggle != null)
+        {
+            diagnosticCategoryToggle.visible = chosen && diagnosticProblem.equals("category");
+            diagnosticExpected.setWidth((imageWidth - 30) / 2 - (diagnosticCategoryToggle.visible ? 22 : 0));
+            diagnosticCategoryToggle.setMessage(Component.literal(diagnosticCategoryOpen ? "^" : "v"));
+            diagnosticCategorySearch.visible = chosen && diagnosticCategoryOpen;
+            updateDiagnosticCategoryRows();
+            if (diagnosticCategoryOpen)
+            {
+                diagnosticWidgets.get(0).visible = diagnosticWidgets.get(1).visible = true;
+                diagnosticWidgets.get(2).visible = diagnosticWidgets.get(3).visible = false;
+                diagnosticWidgets.get(5).active = false;
+            }
+        }
         if (diagnosticWidgets.size() > 3)
         {
             diagnosticWidgets.get(2).active = diagnosticReport != null && !diagnosticInputsDirty;
@@ -399,6 +517,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     }
 
     private void refreshDiagnostics()
+    {
+        if (diagnosticProblem.isBlank()) return;
+        diagnosticInputsDirty = false;
+        diagnosticBindingStatus = null;
+        if (diagnosticProblem.equals("category"))
+            PacketDistributor.sendToServer(new com.amicbeam.beyondcraftlines.common.network.RequestCategoryBindingPayload(
+                    menu.containerId, ++diagnosticBindingNonce, diagnosticExpected.getValue().trim()));
+        captureDiagnostics();
+    }
+
+    private void captureDiagnostics()
     {
         if (diagnosticProblem.isBlank()) return;
         if (diagnosticProblem.equals("submit") || diagnosticProblem.equals("stalled"))
@@ -422,7 +551,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         else diagnosticReport = RootRecipeDiagnostics.capture(menu, treeRoot == null ? null : treeRoot.key,
                 treeRoot == null ? null : treeRoot.recipe, planningCatalog, amountValue(),
                 planningOutcome.toString(), previewError, loadingStatus, planningSnapshotValid,
-                diagnosticSample, diagnosticProblem, diagnosticItem.getValue().trim(), diagnosticExpected.getValue().trim());
+                diagnosticSample, diagnosticProblem, diagnosticItem.getValue().trim(), diagnosticExpected.getValue().trim(), diagnosticBindingStatus);
         diagnosticInputsDirty = false;
         wrapDiagnosticReport();
         if (diagnosticWidgets.size() > 3)
@@ -465,6 +594,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 + (diagnosticProblem.equals("category") ? "category" : "recipe")),
                 leftPos + 20 + fieldWidth, topPos + 51, 0x253545, false);
         }
+        if (diagnosticCategoryOpen)
+        {
+            graphics.drawString(font, Component.translatable(diagnosticCategoryMatches.isEmpty()
+                    ? "gui.beyond_craftlines.diagnostics.category_empty"
+                    : "gui.beyond_craftlines.diagnostics.category_count", diagnosticCategoryMatches.size()),
+                    leftPos + 12, topPos + 111 + diagnosticCategoryPageSize() * 18, 0x465564, false);
+            return;
+        }
         if (diagnosticInputsDirty || diagnosticReport == null)
             graphics.drawString(font, Component.translatable("gui.beyond_craftlines.diagnostics.run_prompt"),
                     leftPos + 12, topPos + 85, 0xA34C00, false);
@@ -477,6 +614,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     @Override public void onClose()
     {
+        if (diagnosticCategoryOpen)
+        {
+            diagnosticCategoryOpen = false;
+            setFocused(diagnosticExpected);
+            updateDiagnosticVisibility();
+            return;
+        }
         if (diagnosticsOpen)
         {
             diagnosticsOpen = false;
@@ -2463,7 +2607,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         Map<String, ResourceLocation> fixedTreeRecipes = new LinkedHashMap<>(visibleTreeRecipes());
         fixedTreeRecipes.putAll(forcedRecipes);
-        Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = visibleTreeIngredients();
+        Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = new LinkedHashMap<>(visibleTreeIngredients());
+        fixedTreeIngredients.putAll(forcedIngredients);
         preferredRecipes.putAll(fixedTreeRecipes);
         preferredRecipes.putAll(forcedRecipes);
         preferredIngredients.putAll(fixedTreeIngredients);
@@ -2536,16 +2681,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 catch (RuntimeException ignored) {}
             }
             if (!refreshSnapshotIfMissing && proposal != null && !proposal.craftable()
-                    && searchExhausted && (fallbackSearchNanos = searchDeadline - System.nanoTime()) > 0)
+                    && searchExhausted)
             {
                 try
                 {
-                    // Candidate optimization is bounded, but the already-visible tree must still be
-                    // validated deterministically. This preserves a craftable current choice instead
-                    // of replacing it with the incomplete branch that happened to hit the budget.
-                    proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
-                            fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes,
-                            fallbackSearchNanos, false);
+                    // Discovery may consume its entire budget. Validate current selections with
+                    // a fresh bounded budget; manual pins override stale rendered choices.
+                    proposal = ClientRecipePlanner.validateSelectedTree(planningCatalog, stock, target, count,
+                            fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes);
                     failure = null;
                 }
                 catch (RuntimeException exception) { failure = exception; }
@@ -3000,11 +3143,25 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
+    @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers)
+    {
+        if (diagnosticsOpen && getFocused() instanceof EditBox field && field.visible
+                && minecraft.options.keyInventory.matches(keyCode, scanCode)) return true;
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY)
     {
         if (diagnosticsOpen)
         {
+            if (diagnosticCategoryOpen)
+            {
+                diagnosticCategoryOffset = Math.max(0, Math.min(diagnosticCategoryMaxOffset(),
+                        diagnosticCategoryOffset + (scrollY < 0 ? 1 : scrollY > 0 ? -1 : 0)));
+                updateDiagnosticCategoryRows();
+                return true;
+            }
             diagnosticScroll = Math.max(0, Math.min(diagnosticMaxScroll(),
                     diagnosticScroll + (scrollY < 0 ? 3 : scrollY > 0 ? -3 : 0)));
             return true;
@@ -3062,6 +3219,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         cancelPlanningTask();
         super.removed();
         com.amicbeam.beyondcraftlines.common.network.SubmissionFailurePayload.clientReceiver = ignored -> {};
+        com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload.clientReceiver = ignored -> {};
         NetworkAmountPayload.clientReceiver = (ignoredId, ignoredAmount) -> {};
         PlanPreviewPayload.clientReceiver = ignored -> {};
         PlanningSnapshotPayload.clientReceiver = ignored -> {};

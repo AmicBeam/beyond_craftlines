@@ -19,5 +19,7 @@ public final class EmiOptionalIntegration
     { return Set.of(); }
     public static Optional<net.minecraft.network.chat.Component> recipeTypeTitle(Identifier type)
     { return Optional.empty(); }
+    public static java.util.List<net.minecraft.world.item.ItemStack> workstationsFor(Identifier type)
+    { return java.util.List.of(); }
     public static Set<Identifier> recipeTypes() { return Set.of(); }
 }

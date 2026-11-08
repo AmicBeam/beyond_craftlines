@@ -28,7 +28,8 @@ public final class RootRecipeDiagnostics
     public static Report capture(CraftlineOrderMenu menu, IStackKey<?> root, RecipeHolder<?> holder,
                                  ClientRecipePlanner.Catalog catalog, long amount, String outcome,
                                  String previewError, String loading, boolean snapshotValid,
-                                 IStackKey<?> sample, String problem, String itemId, String expected)
+                                 IStackKey<?> sample, String problem, String itemId, String expected,
+                                 com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload binding)
     {
         List<Component> lines = new ArrayList<>();
         String profile = "";
@@ -80,7 +81,7 @@ public final class RootRecipeDiagnostics
             boolean exact = outputs.stream().anyMatch(output -> StackKeyMatch.exact(target, output.key()));
             String status = RootDiagnosticRules.outputStatus(ready, holder != null, outputs.size(), exact);
             List<Component> findings = new ArrayList<>();
-            appendExpectation(findings, menu, holder, catalog, target, problem, expected, ready);
+            appendExpectation(findings, menu, holder, catalog, target, problem, expected, ready, binding);
             add(findings, status);
             lines.addAll(1, findings);
             if (holder != null)
@@ -169,23 +170,32 @@ public final class RootRecipeDiagnostics
 
     private static void appendExpectation(List<Component> lines, CraftlineOrderMenu menu,
                                            RecipeHolder<?> holder, ClientRecipePlanner.Catalog catalog,
-                                           IStackKey<?> target, String problem, String expected, boolean ready)
+                                           IStackKey<?> target, String problem, String expected, boolean ready,
+                                           com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload binding)
     {
         if (expected.isBlank())
         {
             add(lines, "expectation_empty");
             return;
         }
-        lines.add(Component.literal("expected " + (problem.equals("category") ? "category: " : "recipe: ") + expected));
+        if (!problem.equals("category")) lines.add(Component.literal("expected recipe: " + expected));
         var recipes = catalog == null ? List.<ClientRecipePlanner.Recipe>of() : catalog.diagnosticRecipes(target);
         if (problem.equals("category"))
         {
             String wanted = canonicalFamily(expected);
             boolean known = JeiCatalystIndex.recipeTypes().stream().anyMatch(type -> canonicalFamily(type.toString()).equals(wanted));
-            boolean enabled = RecipeIndexVisibility.includes(wanted, menu.availableFamilies());
+            boolean snapshotEnabled = RecipeIndexVisibility.includes(wanted, menu.availableFamilies());
+            appendCategorySolution(lines, menu, expected, known, binding);
+            if (binding == null || !binding.networkAvailable() || !known) return;
+            boolean enabled = binding.available();
+            if (enabled != snapshotEnabled)
+            {
+                add(lines, "binding_snapshot_changed");
+                return;
+            }
             var candidates = recipes.stream().filter(recipe -> canonicalFamily(recipe.family()).equals(wanted)).toList();
             add(lines, RootDiagnosticRules.expectedCategoryStatus(ready, known, enabled, candidates.size()));
-            if (known && !enabled) lines.add(Component.translatable("gui.beyond_craftlines.solution.enable_type"));
+
             lines.add(Component.literal("expected category captured outputs=" + candidates.size()
                     + "; exact=" + candidates.stream().filter(recipe -> StackKeyMatch.exact(target, recipe.output())).count()));
             candidates.stream().map(recipe -> recipe.id().toString()).distinct().sorted().limit(8)
@@ -209,6 +219,48 @@ public final class RootRecipeDiagnostics
                 for (var output : catalog.diagnosticOutputs(expected, target).stream().limit(4).toList())
                     if (!StackKeyMatch.exact(target, output.key())) appendDifferences(lines, target, output.key());
         }
+    }
+
+    private static void appendCategorySolution(List<Component> lines, CraftlineOrderMenu menu,
+                                               String category, boolean known,
+                                               com.amicbeam.beyondcraftlines.common.network.CategoryBindingStatusPayload binding)
+    {
+        var id = net.minecraft.resources.ResourceLocation.tryParse(category);
+        var title = id == null ? Component.literal(category)
+                : JeiCatalystIndex.recipeTypeTitle(id).orElse(Component.literal(category));
+        add(lines, "category_solution_title", title, category, menu.networkId());
+        if (id == null) { add(lines, "category_choose_known"); return; }
+        if (binding == null) { add(lines, "binding_query_pending"); return; }
+        if (!binding.networkAvailable()) { add(lines, "binding_network_missing"); return; }
+        add(lines, binding.available() ? "binding_enabled" : binding.matches() == 0 ? "binding_absent" : "binding_unavailable",
+                category, binding.matches());
+        if (!binding.endpoints().isBlank()) add(lines, "binding_locations", binding.endpoints());
+        if (binding.available())
+        {
+            add(lines, "binding_already_enabled");
+            return;
+        }
+        if (!binding.manager()) add(lines, "binding_need_manager");
+        if (!known || id == null) { add(lines, "category_choose_known"); return; }
+        var devices = JeiCatalystIndex.diagnosticCatalysts(id).stream()
+                .filter(stack -> stack.getItem() instanceof net.minecraft.world.item.BlockItem block
+                        && com.amicbeam.beyondcraftlines.common.data.DeviceType.isBindableMachine(
+                                net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block.getBlock()).toString()))
+                .limit(8).toList();
+        if (!devices.isEmpty())
+        {
+            add(lines, "category_devices");
+            for (var device : devices)
+                lines.add(Component.literal(" • ").append(device.getHoverName()).append(" · "
+                        + net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(device.getItem())));
+            if (!VanillaProvisionerRecipeTypes.isProvisionerOnly(id))
+                add(lines, "category_bind_steps", devices.get(0).getHoverName(), category);
+        }
+        else add(lines, "category_no_device");
+        add(lines, "category_provisioner_steps", category,
+                devices.isEmpty() ? Component.translatable("gui.beyond_craftlines.diagnostics.category_actual_device")
+                        : devices.get(0).getHoverName());
+        add(lines, "category_device_boundary");
     }
 
     private static void appendDifferences(List<Component> lines, IStackKey<?> target, IStackKey<?> output)

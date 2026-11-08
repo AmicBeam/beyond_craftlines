@@ -12,6 +12,13 @@ public final class RootDiagnosticRules
 {
     private RootDiagnosticRules() {}
 
+    public static boolean matchesBinding(String category, Set<String> families, Set<String> jeiTypes)
+    {
+        String family = VanillaProvisionerRecipeTypes.runtimeFamily(category);
+        if (family.equals("minecraft:crafting")) family = "crafting";
+        return families.contains(family) || jeiTypes.contains(category);
+    }
+
     public static String expectedCategoryStatus(boolean ready, boolean known, boolean enabled, int candidates)
     {
         if (!known) return "expected_category_unknown";

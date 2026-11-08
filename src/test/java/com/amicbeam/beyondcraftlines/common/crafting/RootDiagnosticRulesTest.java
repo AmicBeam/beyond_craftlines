@@ -8,6 +8,16 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class RootDiagnosticRulesTest
 {
+    @Test void bindingLookupMatchesExactCategoriesAndOnlyKnownVanillaAliases()
+    {
+        assertTrue(RootDiagnosticRules.matchesBinding("test:altar", Set.of("test:altar"), Set.of()));
+        assertTrue(RootDiagnosticRules.matchesBinding("test:altar", Set.of(), Set.of("test:altar")));
+        assertFalse(RootDiagnosticRules.matchesBinding("test:altar", Set.of("test:press"), Set.of("test:press")));
+        assertTrue(RootDiagnosticRules.matchesBinding("minecraft:furnace", Set.of("smelting"), Set.of()));
+        assertTrue(RootDiagnosticRules.matchesBinding("minecraft:crafting", Set.of("crafting"), Set.of()));
+        assertFalse(RootDiagnosticRules.matchesBinding("test:furnace", Set.of("smelting"), Set.of()));
+    }
+
     @Test void playerCategoryExpectationDistinguishesMissingDisabledPendingAndEmpty()
     {
         assertEquals("expected_category_unknown", RootDiagnosticRules.expectedCategoryStatus(true, false, true, 0));

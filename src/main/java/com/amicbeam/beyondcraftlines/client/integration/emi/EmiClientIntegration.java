@@ -99,6 +99,13 @@ public final class EmiClientIntegration
         return Optional.ofNullable(titlesByType.get(type));
     }
 
+    public static java.util.List<ItemStack> workstationsFor(ResourceLocation type)
+    {
+        refreshMetadata();
+        return typesByWorkstation.entrySet().stream().filter(entry -> entry.getValue().contains(type))
+                .map(entry -> entry.getKey().getDefaultInstance()).limit(64).toList();
+    }
+
     public static Set<ResourceLocation> recipeTypes()
     {
         refreshMetadata();

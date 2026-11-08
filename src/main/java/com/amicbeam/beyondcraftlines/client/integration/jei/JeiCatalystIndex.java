@@ -425,6 +425,18 @@ public final class JeiCatalystIndex
         return Set.copyOf(result);
     }
 
+    /** Reverse lookup of captured browser metadata only; does not enumerate the world or recipes. */
+    public static java.util.List<ItemStack> diagnosticCatalysts(ResourceLocation type)
+    {
+        java.util.Map<String, ItemStack> result = new java.util.TreeMap<>();
+        TYPES_BY_CATALYST.entrySet().stream().filter(entry -> entry.getValue().contains(type))
+                .map(entry -> entry.getKey().getDefaultInstance()).forEach(stack -> result.put(
+                        net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack));
+        com.amicbeam.beyondcraftlines.client.integration.emi.EmiOptionalIntegration.workstationsFor(type)
+                .forEach(stack -> result.put(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack));
+        return result.values().stream().limit(64).map(ItemStack::copy).toList();
+    }
+
     public static Optional<Component> recipeTypeTitle(ResourceLocation type)
     {
         Optional<Component> emi = com.amicbeam.beyondcraftlines.client.integration.emi

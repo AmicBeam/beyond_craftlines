@@ -19,6 +19,7 @@ public final class EmiOptionalIntegration
     private static Method ghostHovered;
     private static Method preferredRecipe;
     private static Method recipeTypesFor;
+    private static Method workstationsFor;
     private static Method recipeTypeTitle;
     private static Method recipeTypes;
     private static Method setPreferredRecipe;
@@ -103,6 +104,20 @@ public final class EmiOptionalIntegration
     }
 
     @SuppressWarnings("unchecked")
+    public static java.util.List<net.minecraft.world.item.ItemStack> workstationsFor(ResourceLocation type)
+    {
+        initialize();
+        if (workstationsFor == null || type == null) return java.util.List.of();
+        try
+        {
+            Object value = workstationsFor.invoke(null, type);
+            return value instanceof java.util.List<?> stacks
+                    ? (java.util.List<net.minecraft.world.item.ItemStack>) stacks : java.util.List.of();
+        }
+        catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) { return java.util.List.of(); }
+    }
+
+    @SuppressWarnings("unchecked")
     public static Optional<net.minecraft.network.chat.Component> recipeTypeTitle(ResourceLocation type)
     {
         initialize();
@@ -143,6 +158,7 @@ public final class EmiOptionalIntegration
             refreshMetadata = type.getMethod("refreshMetadata");
             preferredRecipe = type.getMethod("preferredRecipe", IStackKey.class);
             recipeTypesFor = type.getMethod("recipeTypesFor", net.minecraft.world.item.ItemStack.class);
+            workstationsFor = type.getMethod("workstationsFor", ResourceLocation.class);
             recipeTypeTitle = type.getMethod("recipeTypeTitle", ResourceLocation.class);
             recipeTypes = type.getMethod("recipeTypes");
             setPreferredRecipe = type.getMethod("setPreferredRecipe", IStackKey.class, ResourceLocation.class);
@@ -157,6 +173,7 @@ public final class EmiOptionalIntegration
             refreshMetadata = null;
             preferredRecipe = null;
             recipeTypesFor = null;
+            workstationsFor = null;
             recipeTypeTitle = null;
             recipeTypes = null;
             setPreferredRecipe = null;

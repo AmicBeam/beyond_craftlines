@@ -118,6 +118,18 @@ public final class ClientRecipePlanner
                 state.rootNoRecipe, state.cyclicDependencies > 0, exhausted));
     }
 
+    /** Validate current selections with a fresh budget, independent of candidate discovery.
+     *  Retains normal depth/node/time and cancellation guards and never relaxes resource identity. */
+    public static Proposal validateSelectedTree(Catalog catalog, Map<IStackKey<?>, Long> stock,
+                                                IStackKey<?> target, long requested,
+                                                Map<String, Identifier> recipes,
+                                                Map<IngredientKey, String> ingredients,
+                                                int maxDepth, int maxNodes)
+    {
+        return plan(catalog, stock, target, requested, recipes, ingredients,
+                maxDepth, maxNodes, SEARCH_TIME_LIMIT_NANOS, false);
+    }
+
     private static final class Search
     {
         private final java.util.function.Function<IStackKey<?>, List<Recipe>> byOutput;

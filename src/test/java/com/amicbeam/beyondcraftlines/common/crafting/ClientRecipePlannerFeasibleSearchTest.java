@@ -421,6 +421,69 @@ final class ClientRecipePlannerFeasibleSearchTest
         assertEquals(1L, result.extraction().get(copper));
     }
 
+    @Test
+    void selectedTreeGetsFreshTimeAfterCandidateSearchExhaustsItsEntireDeadline()
+    {
+        var raw = key("selected_raw");
+        var product = key("selected_product");
+        var root = recipe("selected_root", product, List.of(slot(0, raw, 1)));
+        var catalog = new ClientRecipePlanner.Catalog(List.of(root));
+        var exhausted = ClientRecipePlanner.plan(catalog, Map.of(raw, 1L), product, 1,
+                Map.of(), Map.of(), 8, 64, 1L, false);
+        assertTrue(exhausted.searchExhausted());
+        assertFalse(exhausted.craftable());
+        var selected = ClientRecipePlanner.validateSelectedTree(catalog, Map.of(raw, 1L), product, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(product), root.id()), Map.of(), 8, 64);
+        assertTrue(selected.craftable(), selected.outcome().toString());
+        assertEquals(root.id(), selected.recipes().get(RecipeResourceResolver.resolutionKey(product)));
+        assertEquals(Map.of(raw, 1L), selected.extraction());
+    }
+
+    @Test
+    void selectedTreeDoesNotSilentlyUseAnotherRecipeToHideMissingMaterials()
+    {
+        var missing = key("selected_missing");
+        var stocked = key("alternative_stocked");
+        var product = key("selected_product");
+        var selected = recipe("selected", product, List.of(slot(0, missing, 1)));
+        var alternative = recipe("alternative", product, List.of(slot(0, stocked, 1)));
+        var result = ClientRecipePlanner.validateSelectedTree(new ClientRecipePlanner.Catalog(List.of(selected, alternative)),
+                Map.of(stocked, 1L), product, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(product), selected.id()), Map.of(), 8, 64);
+        assertFalse(result.craftable());
+        assertEquals(1L, result.missing().get(missing));
+        assertFalse(result.recipes().containsValue(alternative.id()));
+    }
+
+    @Test
+    void selectedTreeStillHonorsExplicitIngredientChoices()
+    {
+        var copper = key("selected_copper");
+        var iron = key("selected_iron");
+        var product = key("selected_product");
+        var root = recipe("selected_options", product, List.of(options(0, copper, iron)));
+        var ingredient = new ClientRecipePlanner.IngredientKey(root.id(), 0);
+        String ironSelection = root.slots().get(0).candidates().get(1).selection();
+        var result = ClientRecipePlanner.validateSelectedTree(new ClientRecipePlanner.Catalog(List.of(root)),
+                Map.of(copper, 1L, iron, 1L), product, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(product), root.id()), Map.of(ingredient, ironSelection), 8, 64);
+        assertTrue(result.craftable());
+        assertEquals(Map.of(iron, 1L), result.extraction());
+    }
+
+    @Test
+    void selectedTreeRetainsItsOwnNodeGuard()
+    {
+        var raw = key("selected_raw");
+        var product = key("selected_product");
+        var root = recipe("selected_guard", product, List.of(slot(0, raw, 1)));
+        var result = ClientRecipePlanner.validateSelectedTree(new ClientRecipePlanner.Catalog(List.of(root)),
+                Map.of(raw, 1L), product, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(product), root.id()), Map.of(), 8, 1);
+        assertFalse(result.craftable());
+        assertTrue(result.searchExhausted());
+    }
+
     private static ClientRecipePlanner.Proposal plan(List<ClientRecipePlanner.Recipe> recipes,
                                                      Map<IStackKey<?>, Long> stock, IStackKey<?> target)
     {

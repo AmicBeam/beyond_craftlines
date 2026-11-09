@@ -7,6 +7,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.Container;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -59,7 +60,15 @@ public final class CraftlineDashboardBlock extends NetedBlock implements EntityB
     {
         Direction facing = supportSide(state);
         BlockPos support = supportPos(position, state);
-        return level.getBlockState(support).isFaceSturdy(level, support, facing);
+        return canAttachTo(level, support, facing);
+    }
+
+    /** Vanilla inventories such as chests need not expose a full sturdy face. */
+    static boolean canAttachTo(LevelReader level, BlockPos support, Direction facing)
+    {
+        BlockState supportState = level.getBlockState(support);
+        return supportState.isFaceSturdy(level, support, facing)
+                || !supportState.isAir() && level.getBlockEntity(support) instanceof Container;
     }
 
     @Override public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos position,

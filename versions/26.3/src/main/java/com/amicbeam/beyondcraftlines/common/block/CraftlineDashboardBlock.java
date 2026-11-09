@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -35,7 +36,15 @@ public final class CraftlineDashboardBlock extends NetedBlock implements EntityB
     @Override public BlockState getStateForPlacement(BlockPlaceContext context){return defaultBlockState().setValue(FACING,context.getClickedFace());}
     public static Direction supportSide(BlockState state){return state.getValue(FACING);}
     public static BlockPos supportPos(BlockPos pos,BlockState state){return pos.relative(supportSide(state).getOpposite());}
-    @Override public boolean canSurvive(BlockState state,LevelReader level,BlockPos pos){Direction facing=supportSide(state);BlockPos support=supportPos(pos,state);return level.getBlockState(support).isFaceSturdy(level,support,facing);}
+    @Override public boolean canSurvive(BlockState state,LevelReader level,BlockPos pos){Direction facing=supportSide(state);BlockPos support=supportPos(pos,state);return canAttachTo(level,support,facing);}
+    /** Vanilla inventories such as chests need not expose a full sturdy face. */
+    static boolean canAttachTo(LevelReader level, BlockPos support, Direction facing)
+    {
+        BlockState supportState = level.getBlockState(support);
+        return supportState.isFaceSturdy(level, support, facing)
+                || !supportState.isAir() && level.getBlockEntity(support) instanceof Container;
+    }
+
     @Override public VoxelShape getShape(BlockState state,BlockGetter level,BlockPos pos,CollisionContext context){return switch(supportSide(state)){case NORTH->NORTH;case SOUTH->SOUTH;case WEST->WEST;case EAST->EAST;case UP->UP;case DOWN->DOWN;};}
     @Override public void setPlacedBy(Level level,BlockPos pos,BlockState state,@Nullable LivingEntity placer,ItemStack stack){super.setPlacedBy(level,pos,state,placer,stack);if(!level.isClientSide()&&placer instanceof ServerPlayer player&&level.getBlockEntity(pos) instanceof CraftlineDashboardBlockEntity dashboard)dashboard.setOwner(player.getUUID());}
     @Override protected InteractionResult useWithoutItem(BlockState state,Level level,BlockPos pos,Player player,BlockHitResult hit){if(player.isShiftKeyDown())return super.useWithoutItem(state,level,pos,player,hit);if(!level.isClientSide()&&player instanceof ServerPlayer server&&level.getBlockEntity(pos) instanceof CraftlineDashboardBlockEntity dashboard)dashboard.openConfiguration(server);return level.isClientSide()?InteractionResult.SUCCESS:InteractionResult.SUCCESS_SERVER;}

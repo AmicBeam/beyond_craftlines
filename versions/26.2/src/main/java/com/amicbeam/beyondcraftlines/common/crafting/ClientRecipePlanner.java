@@ -53,7 +53,7 @@ public final class ClientRecipePlanner
     {
         Map<String, Identifier> converted = new LinkedHashMap<>();
         Map<IngredientKey, String> convertedIngredients = new LinkedHashMap<>();
-        manualRecipes.forEach((output, recipe) -> converted.put(RecipeResourceResolver.sortKey(
+        manualRecipes.forEach((output, recipe) -> converted.put(RecipeResourceResolver.resolutionKey(
                 new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(output)))), recipe));
         manualIngredients.forEach((key, item) -> convertedIngredients.put(key,
                 IngredientSelectionKey.legacy(item)));
@@ -229,7 +229,7 @@ public final class ClientRecipePlanner
             {
                 List<Recipe> candidates = byOutput.apply(resource);
                 var selected = lockedRecipes.get(resourceId);
-                if (selected == null) selected = lockedRecipes.get(RecipeResourceResolver.sortKey(resource));
+
                 if (selected == null) selected = state.recipes.get(resourceId);
                 if (selected == null && candidates.isEmpty()) selected = preferredRecipes.get(resourceId);
                 if (RecipeResolutionOverrides.NO_RECIPE.equals(selected))
@@ -394,7 +394,7 @@ public final class ClientRecipePlanner
         private List<Recipe> rankRecipes(IStackKey<?> resource, List<Recipe> candidates, State state)
         {
             var preferred = preferredRecipes.get(RecipeResourceResolver.resolutionKey(resource));
-            if (preferred == null) preferred = preferredRecipes.get(RecipeResourceResolver.sortKey(resource));
+
             String preferredId = preferred == null ? null : preferred.toString();
             return PlanningRouteOrder.order(candidates, recipe -> recipe.id().toString(), preferredId,
                     recipe -> unstockedSlots(recipe, state), recipe -> true);

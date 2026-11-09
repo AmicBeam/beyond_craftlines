@@ -11,6 +11,11 @@ public final class ComponentRecipeCandidates
 {
     private static final BoundedIdentityCache<IStackKey<?>, Map<String, String>> FIELDS = new BoundedIdentityCache<>(256);
     private ComponentRecipeCandidates() {}
+    /** Presentation filter only; never changes selections or candidate discovery. */
+    public static <T> List<T> visibleCandidates(List<T> candidates, boolean hideApproximate,
+                                               java.util.function.Predicate<T> approximate)
+    { return hideApproximate ? candidates.stream().filter(value -> !approximate.test(value)).toList() : candidates; }
+
     public static void clear() { FIELDS.clear(); }
     public static boolean sameResource(IStackKey<?> left, IStackKey<?> right)
     { return left != null && right != null && left.getTypeId().equals(right.getTypeId())

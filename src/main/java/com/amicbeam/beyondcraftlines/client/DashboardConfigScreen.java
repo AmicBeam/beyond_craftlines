@@ -90,7 +90,9 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
         stockButton.setMessage(Component.translatable("gui.beyond_craftlines.dashboard.stock_mode." + stockMode.id()));
         redstoneButton.setMessage(Component.translatable("gui.beyond_craftlines.dashboard.redstone_mode." + redstoneMode.id()));
         recipeButton.setMessage(Component.translatable(recipeConfigured
-                ? "gui.beyond_craftlines.dashboard.edit_recipe" : "gui.beyond_craftlines.dashboard.set_recipe"));
+                ? "gui.beyond_craftlines.dashboard.edit_recipe" : stockMode == DashboardStockMode.CONTAINER
+                ? "gui.beyond_craftlines.dashboard.set_recipe_optional"
+                : "gui.beyond_craftlines.dashboard.set_recipe"));
         recipeButton.active = target != null && !target.isEmpty() && parsedAmount() > 0;
     }
 
@@ -265,7 +267,7 @@ public final class DashboardConfigScreen extends AbstractContainerScreen<Dashboa
                 && minecraft.level.getBlockEntity(menu.position()) instanceof CraftlineDashboardBlockEntity dashboard)
             runtimeError = dashboard.lastError();
         else runtimeError = menu.error();
-        return DashboardConfigStatus.visibleError(recipeConfigured, runtimeError);
+        return DashboardConfigStatus.visibleError(recipeConfigured, stockMode, runtimeError);
     }
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick)

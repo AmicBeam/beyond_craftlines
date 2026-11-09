@@ -67,8 +67,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private static final int PICKER_ROWS = 5;
     private static final int PICKER_PAGE_SIZE = PICKER_COLUMNS * PICKER_ROWS;
     private static final int PICKER_WIDTH = PICKER_COLUMNS * 20 + 8;
-    private static final int PICKER_HEIGHT = PICKER_ROWS * 20 + 34;
-    private static final int PICKER_HEADER_HEIGHT = 18;
+    private static final int PICKER_HEIGHT = PICKER_ROWS * 20 + 48;
+    private static final int PICKER_HEADER_HEIGHT = 32;
     private static final int PICKER_Z = 300;
     private static final long[] AMOUNT_STEPS = {1, 10, 100, 1_000};
     private static final double DEFAULT_TREE_ZOOM = TreeViewScale.DEFAULT_ZOOM;
@@ -116,16 +116,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     private List<ItemStack> ingredientPickerItems = List.of();
     private GraphNode recipePickerNode;
     private List<RecipeHolder<?>> recipePickerRecipes = List.of();
+    private List<RecipeHolder<?>> recipePickerAllRecipes = List.of();
+    private boolean recipePickerHasApproximate;
+    private boolean recipePickerHideApproximate;
     private int ingredientPickerPage;
     private int ingredientPickerX;
     private int ingredientPickerY;
-    private final Map<Identifier, Identifier> recipeOverrides = new LinkedHashMap<>();
     private final Map<String, Identifier> resourceRecipeOverrides = new LinkedHashMap<>();
     private final Map<IngredientSlotKey, String> ingredientOverrides = new LinkedHashMap<>();
-    private final Map<Identifier, Identifier> automaticRecipes = new LinkedHashMap<>();
     private final Map<String, Identifier> automaticResourceRecipes = new LinkedHashMap<>();
     private final Map<IngredientSlotKey, String> automaticIngredients = new LinkedHashMap<>();
-    private final Map<Identifier, Identifier> defaultRecipes = new LinkedHashMap<>();
     private final Map<String, Identifier> defaultResourceRecipes = new LinkedHashMap<>();
     private final Map<IngredientSlotKey, String> defaultIngredients = new LinkedHashMap<>();
     private long previewNonce;
@@ -482,7 +482,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         for (int i = 0; i < diagnosticWidgets.size(); i++)
             diagnosticWidgets.get(i).visible = diagnosticsOpen && (i == 4 || chosen && (i == 5 || diagnosticReport != null));
         if (diagnosticWidgets.size() > 6)
-            diagnosticWidgets.get(6).visible = chosen && orderProblem;
+            diagnosticWidgets.get(6).visible = chosen && diagnosticProblem.equals("stalled");
         if (diagnosticWidgets.size() > 5)
             diagnosticWidgets.get(5).active = chosen && (!diagnosticProblem.equals("category")
                     || !diagnosticExpected.getValue().isBlank());
@@ -739,8 +739,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         menu.initialRecipe(), menu.targetToken()) ? menu.initialRecipeHolder() : null;
         if (selected != null)
         {
-            if (menu.initialRecipePinned() && menu.initialTarget() instanceof ItemStackKey itemKey)
-                recipeOverrides.put(BuiltInRegistries.ITEM.getKey(itemKey.getSource()), menu.initialRecipe());
+            if (menu.initialRecipePinned())
+                resourceRecipeOverrides.put(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
+                        .resolutionKey(menu.initialTarget()), menu.initialRecipe());
             else if (!menu.initialRecipePinned())
                 selected = selectedResourceRecipe(menu.initialTarget(), selected);
         }
@@ -1212,7 +1213,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (node.jumpTarget != null && !TreeViewScale.previewOnly(treeZoom)) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.duplicate_jump", node.jumpTarget.depth)
                 .withStyle(ChatFormatting.LIGHT_PURPLE));
-        if (node.itemId != null && defaultRecipes.containsKey(node.itemId)) lines.add(Component.translatable(
+        if (defaultResourceRecipes.containsKey(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key))) lines.add(Component.translatable(
                 "tooltip.beyond_craftlines.default_recipe").withStyle(ChatFormatting.GREEN));
         if (node.parentRecipe != null && node.parentSlots.stream().anyMatch(slot -> defaultIngredients.containsKey(
                 new IngredientSlotKey(node.parentRecipe, slot)))) lines.add(Component.translatable(
@@ -1341,12 +1342,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (node.selfIncrement) graphics.text(font, "*", x + 20, y + 2, BD_ORANGE, true);
         if (node.jumpTarget != null) graphics.text(font, ">", x + 2, y + 17, 0xFFB78CFF, true);
         if (node.collapsed) graphics.text(font, "+", x + 2, y + 17, 0xFFFFFFFF, true);
-        if (node.itemId != null && node.depth > 0 && recipeOverrides.containsKey(node.itemId))
+        if (node.depth > 0 && resourceRecipeOverrides.containsKey(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key)))
             graphics.fill(x + 2, y + 2, x + 6, y + 6, BD_ORANGE);
         if (node.parentRecipe != null && node.parentSlots.stream().anyMatch(slot -> ingredientOverrides.containsKey(
                 new IngredientSlotKey(node.parentRecipe, slot))))
             graphics.fill(x + 2, y + 22, x + 6, y + 26, BD_VIOLET);
-        if (node.itemId != null && defaultRecipes.containsKey(node.itemId))
+        if (defaultResourceRecipes.containsKey(com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key)))
             graphics.fill(x + 22, y + 2, x + 26, y + 6, 0xFF39A96B);
         if (node.parentRecipe != null && node.parentSlots.stream().anyMatch(slot -> defaultIngredients.containsKey(
                 new IngredientSlotKey(node.parentRecipe, slot))))
@@ -1558,8 +1559,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             node.children.add(child);
         }
         String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(resourceKey);
-        boolean explicitRecipe = resourceRecipeOverrides.containsKey(token) || defaultResourceRecipes.containsKey(token)
-                || itemId != null && (recipeOverrides.containsKey(itemId) || defaultRecipes.containsKey(itemId));
+        boolean explicitRecipe = resourceRecipeOverrides.containsKey(token) || defaultResourceRecipes.containsKey(token);
         if (node.cycleBlocked && !explicitRecipe)
         {
             // The parent is the useful missing material; the repeated ancestor is only a marker.
@@ -1626,20 +1626,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         return null;
     }
 
-    private RecipeHolder<?> selectedRecipe(Identifier output, RecipeHolder<?> fallback)
-    {
-        List<RecipeHolder<?>> candidates = menu.recipesForOutput(output);
-        if (candidates.isEmpty()) return fallback;
-        Identifier selectedId = recipeOverrides.get(output);
-        if (selectedId == null) selectedId = automaticRecipes.get(output);
-        if (selectedId == null) selectedId = defaultRecipes.get(output);
-        if (RecipeResolutionOverrides.NO_RECIPE.equals(selectedId)) return null;
-        if (selectedId != null)
-            for (RecipeHolder<?> candidate : candidates) if (candidate.id().identifier().equals(selectedId)) return candidate;
-        return fallback != null && candidates.stream().anyMatch(candidate -> candidate.id().identifier().equals(fallback.id().identifier()))
-                ? fallback : candidates.getFirst();
-    }
-
     private RecipeHolder<?> selectedResourceRecipe(IStackKey<?> output, RecipeHolder<?> fallback)
     {
         List<RecipeHolder<?>> candidates = menu.recipesForResourceOutput(output);
@@ -1684,23 +1670,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
 
     private Map<String, Identifier> genericRecipeOverrides()
     {
-        LinkedHashMap<String, Identifier> result = new LinkedHashMap<>();
-        recipeOverrides.forEach((output, recipe) -> result.put(itemToken(output), recipe));
-        result.putAll(resourceRecipeOverrides);
+        LinkedHashMap<String, Identifier> result = new LinkedHashMap<>(resourceRecipeOverrides);
         com.amicbeam.beyondcraftlines.common.crafting.RootRecipeOverridePolicy.putInitialFallback(
-                result, menu.targetToken(), selected == null ? null : selected.id().identifier());
+                result, com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(menu.initialTarget()),
+                selected == null ? null : selected.id().identifier());
         return Map.copyOf(result);
-    }
-
-    private static String itemToken(Identifier item)
-    {
-        return com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.sortKey(
-                new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.getValue(item))));
-    }
-
-    private Identifier itemOutputForToken(String token)
-    {
-        return menu.itemOutputForToken(token);
     }
 
     private static void layout(GraphNode node, int[] nextRow)
@@ -1834,6 +1808,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if(candidates.size()<2&&!node.fluidContainerAlternative)return false;
         recipePickerNode = null;
         recipePickerRecipes = List.of();
+        recipePickerAllRecipes = List.of();
+        recipePickerHasApproximate = false;
         ingredientPickerNode = node;
         ingredientPickerItems = candidates;
         int selectedIndex = 0;
@@ -1852,11 +1828,14 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         ingredientPickerNode = null;
         ingredientPickerItems = List.of();
         recipePickerNode = node;
-        recipePickerRecipes = candidates;
+        recipePickerAllRecipes = candidates;
+        recipePickerHasApproximate = candidates.stream().anyMatch(this::approximateRecipeCandidate);
+        recipePickerRecipes = com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.visibleCandidates(
+                candidates, recipePickerHideApproximate, this::approximateRecipeCandidate);
         int selectedIndex = 0;
         if (node.recipe != null)
-            for (int i = 0; i < candidates.size(); i++)
-                if (candidates.get(i).id().identifier().equals(node.recipe.id().identifier())) { selectedIndex = i + 1; break; }
+            for (int i = 0; i < recipePickerRecipes.size(); i++)
+                if (recipePickerRecipes.get(i).id().identifier().equals(node.recipe.id().identifier())) { selectedIndex = i + 1; break; }
         ingredientPickerPage = selectedIndex / PICKER_PAGE_SIZE;
         positionPicker(node);
         return true;
@@ -1899,12 +1878,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Identifier choice = recipe == null ? RecipeResolutionOverrides.NO_RECIPE : recipe.id().identifier();
         String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.resolutionKey(node.key);
         resourceRecipeOverrides.put(token, choice);
-        if (node.itemId != null) recipeOverrides.put(node.itemId, choice);
+
         boolean saved = ClientPlannerPreferences.setRecipe(token, choice);
         if (saved)
         {
             defaultResourceRecipes.put(token, choice);
-            if (node.itemId != null) defaultRecipes.put(node.itemId, choice);
+
         }
         showPreferenceSaveResult(saved);
         closeIngredientPicker();
@@ -1924,12 +1903,32 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .resolutionKey(recipePickerNode.key);
-            return defaultResourceRecipes.containsKey(token)
-                    || recipePickerNode.itemId != null && defaultRecipes.containsKey(recipePickerNode.itemId);
+            return defaultResourceRecipes.containsKey(token);
         }
         return ingredientPickerNode != null && ingredientPickerNode.parentRecipe != null
                 && ingredientPickerNode.parentSlots.stream().anyMatch(slot -> defaultIngredients.containsKey(
                 new IngredientSlotKey(ingredientPickerNode.parentRecipe, slot)));
+    }
+
+    private boolean approximateRecipeCandidate(RecipeHolder<?> recipe)
+    {
+        if (recipePickerNode == null) return false;
+        IStackKey<?> output = menu.candidateOutput(recipe.id().identifier(), recipePickerNode.key);
+        return output != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch.exact(recipePickerNode.key, output);
+    }
+
+    private Component approximateToggleLabel()
+    { return Component.translatable(recipePickerHideApproximate
+            ? "gui.beyond_craftlines.show_approximate" : "gui.beyond_craftlines.hide_approximate"); }
+    private int approximateToggleWidth() { return font.width(approximateToggleLabel()) + 8; }
+    private int approximateToggleX()
+    { return ingredientPickerX + PICKER_WIDTH - 3 - approximateToggleWidth()
+            - (pickerHasPreference() ? forgetPreferenceButtonWidth() + 4 : 0); }
+    private boolean overApproximateToggle(double mouseX, double mouseY)
+    {
+        return recipePickerNode != null && recipePickerHasApproximate
+                && mouseX >= approximateToggleX() && mouseX < approximateToggleX() + approximateToggleWidth()
+                && mouseY >= ingredientPickerY + 18 && mouseY < ingredientPickerY + 30;
     }
 
     private int forgetPreferenceButtonWidth()
@@ -1941,7 +1940,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         int width = forgetPreferenceButtonWidth();
         int x = ingredientPickerX + PICKER_WIDTH - width - 3;
         return mouseX >= x && mouseX < x + width
-                && mouseY >= ingredientPickerY + 3 && mouseY < ingredientPickerY + 15;
+                && mouseY >= ingredientPickerY + 18 && mouseY < ingredientPickerY + 30;
     }
 
     private void forgetPickerPreference()
@@ -1951,16 +1950,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         {
             String token = com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver
                     .resolutionKey(recipePickerNode.key);
-            saved = ClientPlannerPreferences.clearRecipe(token, recipePickerNode.itemId);
+            saved = ClientPlannerPreferences.clearRecipe(token, null);
             if (saved)
             {
                 defaultResourceRecipes.remove(token);
                 resourceRecipeOverrides.remove(token);
-                if (recipePickerNode.itemId != null)
-                {
-                    defaultRecipes.remove(recipePickerNode.itemId);
-                    recipeOverrides.remove(recipePickerNode.itemId);
-                }
             }
         }
         else if (ingredientPickerNode != null && ingredientPickerNode.parentRecipe != null)
@@ -1988,6 +1982,17 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         if (mouseX < ingredientPickerX || mouseX >= ingredientPickerX + PICKER_WIDTH
                 || mouseY < ingredientPickerY || mouseY >= ingredientPickerY + PICKER_HEIGHT) return false;
         if (button != 0) return true;
+        if (overApproximateToggle(mouseX, mouseY))
+        {
+            recipePickerHideApproximate = !recipePickerHideApproximate;
+            if (!ClientPlannerPreferences.setHideApproximate(recipePickerHideApproximate) && minecraft.player != null)
+                minecraft.player.sendOverlayMessage(Component.translatable(
+                        "error.beyond_craftlines.client_planner_preference_save_failed"));
+            recipePickerRecipes = com.amicbeam.beyondcraftlines.common.crafting.ComponentRecipeCandidates.visibleCandidates(
+                    recipePickerAllRecipes, recipePickerHideApproximate, this::approximateRecipeCandidate);
+            ingredientPickerPage = 0;
+            return true;
+        }
         if (overForgetPreferenceButton(mouseX, mouseY))
         {
             forgetPickerPreference();
@@ -2041,12 +2046,23 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 int width = forgetPreferenceButtonWidth();
                 int x = ingredientPickerX + PICKER_WIDTH - width - 3;
                 boolean hover = mouseX >= x && mouseX < x + width
-                        && mouseY >= ingredientPickerY + 3 && mouseY < ingredientPickerY + 15;
-                graphics.fill(x, ingredientPickerY + 3, x + width, ingredientPickerY + 15,
+                        && mouseY >= ingredientPickerY + 18 && mouseY < ingredientPickerY + 30;
+                graphics.fill(x, ingredientPickerY + 18, x + width, ingredientPickerY + 30,
                         hover ? 0xFF8E3E49 : 0xFF66313A);
-                graphics.outline(x, ingredientPickerY + 3, width, 12,
+                graphics.outline(x, ingredientPickerY + 18, width, 12,
                         hover ? 0xFFFFA0AA : 0xFFB86A73);
-                graphics.text(font, label, x + 4, ingredientPickerY + 5, 0xFFFFFFFF, false);
+                graphics.text(font, label, x + 4, ingredientPickerY + 20, 0xFFFFFFFF, false);
+            }
+
+            if (recipePickerHasApproximate)
+            {
+                int x = approximateToggleX();
+                int width = approximateToggleWidth();
+                boolean hover = overApproximateToggle(mouseX, mouseY);
+                graphics.fill(x, ingredientPickerY + 18, x + width, ingredientPickerY + 30,
+                        hover ? 0xFF386A82 : 0xFF27495C);
+                graphics.outline(x, ingredientPickerY + 18, width, 12, 0xFF71B7D4);
+                graphics.text(font, approximateToggleLabel(), x + 4, ingredientPickerY + 20, 0xFFFFFFFF, false);
             }
 
             int first = ingredientPickerPage * PICKER_PAGE_SIZE;
@@ -2095,7 +2111,9 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     ingredientPickerX + PICKER_WIDTH / 2, footerY, 0xFFB8C8D8);
             graphics.text(font, ">", ingredientPickerX + PICKER_WIDTH - 13, footerY,
                     ingredientPickerPage + 1 < pages ? 0xFFFFFFFF : 0xFF687784, false);
-            if (hoveredNoRecipe) graphics.setTooltipForNextFrame(font, Component.translatable("gui.beyond_craftlines.no_recipe"), mouseX, mouseY);
+            if (overApproximateToggle(mouseX, mouseY)) graphics.setTooltipForNextFrame(font,
+                    Component.translatable("tooltip.beyond_craftlines.toggle_approximate"), mouseX, mouseY);
+            else if (hoveredNoRecipe) graphics.setTooltipForNextFrame(font, Component.translatable("gui.beyond_craftlines.no_recipe"), mouseX, mouseY);
             else if (hoveredRecipe != null) renderRecipeCandidateTooltip(
                     graphics, hoveredRecipe, hoveredKey, mouseX, mouseY);
             else if (!hovered.isEmpty()) graphics.setTooltipForNextFrame(font, hovered, mouseX, mouseY);
@@ -2130,6 +2148,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         ingredientPickerItems = List.of();
         recipePickerNode = null;
         recipePickerRecipes = List.of();
+        recipePickerAllRecipes = List.of();
+        recipePickerHasApproximate = false;
         ingredientPickerPage = 0;
     }
 
@@ -2273,23 +2293,19 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
     {
         ClientPlannerPreferences.Snapshot snapshot = ClientPlannerPreferences.load();
         outputDestination = snapshot.outputDestination();
+        recipePickerHideApproximate = snapshot.hideApproximate();
         if (!(menu.initialTarget() instanceof ItemStackKey))
             outputDestination = OrderOutputDestination.NETWORK;
         updateOutputDestinationButton();
-        defaultRecipes.clear();
         defaultResourceRecipes.clear();
         for (var entry : snapshot.recipes().entrySet())
         {
             Identifier recipe = entry.getValue();
             String token = entry.getKey();
-            Identifier legacyOutput = token.indexOf('|') < 0 ? Identifier.tryParse(token) : null;
-            if (legacyOutput != null) token = itemToken(legacyOutput);
-            String finalToken = token;
-            boolean valid = RecipeResolutionOverrides.NO_RECIPE.equals(recipe) || menu.recipeProduces(recipe, finalToken);
+            if (!com.amicbeam.beyondcraftlines.common.crafting.RecipeResourceResolver.isExactChoiceKey(token)) continue;
+            boolean valid = RecipeResolutionOverrides.NO_RECIPE.equals(recipe) || menu.recipe(recipe) != null;
             if (!valid) continue;
             defaultResourceRecipes.put(token, recipe);
-            Identifier output = itemOutputForToken(token);
-            if (output != null) defaultRecipes.put(output, recipe);
         }
         defaultIngredients.clear();
         for (var entry : snapshot.ingredients().entrySet())
@@ -2456,11 +2472,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         });
         forcedRecipes.putAll(manualRecipes);
         LinkedHashMap<String, Identifier> preferredRecipes = new LinkedHashMap<>(defaultResourceRecipes);
-        defaultRecipes.forEach((output, recipe) -> preferredRecipes.put(itemToken(output), recipe));
+
         if (preferAutomaticChoices)
         {
             preferredRecipes.putAll(automaticResourceRecipes);
-            automaticRecipes.forEach((output, recipe) -> preferredRecipes.put(itemToken(output), recipe));
+
         }
         preferredRecipes.putAll(forcedRecipes);
         Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients = new LinkedHashMap<>();
@@ -2471,7 +2487,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         manualIngredients.forEach((key, value) -> preferredIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         LinkedHashMap<String, Identifier> defaultRecipesOnly = new LinkedHashMap<>(defaultResourceRecipes);
-        defaultRecipes.forEach((output, recipe) -> defaultRecipesOnly.put(itemToken(output), recipe));
+
         defaultRecipesOnly.putAll(forcedRecipes);
         Map<ClientRecipePlanner.IngredientKey, String> defaultIngredientsOnly = new LinkedHashMap<>();
         defaultIngredients.forEach((key, value) -> defaultIngredientsOnly.put(
@@ -2482,7 +2498,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         manualIngredients.forEach((key, value) -> forcedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         LinkedHashMap<String, Identifier> savedRecipes = new LinkedHashMap<>(defaultResourceRecipes);
-        defaultRecipes.forEach((output, recipe) -> savedRecipes.put(itemToken(output), recipe));
+
         Map<ClientRecipePlanner.IngredientKey, String> savedIngredients = new LinkedHashMap<>();
         defaultIngredients.forEach((key, value) -> savedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
@@ -2499,10 +2515,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 "{} client plan visible-tree choices recipes={} ingredients={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
                 fixedTreeRecipes.size(), fixedTreeIngredients.size());
-        boolean hasDefaults = !defaultResourceRecipes.isEmpty() || !defaultRecipes.isEmpty()
+        boolean hasDefaults = !defaultResourceRecipes.isEmpty()
                 || !defaultIngredients.isEmpty();
         boolean hasAutomaticChoices = preferAutomaticChoices && (!automaticResourceRecipes.isEmpty()
-                || !automaticRecipes.isEmpty() || !automaticIngredients.isEmpty());
+                || !automaticIngredients.isEmpty());
         cancelPlanningTask();
         loadingStatus=planningText();
         long generation = planningGeneration;
@@ -2601,12 +2617,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         previewError = localizedPlanningError(completedFailure.getMessage());
                         return;
                     }
-                    automaticRecipes.clear();
+
                     automaticResourceRecipes.clear();
                     completed.recipes().forEach((output, recipe) -> {
                         automaticResourceRecipes.put(output, recipe);
-                        Identifier item = itemOutputForToken(output);
-                        if (item != null) automaticRecipes.put(item, recipe);
+
                     });
                     automaticIngredients.clear();
                     completed.ingredients().forEach((key, value) -> automaticIngredients.put(
@@ -2690,12 +2705,11 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 if (generation != planningGeneration || nonce != previewNonce) return;
                 optimizationTask = null;
                 if (!improved.craftable()) return;
-                automaticRecipes.clear();
+
                 automaticResourceRecipes.clear();
                 improved.recipes().forEach((output, recipe) -> {
                     automaticResourceRecipes.put(output, recipe);
-                    Identifier item = itemOutputForToken(output);
-                    if (item != null) automaticRecipes.put(item, recipe);
+
                 });
                 automaticIngredients.clear();
                 improved.ingredients().forEach((key, value) -> automaticIngredients.put(
@@ -2851,7 +2865,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             proposalReady = false;
             clearDisplayMetrics();
             if (orderButton != null) orderButton.active = false;
-            automaticRecipes.clear();
+
             automaticResourceRecipes.clear();
             automaticIngredients.clear();
             previewNextPage = 0;
@@ -2872,7 +2886,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             clearPendingPreviewMetrics();
             proposalReady = false;
             if (orderButton != null) orderButton.active = false;
-            automaticRecipes.clear();
+
             automaticResourceRecipes.clear();
             automaticIngredients.clear();
             clearDisplayMetrics();
@@ -2883,7 +2897,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         if (preview.pageIndex() == 0)
         {
-            automaticRecipes.clear();
+
             automaticResourceRecipes.clear();
             automaticIngredients.clear();
             clearPendingPreviewMetrics();
@@ -2891,10 +2905,10 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         }
         for (SubmitOrderPayload.RecipeChoice choice : preview.recipeChoices())
         {
-            Identifier output = itemOutputForToken(choice.output());
+
             Identifier recipe = Identifier.tryParse(choice.recipe());
             if (recipe != null) automaticResourceRecipes.put(choice.output(), recipe);
-            if (output != null && recipe != null) automaticRecipes.put(output, recipe);
+
         }
         for (SubmitOrderPayload.IngredientChoice choice : preview.ingredientChoices())
         {

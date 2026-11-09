@@ -4,9 +4,20 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 final class RecipeResolutionIdentityTest
 {
+    @Test void legacyKeysCannotBecomeExactVariantPreferences()
+    {
+        String exact = RecipeResourceResolver.identityKey("item", "minecraft", "minecraft:potion", "{potion:fire}");
+        assertTrue(RecipeResourceResolver.isExactChoiceKey(exact));
+        assertFalse(RecipeResourceResolver.isExactChoiceKey("minecraft:potion"));
+        assertFalse(RecipeResourceResolver.isExactChoiceKey("item|minecraft|minecraft:potion"));
+        assertFalse(RecipeResourceResolver.isExactChoiceKey(null));
+    }
+
     @Test
     void distinguishesRecipesForDifferentNbtStatesOfTheSameItem()
     {

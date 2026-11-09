@@ -13,7 +13,7 @@ public final class CraftlinesNetwork
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event)
     {
-        var registrar = event.registrar("34");
+        var registrar = event.registrar("35");
         registrar.playToServer(RequestCategoryBindingPayload.TYPE, RequestCategoryBindingPayload.STREAM_CODEC, RequestCategoryBindingPayload::handle);
         registrar.playToClient(CategoryBindingStatusPayload.TYPE, CategoryBindingStatusPayload.STREAM_CODEC, CategoryBindingStatusPayload::handle);
         registrar.playToClient(SubmissionFailurePayload.TYPE, SubmissionFailurePayload.STREAM_CODEC, SubmissionFailurePayload::handle);

@@ -6,6 +6,14 @@ import static org.junit.jupiter.api.Assertions.*;
 
 final class AutomaticOrderPolicyTest
 {
+    @Test void onlyContainerModeCanMaintainStockWithoutRecipe()
+    {
+        assertTrue(AutomaticOrderPolicy.canMaintain(DashboardStockMode.CONTAINER, false));
+        assertTrue(AutomaticOrderPolicy.canMaintain(DashboardStockMode.CONTAINER, true));
+        assertTrue(AutomaticOrderPolicy.canMaintain(DashboardStockMode.NETWORK, true));
+        assertFalse(AutomaticOrderPolicy.canMaintain(DashboardStockMode.NETWORK, false));
+    }
+
     @Test void computesOnlyTheMissingQuantity()
     {
         assertEquals(36, AutomaticOrderPolicy.deficit(100, 64));

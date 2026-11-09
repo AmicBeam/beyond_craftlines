@@ -484,6 +484,93 @@ final class ClientRecipePlannerFeasibleSearchTest
         assertTrue(result.searchExhausted());
     }
 
+    @Test
+    void pinnedPotionRecipeDoesNotSpreadToOtherStatesSharingItsItemId()
+    {
+        var water = potionState("water");
+        var awkward = potionState("awkward");
+        var fire = potionState("fire_resistance");
+        var netherWart = key("nether_wart");
+        var cream = key("magma_cream");
+        var base = recipe("awkward", awkward, List.of(slot(0, water, 1), slot(1, netherWart, 1)));
+        var root = recipe("fire", fire, List.of(slot(0, awkward, 1), slot(1, cream, 1)));
+        var catalog = new ClientRecipePlanner.Catalog(List.of(base, root));
+        assertEquals(RecipeResourceResolver.sortKey(fire), RecipeResourceResolver.sortKey(awkward));
+        assertNotEquals(RecipeResourceResolver.resolutionKey(fire), RecipeResourceResolver.resolutionKey(awkward));
+        var result = ClientRecipePlanner.validateSelectedTree(catalog,
+                Map.of(water, 1L, netherWart, 1L, cream, 1L), fire, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(fire), root.id(),
+                        RecipeResourceResolver.sortKey(fire), root.id()), Map.of(), 8, 64);
+        assertTrue(result.craftable(), result.outcome() + ": " + result.missing());
+        assertEquals(root.id(), result.recipes().get(RecipeResourceResolver.resolutionKey(fire)));
+        assertEquals(base.id(), result.recipes().get(RecipeResourceResolver.resolutionKey(awkward)));
+    }
+
+    @Test
+    void legacyCoarseStockOnlyRecordDoesNotDisableAnotherPotionState()
+    {
+        var water = potionState("water");
+        var awkward = potionState("awkward");
+        var root = recipe("awkward", awkward, List.of(slot(0, water, 1)));
+        var result = ClientRecipePlanner.validateSelectedTree(new ClientRecipePlanner.Catalog(List.of(root)),
+                Map.of(water, 1L), awkward, 1,
+                Map.of(RecipeResourceResolver.sortKey(awkward), RecipeResolutionOverrides.NO_RECIPE), Map.of(), 8, 64);
+        assertTrue(result.craftable(), result.outcome().toString());
+        var blocked = ClientRecipePlanner.validateSelectedTree(new ClientRecipePlanner.Catalog(List.of(root)),
+                Map.of(water, 1L), awkward, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(awkward), RecipeResolutionOverrides.NO_RECIPE), Map.of(), 8, 64);
+        assertFalse(blocked.craftable(), "An exact stock-only selection must remain effective");
+    }
+
+    @Test
+    void potionPreferencesUseOnlyTheExactStateAndNeverTheLegacyItemPreference()
+    {
+        var water = potionState("water");
+        var awkward = potionState("awkward");
+        var fire = potionState("fire_resistance");
+        var first = recipe("a_awkward", awkward, List.of(slot(0, water, 1)));
+        var other = recipe("z_awkward", awkward, List.of(slot(0, water, 1)));
+        var root = recipe("fire", fire, List.of(slot(0, awkward, 1)));
+        var catalog = new ClientRecipePlanner.Catalog(List.of(first, other, root));
+        var legacy = ClientRecipePlanner.plan(catalog, Map.of(water, 1L), fire, 1, Map.of(), Map.of(),
+                Map.of(RecipeResourceResolver.resolutionKey(fire), root.id(),
+                        RecipeResourceResolver.sortKey(fire), other.id()), Map.of(), 8, 64, 1_000_000_000L, false);
+        assertTrue(legacy.craftable());
+        assertEquals(first.id(), legacy.recipes().get(RecipeResourceResolver.resolutionKey(awkward)));
+        var exact = ClientRecipePlanner.plan(catalog, Map.of(water, 1L), fire, 1, Map.of(), Map.of(),
+                Map.of(RecipeResourceResolver.resolutionKey(awkward), other.id()), Map.of(), 8, 64, 1_000_000_000L, false);
+        assertTrue(exact.craftable());
+        assertEquals(other.id(), exact.recipes().get(RecipeResourceResolver.resolutionKey(awkward)));
+    }
+
+    @Test
+    void serverFixedChoicesDoNotFallBackToThePotionItemId()
+    {
+        var fire = potionState("fire_resistance");
+        var awkward = potionState("awkward");
+        var recipeId = recipe("fire", fire, List.of()).id();
+        var overrides = new RecipeResolutionOverrides(List.of(
+                new RecipeResolutionOverrides.RecipeChoice(RecipeResourceResolver.resolutionKey(fire), recipeId),
+                new RecipeResolutionOverrides.RecipeChoice(RecipeResourceResolver.sortKey(fire), recipeId)), List.of());
+        assertEquals(recipeId, overrides.recipeFor(fire));
+        assertEquals(null, overrides.recipeFor(awkward));
+    }
+
+    private static IStackKey<?> potionState(String state)
+    {
+        return (IStackKey<?>) Proxy.newProxyInstance(IStackKey.class.getClassLoader(), new Class<?>[]{IStackKey.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "isEmpty" -> false;
+                    case "getTypeId" -> id("test:resource");
+                    case "getModId" -> "minecraft";
+                    case "getSource", "getReadOnlyStack" -> "minecraft:potion";
+                    case "toString" -> "potion:" + state;
+                    case "isSame", "isSameTypeSameComponents", "equals" -> proxy == args[0];
+                    case "hashCode" -> System.identityHashCode(proxy);
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
     private static ClientRecipePlanner.Proposal plan(List<ClientRecipePlanner.Recipe> recipes,
                                                      Map<IStackKey<?>, Long> stock, IStackKey<?> target)
     {

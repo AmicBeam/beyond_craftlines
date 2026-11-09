@@ -196,7 +196,8 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
         int activeAutomatic = (int) orders.active().stream().filter(job -> job.networkId() == getNetId()
                 && job.origin() == OrderOrigin.AUTOMATIC).count();
         if (!AutomaticOrderPolicy.canCreate(activeAutomatic,
-                CraftlinesConfig.MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK.get())) return;
+                CraftlinesConfig.MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK.get()))
+        { recordError(""); return; }
 
         try
         {
@@ -219,7 +220,8 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
 
     RecipeOrderJob deliverCompletedOrder(DimensionsNet network, RecipeOrderJob job)
     {
-        if (stockMode != DashboardStockMode.CONTAINER || activeOrder == null
+        // The maintenance index also includes recipe-free dashboards; order delivery still needs a recipe.
+        if (stockMode != DashboardStockMode.CONTAINER || !recipe.configured() || activeOrder == null
                 || !activeOrder.equals(job.id()) || !(level instanceof ServerLevel serverLevel))
             return job.with(RecipeOrderJob.Status.PAUSED, encode("waiting_dashboard_container"));
         BlockState state = getBlockState();

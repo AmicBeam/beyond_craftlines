@@ -4,7 +4,7 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.7.2 lets dashboards refill containers from BD network stock without a recipe. Direct transfers are no longer blocked by the automatic crafting order limit. See the [0.7.2 changelog](docs/CHANGELOG_0.7.2.md).
+Version 0.7.2 lets dashboards refill containers without a recipe and includes the unreleased 0.7.1 changes: exact NBT/component recipe preferences, a reversible approximate-candidate filter, and clearer diagnostics navigation. See the [0.7.2 changelog](docs/CHANGELOG_0.7.2.md).
 
 ## Features
 

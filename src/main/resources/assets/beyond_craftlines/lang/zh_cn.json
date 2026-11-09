@@ -458,5 +458,6 @@
   "gui.beyond_craftlines.diagnostics.binding_snapshot_changed": "当前绑定与打开界面时的范围不同。请返回网络并重新打开配方树，刷新目录后再检查配方；旧目录不能证明目标配方缺失。",
   "gui.beyond_craftlines.hide_approximate": "隐藏近似",
   "gui.beyond_craftlines.show_approximate": "显示近似",
-  "tooltip.beyond_craftlines.toggle_approximate": "切换显示近似 NBT/组件候选，只影响列表，不改变当前选择或偏好。"
+  "tooltip.beyond_craftlines.toggle_approximate": "切换显示近似 NBT/组件候选，只影响列表，不改变当前选择或偏好。",
+  "message.beyond_craftlines.dashboard.invalid_support": "无法放置仪表盘：目标表面需要完整支撑面或库存容器。"
 }

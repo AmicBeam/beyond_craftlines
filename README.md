@@ -4,7 +4,7 @@
 
 面向 Beyond Dimensions 的配方驱动自动合成系统。Beyond: Craftlines 将 JEI 中的配方展开为可交互的递归合成树，从 BD 网络统一预留原料、调度工作台与真实机器、回收产物，并以可追踪、可取消、可持久化的订单完成从“查到配方”到“拿到成品”的整条生产链。
 
-0.7.2 支持仪表盘无配方补充容器库存，并合并未单独发布的 0.7.1：修复不同 NBT/组件的配方固定与偏好串用，改进近似候选筛选和排查入口。完整记录见 [0.7.2 更新日志](docs/CHANGELOG_0.7.2.md)。
+0.7.3 修复仪表盘无法附着原版箱子和陷阱箱的问题，并在目标不满足附着条件时显示动作栏提示。完整记录见 [0.7.3 更新日志](docs/CHANGELOG_0.7.3.md)。
 
 ## 核心功能
 
@@ -49,7 +49,7 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 
 除非明确限定版本，功能说明和开发改动均适用于以上五个版本。
 
-版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 Minecraft 1.20.1、1.21.1、26.1.2、26.2 与 26.3 的模组版本统一为 `0.7.2`，均属于 `0.7` 功能版本。
+版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 Minecraft 1.20.1、1.21.1、26.1.2、26.2 与 26.3 的模组版本统一为 `0.7.3`，均属于 `0.7` 功能版本。
 
 - `mod_id`: `beyond_craftlines`
 - 必需依赖：Beyond Dimensions、JEI（以上五个 Minecraft 版本均适用）。`for-bd0.7` 产物限定 BD `<0.8`：1.20.1、1.21.1、26.1.2 至少 0.7.30，26.2、26.3 至少 0.7.31。1.20.1 Forge 与 1.21.1 NeoForge 另有 `for-bd0.8` 产物，要求 BD `[0.8.8,0.9)`、CompixelUI 和 Kotlin；同一实例只安装一个对应版本的 Craftlines JAR。1.20.1 的 BD 0.8 实例至少使用 Forge 47.2.18。
@@ -84,11 +84,11 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 五个产物分别位于：
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.7.jar`
-- `build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.7.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.2+26.1.2-for-bd0.7.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.2+26.2-for-bd0.7.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.2+26.3-for-bd0.7.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.3+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.3+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.3+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.3+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.3+26.3-for-bd0.7.jar`
 
 BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根目录分别执行（JDK 17 / 21）：
 
@@ -97,7 +97,7 @@ BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根�
 ./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
 ```
 
-新增产物位于 `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.8.jar` 和 `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.8.jar`。26.1.2、26.2、26.3 目前仅提供 BD 0.7 构建。
+新增产物位于 `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.3+1.20.1-for-bd0.8.jar` 和 `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.3+1.21.1-for-bd0.8.jar`。26.1.2、26.2、26.3 目前仅提供 BD 0.7 构建。
 
 普通推进烟花火箭按飞行时间 1、2、3 分别建立服务端可验证的配方变体；单次合成消耗一张纸及对应数量的独立火药槽，产出由原版配方实际组装。含烟火之星的火箭不自动替换成普通火箭。炼药、火箭及白鞘动态产物的测试范围与限制见 [动态合成验收](docs/DYNAMIC_CRAFTING.md)。
 

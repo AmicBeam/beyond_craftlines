@@ -458,5 +458,6 @@
   "gui.beyond_craftlines.diagnostics.binding_snapshot_changed": "Bindings changed since this menu opened. Reopen the tree from the network to refresh the catalog; the old catalog cannot prove a missing target recipe.",
   "gui.beyond_craftlines.hide_approximate": "Hide ~",
   "gui.beyond_craftlines.show_approximate": "Show ~",
-  "tooltip.beyond_craftlines.toggle_approximate": "Hide or show approximate NBT/component candidates. This only filters the list; selections and preferences stay unchanged."
+  "tooltip.beyond_craftlines.toggle_approximate": "Hide or show approximate NBT/component candidates. This only filters the list; selections and preferences stay unchanged.",
+  "message.beyond_craftlines.dashboard.invalid_support": "Cannot place dashboard: the target needs a full sturdy face or an inventory container."
 }

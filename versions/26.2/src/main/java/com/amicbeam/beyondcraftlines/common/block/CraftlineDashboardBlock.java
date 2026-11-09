@@ -4,6 +4,7 @@ import com.amicbeam.beyondcraftlines.common.runtime.CraftlineDashboardBlockEntit
 import com.wintercogs.beyonddimensions.common.block.NetedBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.Container;
@@ -33,7 +34,19 @@ public final class CraftlineDashboardBlock extends NetedBlock implements EntityB
     private static final VoxelShape NORTH=box(4,4,14,12,12,16),SOUTH=box(4,4,0,12,12,2),WEST=box(14,4,4,16,12,12),EAST=box(0,4,4,2,12,12),UP=box(4,0,4,12,2,12),DOWN=box(4,14,4,12,16,12);
     public CraftlineDashboardBlock(Properties properties){super(properties);registerDefaultState(stateDefinition.any().setValue(FACING,Direction.NORTH));}
     @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block,BlockState> builder){builder.add(FACING);}
-    @Override public BlockState getStateForPlacement(BlockPlaceContext context){return defaultBlockState().setValue(FACING,context.getClickedFace());}
+    @Override public @Nullable BlockState getStateForPlacement(BlockPlaceContext context)
+    {
+        BlockState state = defaultBlockState().setValue(FACING, context.getClickedFace());
+        if (!state.canSurvive(context.getLevel(), context.getClickedPos()))
+        {
+            // Notify only the placing player on the server; survival checks remain side-effect free.
+            if (context.getPlayer() instanceof ServerPlayer player)
+                player.sendOverlayMessage(Component.translatable(
+                        "message.beyond_craftlines.dashboard.invalid_support"));
+            return null;
+        }
+        return state;
+    }
     public static Direction supportSide(BlockState state){return state.getValue(FACING);}
     public static BlockPos supportPos(BlockPos pos,BlockState state){return pos.relative(supportSide(state).getOpposite());}
     @Override public boolean canSurvive(BlockState state,LevelReader level,BlockPos pos){Direction facing=supportSide(state);BlockPos support=supportPos(pos,state);return canAttachTo(level,support,facing);}

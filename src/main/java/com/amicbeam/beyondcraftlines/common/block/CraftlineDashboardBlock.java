@@ -49,8 +49,19 @@ public final class CraftlineDashboardBlock extends NetedBlock implements EntityB
     @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder)
     { builder.add(FACING); }
 
-    @Override public BlockState getStateForPlacement(BlockPlaceContext context)
-    { return defaultBlockState().setValue(FACING, context.getClickedFace()); }
+    @Override public @Nullable BlockState getStateForPlacement(BlockPlaceContext context)
+    {
+        BlockState state = defaultBlockState().setValue(FACING, context.getClickedFace());
+        if (!state.canSurvive(context.getLevel(), context.getClickedPos()))
+        {
+            // Notify only the placing player on the server; survival checks remain side-effect free.
+            if (context.getPlayer() instanceof ServerPlayer player)
+                player.displayClientMessage(Component.translatable(
+                        "message.beyond_craftlines.dashboard.invalid_support"), true);
+            return null;
+        }
+        return state;
+    }
 
     public static Direction supportSide(BlockState state) { return state.getValue(FACING); }
     public static BlockPos supportPos(BlockPos position, BlockState state)

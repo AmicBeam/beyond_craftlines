@@ -62,7 +62,7 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
     public long lastObserved() { return lastObserved; }
     public String lastError() { return lastError; }
     public boolean isActiveDashboard()
-    { return getNetId() >= 0 && !target.isEmpty() && recipe.configured(); }
+    { return getNetId() >= 0 && !target.isEmpty() && AutomaticOrderPolicy.canMaintain(stockMode, recipe.configured()); }
     public void setOwner(UUID value) { if (value != null) { owner = value; syncChanged(); } }
 
     public boolean configure(ServerPlayer player, IStackKey<?> nextTarget, long nextDesired,
@@ -129,7 +129,7 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
         boolean pulse = dashboard.pulsePending;
         dashboard.pulsePending = false;
         if (!dashboard.redstoneMode.allows(powered, pulse) || dashboard.target.isEmpty()
-                || !dashboard.recipe.configured()) return;
+                || !AutomaticOrderPolicy.canMaintain(dashboard.stockMode, dashboard.recipe.configured())) return;
         dashboard.checkAndOrder(serverLevel, state);
     }
 
@@ -146,11 +146,6 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
             activeOrderDelivered = 0;
             syncChanged();
         }
-        int activeAutomatic = (int) orders.active().stream().filter(job -> job.networkId() == getNetId()
-                && job.origin() == OrderOrigin.AUTOMATIC).count();
-        if (!AutomaticOrderPolicy.canCreate(activeAutomatic,
-                CraftlinesConfig.MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK.get())) return;
-
         BlockPos supportPosition = CraftlineDashboardBlock.supportPos(worldPosition, state);
         net.minecraft.core.Direction supportSide = CraftlineDashboardBlock.supportSide(state);
         if (stockMode == DashboardStockMode.CONTAINER
@@ -196,6 +191,12 @@ public final class CraftlineDashboardBlockEntity extends NetedBlockEntity
             }
             deficit = AutomaticOrderPolicy.transferable(deficit, capacity);
         }
+
+        if (!recipe.configured()) { recordError(""); return; }
+        int activeAutomatic = (int) orders.active().stream().filter(job -> job.networkId() == getNetId()
+                && job.origin() == OrderOrigin.AUTOMATIC).count();
+        if (!AutomaticOrderPolicy.canCreate(activeAutomatic,
+                CraftlinesConfig.MAX_ACTIVE_AUTOMATIC_ORDERS_PER_NETWORK.get())) return;
 
         try
         {

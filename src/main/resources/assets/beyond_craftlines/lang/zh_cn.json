@@ -303,6 +303,7 @@
   "gui.beyond_craftlines.dashboard.redstone_mode.high": "红石：高电平",
   "gui.beyond_craftlines.dashboard.redstone_mode.pulse": "红石：上升沿",
   "gui.beyond_craftlines.dashboard.set_recipe": "设置配方树",
+  "gui.beyond_craftlines.dashboard.set_recipe_optional": "设置配方树（可选）",
   "gui.beyond_craftlines.dashboard.edit_recipe": "编辑配方树",
   "gui.beyond_craftlines.dashboard.recipe_unconfigured": "配方树未配置",
   "error.beyond_craftlines.dashboard_container_unavailable": "仪表盘背后的方块不支持当前目标资源",

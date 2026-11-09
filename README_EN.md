@@ -4,7 +4,7 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.7.1 fixes recipe pins and preferences leaking between component variants of the same item, adds a reversible “Hide ~” candidate filter, and moves status troubleshooting to a right-aligned exclamation button. See the [0.7.1 changelog](docs/CHANGELOG_0.7.1.md) and [0.7.0 feature notes](docs/CHANGELOG_0.7.0.md).
+Version 0.7.2 lets dashboards refill containers from BD network stock without a recipe. Direct transfers are no longer blocked by the automatic crafting order limit. See the [0.7.2 changelog](docs/CHANGELOG_0.7.2.md).
 
 ## Features
 
@@ -24,7 +24,7 @@ Version 0.7.1 fixes recipe pins and preferences leaking between component varian
 - **Cycle recovery and bucket/fluid alternatives**: a cycle rejects only the current recipe/tag combination, so sibling candidates remain searchable. Bucket-backed crafting prefers network fluid but retains the real bucket item as a manual and automatic shortage fallback.
 - **0.5.0 planning correctness**: ingredient choices retain full NBT/Data Component identity, so potion variants sharing one item ID cannot cross-match. The tree and material summary accept the same completed plan result, while no-recipe, missing-input, cycle-only, and exhausted-budget outcomes remain distinct.
 - **Craftline Provisioners**: A provisioner accepts order-generated resources for selected recipe types and exposes its inventory for external extraction. The Network Linker can assign both a direct-supply face and a request-time direct-extraction face on the same remote device. Supply supports round-robin, nearest-first, farthest-first, and even-split ordering. Each provisioner accepts 16 distinct devices by default (server-configurable), with state shown in its GUI, Jade, world highlights, and edit-mode connection lines.
-- **Craftline Dashboards**: Attach a thin dashboard to a container or network device, then drop an item, fluid, or chemical into its JEI ghost ingredient slot. It stores the maintained amount, network/container monitoring mode, redstone behavior, blocking mode, and a fixed recipe tree. Automatic refill orders do not consume player order slots and default to ten active orders per network.
+- **Craftline Dashboards**: Attach a thin dashboard to a container or network device, then drop an item, fluid, or chemical into its JEI ghost ingredient slot. It stores the maintained amount, network/container monitoring mode, redstone behavior, blocking mode, and a fixed recipe tree. Container mode transfers existing network stock without a recipe; a configured recipe enables crafting the remaining shortage. Network mode still requires a recipe. Automatic refill orders do not consume player order slots and default to ten active orders per network.
 - **Persistent orders and status management**: Orders, step progress, and machine bindings survive world saves. Players can inspect network orders, diagnose why a step is waiting, and cancel unfinished work.
 
 To investigate indexing stalls, search the instance’s `logs/latest.log` or `logs/debug.log` for `slow recipe index`. Calls taking at least 20ms produce WARN entries with the stage, recipe ID, type, implementation class, duration, known input size, and thread. Details are deduplicated per recipe and stage and capped at 128 per JEI runtime, with a slowest-call summary. Run `/craftlines reload` to collect a fresh set.
@@ -49,7 +49,7 @@ See the [detailed cache guide (Chinese)](docs/RECIPE_CACHE.md) and [Wiki](https:
 
 Unless explicitly scoped to one version, feature descriptions and development changes apply to all five versions above.
 
-Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.1`, sharing the `0.7` feature version.
+Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.2`, sharing the `0.7` feature version.
 
 - `mod_id`: `beyond_craftlines`
 - Required dependencies: Beyond Dimensions and JEI on all five Minecraft versions. `for-bd0.7` artifacts require BD `<0.8`: at least 0.7.30 on 1.20.1, 1.21.1 and 26.1.2, or 0.7.31 on 26.2 and 26.3. Separate `for-bd0.8` artifacts on 1.20.1 Forge and 1.21.1 NeoForge require BD `[0.8.8,0.9)`, CompixelUI and Kotlin. Install only one matching Craftlines JAR per instance. The 1.20.1 BD 0.8 runtime requires Forge 47.2.18 or newer.
@@ -84,11 +84,11 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 The five artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.1+1.20.1-for-bd0.7.jar`
-- `build/libs/beyond_craftlines-0.7.1+1.21.1-for-bd0.7.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.1+26.1.2-for-bd0.7.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.1+26.2-for-bd0.7.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.1+26.3-for-bd0.7.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.2+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.2+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.2+26.3-for-bd0.7.jar`
 
 The two BD 0.8 builds share recipe logic and common tests. Run from the repository root with JDK 17 / 21 respectively:
 
@@ -97,7 +97,7 @@ The two BD 0.8 builds share recipe logic and common tests. Run from the reposito
 ./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
 ```
 
-Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.1+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.1+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
+Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
 
 Ordinary firework rockets have server-derived recipe variants for flight durations 1, 2 and 3. Each consumes one paper and the corresponding number of separate gunpowder slots, and delegates assembly to the real vanilla recipe. Rockets with explosions are never silently replaced by ordinary rockets. See [dynamic crafting acceptance](docs/DYNAMIC_CRAFTING.md) for brewing, rockets and White Sheath policy test coverage and limitations.
 

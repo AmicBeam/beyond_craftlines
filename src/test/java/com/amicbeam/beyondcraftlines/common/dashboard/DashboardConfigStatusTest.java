@@ -10,7 +10,7 @@ final class DashboardConfigStatusTest
     @Test void unconfiguredDashboardShowsRecipeErrorWhenOpened()
     {
         assertEquals(DashboardConfigStatus.RECIPE_UNCONFIGURED,
-                DashboardConfigStatus.visibleError(false, ""));
+                DashboardConfigStatus.visibleError(false, DashboardStockMode.NETWORK, ""));
     }
 
     @Test void changingTargetInvalidatesConfiguredRecipeAndShowsError()
@@ -19,6 +19,12 @@ final class DashboardConfigStatusTest
 
         assertFalse(configured);
         assertEquals(DashboardConfigStatus.RECIPE_UNCONFIGURED,
-                DashboardConfigStatus.visibleError(configured, ""));
+                DashboardConfigStatus.visibleError(configured, DashboardStockMode.NETWORK, ""));
+    }
+    @Test void containerTransfersDoNotRequireRecipe()
+    {
+        assertEquals("", DashboardConfigStatus.visibleError(false, DashboardStockMode.CONTAINER, ""));
+        assertEquals("dashboard_container_blocked", DashboardConfigStatus.visibleError(
+                false, DashboardStockMode.CONTAINER, "dashboard_container_blocked"));
     }
 }

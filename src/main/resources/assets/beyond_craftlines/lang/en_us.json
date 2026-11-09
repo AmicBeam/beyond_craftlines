@@ -303,6 +303,7 @@
   "gui.beyond_craftlines.dashboard.redstone_mode.high": "Redstone: High",
   "gui.beyond_craftlines.dashboard.redstone_mode.pulse": "Redstone: Rising edge",
   "gui.beyond_craftlines.dashboard.set_recipe": "Set recipe tree",
+  "gui.beyond_craftlines.dashboard.set_recipe_optional": "Set recipe (optional)",
   "gui.beyond_craftlines.dashboard.edit_recipe": "Edit recipe tree",
   "gui.beyond_craftlines.dashboard.recipe_unconfigured": "Recipe tree is not configured",
   "error.beyond_craftlines.dashboard_container_unavailable": "The attached block does not support the selected resource",

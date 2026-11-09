@@ -10,9 +10,9 @@ public final class DashboardConfigStatus
     public static boolean recipeConfiguredAfterTargetChange(boolean configured, boolean targetChanged)
     { return configured && !targetChanged; }
 
-    public static String visibleError(boolean recipeConfigured, String runtimeError)
+    public static String visibleError(boolean recipeConfigured, DashboardStockMode stockMode, String runtimeError)
     {
         if (runtimeError != null && !runtimeError.isBlank()) return runtimeError;
-        return recipeConfigured ? "" : RECIPE_UNCONFIGURED;
+        return AutomaticOrderPolicy.canMaintain(stockMode, recipeConfigured) ? "" : RECIPE_UNCONFIGURED;
     }
 }

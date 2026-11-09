@@ -4,7 +4,7 @@
 
 面向 Beyond Dimensions 的配方驱动自动合成系统。Beyond: Craftlines 将 JEI 中的配方展开为可交互的递归合成树，从 BD 网络统一预留原料、调度工作台与真实机器、回收产物，并以可追踪、可取消、可持久化的订单完成从“查到配方”到“拿到成品”的整条生产链。
 
-0.7.1 修复同物品 ID、不同 NBT/组件的固定配方与偏好相互覆盖导致的假循环，新增候选列表“隐藏近似”切换，并将合成状态页排查入口调整为右侧感叹号。完整记录见 [0.7.1 更新日志](docs/CHANGELOG_0.7.1.md)；上一功能版本的完整说明见 [0.7.0 更新日志](docs/CHANGELOG_0.7.0.md)。
+0.7.2 支持仪表盘在未配置配方时从 BD 网络补充容器库存；直接搬运不再受自动合成订单上限阻挡。完整记录见 [0.7.2 更新日志](docs/CHANGELOG_0.7.2.md)。
 
 ## 核心功能
 
@@ -24,7 +24,7 @@
 - **循环恢复与桶流体双候选**：循环只拒绝当前配方/tag 组合，后续兄弟候选仍会继续搜索；桶装流体默认使用网络流体，但桶物品始终保留为玩家可选和自动缺料回退候选。
 - **0.5.0 规划正确性闭环**：ingredient 选择使用包含 NBT/Data Components 的完整资源身份，药水等同 ID 物品不会串配；树与右侧汇总只接受同一份规划结果，预览完成前保持计算中；无配方、普通缺料、纯循环和预算耗尽分别显示原因。
 - **合成链供给器**：供给器可按所绑定机器支持的配方类型接收订单产物，并允许外部管道提取；也可用网络连接器无线连接目标设备的指定面，同一设备可分别设置一个直接供应面和一个在本供给器参与请求期间直抽到网络的抽取面。供应可按轮询、最近优先、最远优先或均分执行。每个供给器默认最多连接 16 台不同设备（服务端可配置），配置界面、Jade、世界高亮和编辑态连线会显示连接状态。
-- **合成链仪表盘**：薄面板可附着在容器或网络设备表面，通过 JEI ghost ingredient 槽标记物品、流体或化学品，并保存维持数量、网络/容器监测模式、红石模式、阻挡模式和固定配方树。仪表盘按配置周期补足缺口；自动订单不占玩家订单上限，每个网络默认最多同时存在 10 个。
+- **合成链仪表盘**：薄面板可附着在容器或网络设备表面，通过 JEI ghost ingredient 槽标记物品、流体或化学品，并保存维持数量、网络/容器监测模式、红石模式、阻挡模式和固定配方树。容器模式无需配方即可搬运网络现货，配置配方后才会为剩余缺口自动合成；网络模式仍需配方。仪表盘按配置周期补足缺口；自动订单不占玩家订单上限，每个网络默认最多同时存在 10 个。
 - **持久化订单与状态管理**：订单、步骤进度和机器绑定会随世界保存；玩家可以查看网络订单、诊断等待原因并取消尚未完成的任务。
 
 索引卡顿排查：在游戏实例的 `logs/latest.log` 或 `logs/debug.log` 搜索 `slow recipe index`。单次处理达到 20ms 时会以 WARN 输出阶段、配方 ID、类型、实现类、耗时、已知输入规模和线程名；同一配方阶段去重，每个 JEI 运行时最多 128 条明细，并提供最慢调用汇总。`/craftlines reload` 后可重新采集。
@@ -49,7 +49,7 @@ Craftlines 按单条配方隔离 JEI 扩展异常：若第三方展示配方在�
 
 除非明确限定版本，功能说明和开发改动均适用于以上五个版本。
 
-版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 Minecraft 1.20.1、1.21.1、26.1.2、26.2 与 26.3 的模组版本统一为 `0.7.1`，均属于 `0.7` 功能版本。
+版本号规则：三段版本号的第二段表示功能版本，在各 Minecraft 版本间保持一致；第三段表示修复版本，按 Minecraft 版本独立递增，可以不同。当前 Minecraft 1.20.1、1.21.1、26.1.2、26.2 与 26.3 的模组版本统一为 `0.7.2`，均属于 `0.7` 功能版本。
 
 - `mod_id`: `beyond_craftlines`
 - 必需依赖：Beyond Dimensions、JEI（以上五个 Minecraft 版本均适用）。`for-bd0.7` 产物限定 BD `<0.8`：1.20.1、1.21.1、26.1.2 至少 0.7.30，26.2、26.3 至少 0.7.31。1.20.1 Forge 与 1.21.1 NeoForge 另有 `for-bd0.8` 产物，要求 BD `[0.8.8,0.9)`、CompixelUI 和 Kotlin；同一实例只安装一个对应版本的 Craftlines JAR。1.20.1 的 BD 0.8 实例至少使用 Forge 47.2.18。
@@ -84,11 +84,11 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 五个产物分别位于：
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.1+1.20.1-for-bd0.7.jar`
-- `build/libs/beyond_craftlines-0.7.1+1.21.1-for-bd0.7.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.1+26.1.2-for-bd0.7.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.1+26.2-for-bd0.7.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.1+26.3-for-bd0.7.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.2+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.2+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.2+26.3-for-bd0.7.jar`
 
 BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根目录分别执行（JDK 17 / 21）：
 
@@ -97,7 +97,7 @@ BD 0.8 的两个构建复用同一套配方逻辑与公共测试，在项目根�
 ./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
 ```
 
-新增产物位于 `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.1+1.20.1-for-bd0.8.jar` 和 `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.1+1.21.1-for-bd0.8.jar`。26.1.2、26.2、26.3 目前仅提供 BD 0.7 构建。
+新增产物位于 `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.20.1-for-bd0.8.jar` 和 `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.2+1.21.1-for-bd0.8.jar`。26.1.2、26.2、26.3 目前仅提供 BD 0.7 构建。
 
 普通推进烟花火箭按飞行时间 1、2、3 分别建立服务端可验证的配方变体；单次合成消耗一张纸及对应数量的独立火药槽，产出由原版配方实际组装。含烟火之星的火箭不自动替换成普通火箭。炼药、火箭及白鞘动态产物的测试范围与限制见 [动态合成验收](docs/DYNAMIC_CRAFTING.md)。
 

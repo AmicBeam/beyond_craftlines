@@ -4,6 +4,10 @@ public final class AutomaticOrderPolicy
 {
     private AutomaticOrderPolicy() {}
 
+    /** Container stock can be maintained by transfers alone; network stock needs a recipe. */
+    public static boolean canMaintain(DashboardStockMode stockMode, boolean recipeConfigured)
+    { return stockMode == DashboardStockMode.CONTAINER || recipeConfigured; }
+
     public static long deficit(long target, long stored)
     { return target <= 0 ? 0 : Math.max(0, target - Math.max(0, stored)); }
 

@@ -38,6 +38,7 @@ public final class DynamicCraftingFixtures
                     case "isSame" -> args[0] instanceof com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> other
                             && other.getReadOnlyStack() instanceof ItemStack otherStack && ItemStack.isSameItem(sample, otherStack);
                     case "serializeNBT" -> sample.save(new CompoundTag());
+                    case "deserializeNBT" -> key(ItemStack.of((CompoundTag) args[0]));
                     case "toString" -> sample.toString();
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

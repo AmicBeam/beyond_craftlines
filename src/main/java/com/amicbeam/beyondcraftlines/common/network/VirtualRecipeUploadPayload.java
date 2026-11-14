@@ -34,7 +34,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var descriptor = holder == null ? null : VirtualProvisionerRecipeRegistry.descriptor(holder.value());
             return descriptor == null ? null : new Entry(id.toString(), descriptor.family(), descriptor.output(),
                     descriptor.outputAmount(), descriptor.inputs().stream().map(input ->
-                    new Input(input.inputGroup(), input.candidates(), input.use())).toList(), descriptor.byproducts(), descriptor.guaranteedByproducts());
+                    new Input(input.inputGroup(), input.candidates(), input.use(), input.gridSlot())).toList(), descriptor.byproducts(), descriptor.guaranteedByproducts());
         }).filter(java.util.Objects::nonNull).toList();
         int count = Math.max(1, (entries.size() + PAGE_SIZE - 1) / PAGE_SIZE);
         List<VirtualRecipeUploadPayload> pages = new ArrayList<>();
@@ -60,6 +60,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             for (Input input : recipe.inputs())
             {
                 buffer.writeUtf(input.inputGroup(), 64);
+                buffer.writeVarInt(input.gridSlot());
                 buffer.writeVarInt(input.use().kind().ordinal());
                 buffer.writeVarInt(input.use().damagePerCraft());
                 buffer.writeVarInt(input.candidates().size());
@@ -95,6 +96,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             for (int slot = 0; slot < inputCount; slot++)
             {
                 String group = buffer.readUtf(64);
+                int gridSlot = buffer.readVarInt();
                 int useKind = buffer.readVarInt();
                 int damagePerCraft = buffer.readVarInt();
                 var kinds = com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.Kind.values();
@@ -110,7 +112,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
                 List<KeyAmount> candidates = new ArrayList<>();
                 for (int candidate = 0; candidate < candidateCount; candidate++)
                     candidates.add(new KeyAmount(IStackKey.STREAM_CODEC.decode(buffer), buffer.readVarLong()));
-                inputs.add(new Input(group, candidates, use));
+                inputs.add(new Input(group, candidates, use, gridSlot));
             }
             recipes.add(new Entry(id, family, output, outputAmount, inputs, VirtualRecipeOutputs.read(buffer), VirtualRecipeOutputs.read(buffer)));
         }
@@ -132,7 +134,7 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
             var descriptor = new VirtualProvisionerRecipeRegistry.Descriptor(recipe.family(), recipe.output(),
                     recipe.outputAmount(), recipe.inputs().stream().map(input ->
                             new VirtualProvisionerRecipeRegistry.InputSlot(
-                                    input.inputGroup(), input.candidates(), input.use())).toList(), recipe.byproducts(), recipe.guaranteedByproducts());
+                                    input.inputGroup(), input.candidates(), input.use(), input.gridSlot())).toList(), recipe.byproducts(), recipe.guaranteedByproducts());
             if (!descriptor.id().toString().equals(recipe.id()))
                 return;
             VirtualProvisionerRecipeRegistry.register(descriptor);
@@ -142,8 +144,12 @@ public record VirtualRecipeUploadPayload(long nonce, int pageIndex, int pageCoun
     @Override public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     public record Entry(String id, String family, IStackKey<?> output, long outputAmount, List<Input> inputs, List<KeyAmount> byproducts, List<KeyAmount> guaranteedByproducts) {}
     public record Input(String inputGroup, List<KeyAmount> candidates,
-                        com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
+                        com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use, int gridSlot)
     {
+        public Input(String inputGroup, List<KeyAmount> candidates,
+                        com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse use)
+        { this(inputGroup, candidates, use, -1); }
+
         public Input(String inputGroup, List<KeyAmount> candidates)
         { this(inputGroup, candidates, com.amicbeam.beyondcraftlines.common.crafting.VirtualInputUse.CONSUMED); }
     }

@@ -29,6 +29,87 @@ public final class BoundMachineAutomation
 {
     private BoundMachineAutomation() {}
 
+    /** One order owns these probes; simulations never mutate the real capability. */
+    public static final class ItemSession
+    {
+        private final List<IItemHandler> handlers;
+        private final List<OrderedSlotPlan<ItemStackKey>> plans;
+        private int gridHandler = -1;
+
+        private ItemSession(List<IItemHandler> handlers)
+        {
+            this.handlers = handlers.stream().sorted(java.util.Comparator
+                    .comparingInt(IItemHandler::getSlots).reversed()).toList();
+            this.plans = this.handlers.stream().map(handler -> new OrderedSlotPlan<>(
+                    new OrderedSlotPlan.Inventory<ItemStackKey>()
+                    {
+                        public int slots() { return handler.getSlots(); }
+                        public ItemStackKey key(int slot)
+                        { return handler.getStackInSlot(slot).isEmpty() ? null : new ItemStackKey(handler.getStackInSlot(slot)); }
+                        public long count(int slot) { return handler.getStackInSlot(slot).getCount(); }
+                        public long limit(int slot, ItemStackKey key)
+                        { return Math.min(handler.getSlotLimit(slot), key.getReadOnlyStack().getMaxStackSize()); }
+                        public boolean accepts(int slot, ItemStackKey key)
+                        { return handler.isItemValid(slot, key.getReadOnlyStack()); }
+                    })).toList();
+        }
+
+        private ItemSession(List<IItemHandler> handlers, List<OrderedSlotPlan<ItemStackKey>> plans)
+        { this.handlers = handlers; this.plans = plans; }
+
+        public ItemSession newLayout()
+        { return new ItemSession(handlers, plans.stream().map(OrderedSlotPlan::newLayout).toList()); }
+
+        public void beginRound() { plans.forEach(OrderedSlotPlan::beginRound); }
+
+        public boolean isEmpty()
+        {
+            var selected = gridHandler >= 0 ? List.of(handlers.get(gridHandler)) : handlers;
+            for (var handler : selected)
+                for (int slot = 0; slot < handler.getSlots(); slot++)
+                    if (!handler.getStackInSlot(slot).isEmpty()) return false;
+            return true;
+        }
+
+        public boolean hasGridCell(int cell)
+        { return gridHandler >= 0 && plans.get(gridHandler).hasAssignment(cell); }
+
+        public List<ItemTarget> offer(ItemStackKey key, long amount, int gridCell)
+        {
+            List<ItemTarget> result = new ArrayList<>();
+            for (int index = 0; index < handlers.size() && amount > 0; index++)
+            {
+                if (gridCell >= 0 && gridHandler >= 0 && gridHandler != index) continue;
+                OrderedSlotPlan<ItemStackKey> plan = plans.get(index);
+                for (var allocation : plan.offer(key, amount, gridCell))
+                {
+                    result.add(new ItemTarget(handlers.get(index), allocation.slot(), allocation.amount()));
+                    amount -= allocation.amount();
+                }
+                if (gridCell >= 0 && plan.hasAssignment(gridCell)) { gridHandler = index; break; }
+            }
+            return List.copyOf(result);
+        }
+
+        public boolean sameInventory(ItemSession other)
+        { return handlers.size() == other.handlers.size() && handlers.stream()
+                .allMatch(handler -> other.handlers.stream().anyMatch(value -> value == handler)); }
+    }
+
+    public record ItemTarget(IItemHandler handler, int slot, long amount)
+    {
+        public long insert(ItemStackKey key, long requested)
+        {
+            int count = (int) Math.min(Integer.MAX_VALUE, Math.min(amount, requested));
+            ItemStack offered = key.getReadOnlyStack().copy();
+            offered.setCount(count);
+            return count - handler.insertItem(slot, offered, false).getCount();
+        }
+    }
+
+    public static ItemSession itemSession(ServerLevel level, BlockPos position, Direction side)
+    { return new ItemSession(side == null ? handlers(level, position) : handlers(level, position, side)); }
+
     public static boolean isAutomatable(ServerLevel level, BlockPos position)
     {
         return !resourceHandlers(level, position).isEmpty();

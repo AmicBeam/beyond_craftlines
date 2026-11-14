@@ -171,6 +171,7 @@ public final class RecipeOrderService
         List<RecipeOrderJob> jobs = data.active().stream()
                 .sorted(Comparator.comparingLong(RecipeOrderJob::createdAt)
                         .thenComparing(RecipeOrderJob::id)).toList();
+        data.itemSessions.keySet().retainAll(jobs.stream().map(RecipeOrderJob::id).collect(java.util.stream.Collectors.toSet()));
         RuntimeOrderIndex<Integer, MachineKey> index = new RuntimeOrderIndex<>();
         for (RecipeOrderJob job : jobs)
             for (RecipeOrderJob.StepExecution execution : job.executions())
@@ -463,6 +464,8 @@ public final class RecipeOrderService
         InputSelection selection = selectInputs(level, network.getUnifiedStorage(), job, step, batchInputs);
         if (selection == null)
             return job.with(RecipeOrderJob.Status.PAUSED, encode("matching_provisioner_inputs"));
+        if (targets.values().stream().anyMatch(target -> target.provisioner().hasPendingSlotInputs()))
+            return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_waiting_earlier"));
         for (InputChunk input : selection.chunks())
             if (!targets.get(input.inputGroup()).provisioner().storage()
                     .insertFromOrder(input.key(), input.amount(), true).isEmpty())
@@ -498,6 +501,10 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_delivery_rolled_back"));
             }
         }
+        targets.values().stream().map(DeviceBindingRegistry.ProvisionerTarget::provisioner).distinct().forEach(provisioner ->
+                provisioner.queueSlotInputs(job.id(), job.nextStep(), selection.chunks().stream().filter(input -> input.gridSlot() >= 0
+                        && targets.get(input.inputGroup()).provisioner() == provisioner).map(input ->
+                        new RecipePlan.Material(input.key(), input.amount(), input.ingredientSlot(), input.inputGroup(), input.gridSlot())).toList()));
         targets.values().stream().map(DeviceBindingRegistry.ProvisionerTarget::provisioner).distinct()
                 .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
         long batchCrafts = BlockingModeLogic.craftsToDispatch(sequentialDispatch(job, step), step.crafts());
@@ -569,7 +576,17 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("input_group_unassigned", group));
             routes.put(group, selected);
         }
-        preferCohesiveDirectMachine(server, routes, batchInputs);
+        preferCohesiveDirectMachine(server, job, routes, batchInputs);
+        if (batchInputs.stream().anyMatch(input -> input.gridSlot() >= 0))
+            for (var endpoints : routes.values())
+                for (var endpoint : endpoints)
+                    if (endpoint.machine() != null)
+                    {
+                        var binding = endpoint.machine().binding();
+                        var location = new RecipeOrderJob.MachineLocation(binding.dimension(), binding.position(), "");
+                        if (!itemSession(server, job, location, endpoint.machine().level()).isEmpty())
+                            return job.with(RecipeOrderJob.Status.PAUSED, encode("blocking_machine_input"));
+                    }
         boolean hasDirect = routes.values().stream().flatMap(List::stream)
                 .anyMatch(endpoint -> endpoint.machine() != null);
 
@@ -588,6 +605,8 @@ public final class RecipeOrderService
         for (InputChunk input : selection.chunks())
         {
             if (!provisionerGroups.contains(input.inputGroup())) continue;
+            if (routes.get(input.inputGroup()).getFirst().provisioner().provisioner().hasPendingSlotInputs())
+                return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_waiting_earlier"));
             ProvisionerStorage storage = routes.get(input.inputGroup()).getFirst()
                     .provisioner().provisioner().storage();
             GroupEndpoint endpoint = routes.get(input.inputGroup()).getFirst();
@@ -632,6 +651,12 @@ public final class RecipeOrderService
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("provisioner_delivery_rolled_back"));
             }
         }
+        routes.entrySet().stream().filter(entry -> provisionerGroups.contains(entry.getKey()))
+                .map(entry -> entry.getValue().getFirst().provisioner().provisioner()).distinct().forEach(provisioner ->
+                provisioner.queueSlotInputs(job.id(), job.nextStep(), selection.chunks().stream().filter(input -> input.gridSlot() >= 0
+                        && provisionerGroups.contains(input.inputGroup())
+                        && routes.get(input.inputGroup()).getFirst().provisioner().provisioner() == provisioner).map(input ->
+                        new RecipePlan.Material(input.key(), input.amount(), input.ingredientSlot(), input.inputGroup(), input.gridSlot())).toList()));
         routes.entrySet().stream().filter(entry -> provisionerGroups.contains(entry.getKey()))
                 .map(entry -> entry.getValue().getFirst().provisioner().provisioner()).distinct()
                 .forEach(CraftlineProvisionerBlockEntity::activateDeliverySequence);
@@ -686,6 +711,7 @@ public final class RecipeOrderService
         List<RecipePlan.Material> remaining = new ArrayList<>();
         for (RecipePlan.Material material : requested)
         {
+            if (material.gridSlot() >= 0) { remaining.add(material); continue; }
             GroupedStock stock = available.stream().filter(value ->
                     value.inputGroup().equals(material.inputGroup())
                             && com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
@@ -710,7 +736,7 @@ public final class RecipeOrderService
             available.add(new GroupedStock(stock.inputGroup(), stock.key(), stock.amount() - credited));
             long left = material.amount() - credited;
             if (left > 0) remaining.add(new RecipePlan.Material(
-                    material.key(), left, material.ingredientSlot(), material.inputGroup()));
+                    material.key(), left, material.ingredientSlot(), material.inputGroup(), material.gridSlot()));
         }
         return List.copyOf(remaining);
     }
@@ -855,11 +881,11 @@ public final class RecipeOrderService
                             machine.dimension(), machine.position()).acceptsRecipeInput(input.key(), step.executionOutputKey()))))
                 return job.with(RecipeOrderJob.Status.PAUSED, encode("resource_filter_blocked"));
             List<RoutedInputChunk> dispatch = selection == null ? List.of() : dispatchableInputsAcross(
-                    server, directLocations, wait.remainingInputs(), selection.chunks(), step.executionOutputKey());
+                    server, job, directLocations, wait.remainingInputs(), selection.chunks(), step.executionOutputKey());
             if (selection != null && dispatch.isEmpty() && returnIncompatibleMachineInputs(
                     server, network.getUnifiedStorage(), directLocations, wait.remainingInputs()))
                 dispatch = dispatchableInputsAcross(
-                        server, directLocations, wait.remainingInputs(), selection.chunks(), step.executionOutputKey());
+                        server, job, directLocations, wait.remainingInputs(), selection.chunks(), step.executionOutputKey());
             if (!dispatch.isEmpty())
             {
                 // Extract every network-backed chunk before touching the machine. A stock change can
@@ -884,7 +910,7 @@ public final class RecipeOrderService
                         break;
                     }
                     available.add(new RoutedInputChunk(routed.machine(), new InputChunk(
-                            taken.key(), taken.amount(), false, chunk.inputGroup())));
+                            taken.key(), taken.amount(), false, chunk.inputGroup(), chunk.ingredientSlot(), chunk.gridSlot()), routed.target()));
                 }
                 if (extractionFailed)
                 {
@@ -895,19 +921,26 @@ public final class RecipeOrderService
                 {
                     List<InputChunk> delivered = new ArrayList<>();
                     List<RecipePlan.ReservedMaterial> consumed = new ArrayList<>();
+                    boolean insertionBlocked = false;
                     for (RoutedInputChunk routed : available)
                     {
                         InputChunk chunk = routed.chunk();
                         ServerLevel machineLevel = server.getLevel(routed.machine().dimension());
-                        if (machineLevel == null) continue;
-                        long inserted = BoundMachineAutomation.insert(
-                                machineLevel, routed.machine().position(), chunk.key(), chunk.amount());
+                        if (machineLevel == null || insertionBlocked)
+                        {
+                            if (!chunk.fromReserved()) network.getUnifiedStorage().insert(chunk.key(), chunk.amount(), false);
+                            continue;
+                        }
+                        long inserted = routed.target() != null
+                                ? routed.target().insert((ItemStackKey) chunk.key(), chunk.amount())
+                                : BoundMachineAutomation.insert(machineLevel, routed.machine().position(), chunk.key(), chunk.amount());
                         if (!chunk.fromReserved() && inserted < chunk.amount())
                             network.getUnifiedStorage().insert(
                                     chunk.key(), chunk.amount() - inserted, false);
+                        if (inserted < chunk.amount()) insertionBlocked = true;
                         if (inserted <= 0) continue;
                         delivered.add(new InputChunk(chunk.key(), inserted,
-                                chunk.fromReserved(), chunk.inputGroup()));
+                                chunk.fromReserved(), chunk.inputGroup(), chunk.ingredientSlot(), chunk.gridSlot()));
                         if (chunk.fromReserved()) consumed.add(
                                 new RecipePlan.ReservedMaterial(chunk.key(), inserted));
                     }
@@ -1145,7 +1178,7 @@ public final class RecipeOrderService
                 working = consumeReserved(working, consumed);
                 long left = Math.max(0, input.amount() - delivered);
                 if (left > 0) remaining.add(new RecipePlan.Material(
-                        input.key(), left, input.ingredientSlot(), input.inputGroup()));
+                        input.key(), left, input.ingredientSlot(), input.inputGroup(), input.gridSlot()));
             }
             wait = wait.withInputs(remaining);
             if (!remaining.isEmpty()) return working.awaitExternal(wait, encode("feeding_native_furnace"));
@@ -1292,11 +1325,11 @@ public final class RecipeOrderService
     {
         return step.inputs().stream().map(input -> new RecipePlan.Material(input.key(),
                 BlockingModeLogic.amountToDispatch(blockingMode, input.amount(), step.crafts()),
-                input.ingredientSlot(), input.inputGroup())).toList();
+                input.ingredientSlot(), input.inputGroup(), input.gridSlot())).toList();
     }
 
     private static boolean sequentialDispatch(RecipeOrderJob job, RecipePlan.Step step)
-    { return job.blockingMode() || step.selfIncrementSeed() > 0; }
+    { return job.blockingMode() || step.selfIncrementSeed() > 0 || step.inputs().stream().anyMatch(input -> input.gridSlot() >= 0); }
 
     private static ItemStackKey key(ResourceLocation id)
     { return new ItemStackKey(new ItemStack(BuiltInRegistries.ITEM.get(id))); }
@@ -1408,7 +1441,7 @@ public final class RecipeOrderService
                     level, position, chunk.key(), chunk.amount());
             long offered = Math.min(chunk.amount(), capacity);
             if (offered > 0) result.add(new InputChunk(
-                    chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup()));
+                    chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup(), chunk.ingredientSlot(), chunk.gridSlot()));
         }
         for (RecipePlan.Material material : materials)
         {
@@ -1428,12 +1461,14 @@ public final class RecipeOrderService
 
     /** Allocates one feeding round across grouped direct endpoints without overbooking empty one-slot machines. */
     private static List<RoutedInputChunk> dispatchableInputsAcross(
-            MinecraftServer server, List<RecipeOrderJob.MachineLocation> machines,
+            MinecraftServer server, RecipeOrderJob job, List<RecipeOrderJob.MachineLocation> machines,
             List<RecipePlan.Material> materials, List<InputChunk> selected, IStackKey<?> outputKey)
     {
         List<RoutedInputChunk> result = new ArrayList<>();
         List<InputChunk> deferredByResourceConflict = new ArrayList<>();
         Map<InputGroupRouteLogic.ResourceChannel<MachineKey>, PlannedInput> planned = new java.util.HashMap<>();
+        Map<MachineKey, BoundMachineAutomation.ItemSession> itemRounds = new java.util.HashMap<>();
+        Set<BoundMachineAutomation.ItemSession> started = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         for (InputChunk chunk : selected)
         {
             long remaining = chunk.amount();
@@ -1444,6 +1479,20 @@ public final class RecipeOrderService
                 if (level == null || !BindingSavedData.get(server).resourceFilter(
                         machine.dimension(), machine.position()).acceptsRecipeInput(chunk.key(), outputKey)) continue;
                 MachineKey key = new MachineKey(machine.dimension(), machine.position());
+                if (chunk.key() instanceof ItemStackKey item)
+                {
+                    var session = itemRounds.computeIfAbsent(key, unused -> itemSession(server, job, machine, level));
+                    if (started.add(session)) session.beginRound();
+                    for (var target : session.offer(item, remaining, chunk.gridSlot()))
+                    {
+                        result.add(new RoutedInputChunk(machine, chunk.withAmount(target.amount()), target));
+                        remaining -= target.amount();
+                    }
+                    if (remaining <= 0) break;
+                    // A shadow reservation may temporarily occupy the only writable slot.
+                    if (chunk.gridSlot() < 0 && !result.isEmpty()) deferredByResourceConflict.add(chunk);
+                    continue;
+                }
                 var channel = InputGroupRouteLogic.resourceChannel(key, chunk.key().getTypeId());
                 PlannedInput previous = planned.get(channel);
                 if (previous != null && !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
@@ -1458,7 +1507,7 @@ public final class RecipeOrderService
                 long offered = Math.min(remaining, Math.max(0, capacity - alreadyPlanned));
                 if (offered <= 0) continue;
                 result.add(new RoutedInputChunk(machine, new InputChunk(
-                        chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup())));
+                        chunk.key(), offered, chunk.fromReserved(), chunk.inputGroup(), chunk.ingredientSlot(), chunk.gridSlot())));
                 planned.put(channel, new PlannedInput(chunk.key(),
                         SaturatingLongMath.add(alreadyPlanned, offered)));
                 remaining -= offered;
@@ -1489,6 +1538,30 @@ public final class RecipeOrderService
         return List.copyOf(result);
     }
 
+    private static BoundMachineAutomation.ItemSession itemSession(MinecraftServer server, RecipeOrderJob job,
+            RecipeOrderJob.MachineLocation machine, ServerLevel level)
+    {
+        var sessions = RecipeOrderSavedData.get(server).itemSessions.computeIfAbsent(job.id(), unused -> new java.util.HashMap<>());
+        String key = job.nextStep() + "|" + machine.dimension() + "|" + machine.position().asLong();
+        var current = BoundMachineAutomation.itemSession(level, machine.position(), null);
+        var existing = sessions.get(key);
+        if (existing != null && existing.sameInventory(current)) return existing;
+        var shared = sessions.entrySet().stream().filter(entry -> entry.getKey().startsWith(job.nextStep() + "|"))
+                .map(Map.Entry::getValue).filter(value -> value.sameInventory(current)).findFirst().orElse(current);
+        if (shared == current)
+        {
+            var previous = sessions.values().stream().filter(value -> value.sameInventory(current)).findFirst().orElse(null);
+            if (previous != null) shared = previous.newLayout();
+            shared.beginRound();
+            for (var input : job.step(job.nextStep()).inputs())
+                if (input.gridSlot() >= 0 && input.key() instanceof ItemStackKey item
+                        && (machine.inputGroup().isBlank() || machine.inputGroup().equals(input.inputGroup())))
+                    shared.offer(item, 1, input.gridSlot());
+        }
+        sessions.put(key, shared);
+        return shared;
+    }
+
     private static List<RecipeOrderJob.MachineLocation> distinctLocations(
             List<RecipeOrderJob.MachineLocation> locations)
     {
@@ -1507,6 +1580,7 @@ public final class RecipeOrderService
         List<RecipePlan.Material> remaining = new ArrayList<>();
         for (RecipePlan.Material material : requested)
         {
+            if (material.gridSlot() >= 0) { remaining.add(material); continue; }
             KeyAmount stock = available.stream().filter(value ->
                             com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                                     .exact(material.key(), value.key()))
@@ -1525,7 +1599,7 @@ public final class RecipeOrderService
             }
             long left = material.amount() - credited;
             if (left > 0) remaining.add(new RecipePlan.Material(
-                    material.key(), left, material.ingredientSlot(), material.inputGroup()));
+                    material.key(), left, material.ingredientSlot(), material.inputGroup(), material.gridSlot()));
         }
         return List.copyOf(remaining);
     }
@@ -1541,7 +1615,8 @@ public final class RecipeOrderService
             long left = material.amount();
             for (int i = 0; i < delivered.size() && left > 0; i++)
             {
-                if (!material.inputGroup().equals(delivered.get(i).inputGroup())
+                if (material.ingredientSlot() != delivered.get(i).ingredientSlot()
+                        || !material.inputGroup().equals(delivered.get(i).inputGroup())
                         || !com.amicbeam.beyondcraftlines.common.crafting.StackKeyMatch
                         .exact(material.key(), delivered.get(i).key())) continue;
                 long used = Math.min(left, unused.get(i));
@@ -1549,20 +1624,31 @@ public final class RecipeOrderService
                 unused.set(i, unused.get(i) - used);
             }
             if (left > 0) remaining.add(new RecipePlan.Material(
-                    material.key(), left, material.ingredientSlot(), material.inputGroup()));
+                    material.key(), left, material.ingredientSlot(), material.inputGroup(), material.gridSlot()));
         }
         return List.copyOf(remaining);
     }
 
     private static void preferCohesiveDirectMachine(
-            MinecraftServer server, java.util.LinkedHashMap<String, List<GroupEndpoint>> routes,
+            MinecraftServer server, RecipeOrderJob job, java.util.LinkedHashMap<String, List<GroupEndpoint>> routes,
             List<RecipePlan.Material> requested)
     {
         List<List<MachineKey>> routeKeys = routes.values().stream().map(endpoints -> endpoints.stream()
                 .filter(endpoint -> endpoint.machine() != null).map(GroupEndpoint::key).toList()).toList();
         for (MachineKey common : InputGroupRouteLogic.commonEndpoints(routeKeys))
         {
+            ServerLevel commonLevel = server.getLevel(common.dimension());
+            if (commonLevel == null) continue;
+            var session = itemSession(server, job, new RecipeOrderJob.MachineLocation(common.dimension(), common.position(), ""), commonLevel);
+            session.beginRound();
             boolean acceptsAll = requested.stream().allMatch(material -> {
+                if (material.key() instanceof ItemStackKey item)
+                {
+                    long allocated = session.offer(item, material.amount(), material.gridSlot()).stream()
+                            .mapToLong(BoundMachineAutomation.ItemTarget::amount).sum();
+                    return allocated >= material.amount() || material.gridSlot() < 0
+                            && BoundMachineAutomation.countPresent(commonLevel, common.position(), material.key()) >= material.amount();
+                }
                 GroupEndpoint endpoint = routes.getOrDefault(material.inputGroup(), List.of()).stream()
                         .filter(value -> value.machine() != null && value.key().equals(common)).findFirst().orElse(null);
                 if (endpoint == null) return false;
@@ -1631,7 +1717,7 @@ public final class RecipeOrderService
                     || !ingredient.test(itemKey.getReadOnlyStack()))) continue;
             long amount = Math.min(entry.getValue(), needed);
             entry.setValue(entry.getValue() - amount);
-            selected.add(new InputChunk(entry.getKey(), amount, reserved, material.inputGroup()));
+            selected.add(new InputChunk(entry.getKey(), amount, reserved, material.inputGroup(), material.ingredientSlot(), material.gridSlot()));
             needed -= amount;
             if (needed == 0) break;
         }
@@ -1704,8 +1790,18 @@ public final class RecipeOrderService
     }
 
     private record InputChunk(com.wintercogs.beyonddimensions.api.storage.key.IStackKey<?> key,
-                              long amount, boolean fromReserved, String inputGroup) {}
-    private record RoutedInputChunk(RecipeOrderJob.MachineLocation machine, InputChunk chunk) {}
+                              long amount, boolean fromReserved, String inputGroup, int ingredientSlot, int gridSlot)
+    {
+        InputChunk(IStackKey<?> key, long amount, boolean fromReserved, String inputGroup)
+        { this(key, amount, fromReserved, inputGroup, -1, -1); }
+        InputChunk withAmount(long amount)
+        { return new InputChunk(key, amount, fromReserved, inputGroup, ingredientSlot, gridSlot); }
+    }
+    private record RoutedInputChunk(RecipeOrderJob.MachineLocation machine, InputChunk chunk,
+                                    BoundMachineAutomation.ItemTarget target)
+    {
+        RoutedInputChunk(RecipeOrderJob.MachineLocation machine, InputChunk chunk) { this(machine, chunk, null); }
+    }
     private record PlannedInput(IStackKey<?> key, long amount) {}
     private record GroupedStock(String inputGroup, IStackKey<?> key, long amount) {}
     private record ProvisionerDelivery(ProvisionerStorage storage, IStackKey<?> key, long amount) {}

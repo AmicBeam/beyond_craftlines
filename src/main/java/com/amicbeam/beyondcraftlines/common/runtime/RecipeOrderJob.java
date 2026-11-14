@@ -194,7 +194,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
     {
         requireActive();
         RecipePlan.Step current = executions.get(activeStep).step();
-        boolean sequential = blockingMode || current.selfIncrementSeed() > 0;
+        boolean sequential = blockingMode || current.selfIncrementSeed() > 0 || current.inputs().stream().anyMatch(input -> input.gridSlot() >= 0);
         if (!sequential || current.crafts() <= 1) return advance();
         List<StepExecution> updated = new java.util.ArrayList<>(executions);
         List<RecipePlan.Material> remainingInputs = new java.util.ArrayList<>();
@@ -205,7 +205,7 @@ public record RecipeOrderJob(UUID id, UUID owner, int networkId, ResourceLocatio
                     : input.amount() - BlockingModeLogic.amountToDispatch(
                             true, input.amount(), current.crafts());
             if (amount > 0) remainingInputs.add(new RecipePlan.Material(
-                    input.key(), amount, input.ingredientSlot(), input.inputGroup()));
+                    input.key(), amount, input.ingredientSlot(), input.inputGroup(), input.gridSlot()));
         }
         RecipePlan.Step remaining = new RecipePlan.Step(current.recipe(), current.family(), current.outputKey(),
                 current.outputPerCraft(), current.crafts() - 1, remainingInputs,

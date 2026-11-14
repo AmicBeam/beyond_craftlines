@@ -217,8 +217,11 @@ public final class VirtualProvisionerRecipeRegistry
         return 0D;
     }
 
-    public record InputSlot(String inputGroup, List<KeyAmount> candidates, VirtualInputUse use)
+    public record InputSlot(String inputGroup, List<KeyAmount> candidates, VirtualInputUse use, int gridSlot)
     {
+        public InputSlot(String inputGroup, List<KeyAmount> candidates, VirtualInputUse use)
+        { this(inputGroup, candidates, use, -1); }
+
         public InputSlot(String inputGroup, List<KeyAmount> candidates)
         { this(inputGroup, candidates, VirtualInputUse.CONSUMED); }
 
@@ -226,7 +229,7 @@ public final class VirtualProvisionerRecipeRegistry
         {
             if (!JeiSlotInputGroup.isValid(inputGroup) || candidates == null || candidates.isEmpty()
                     || candidates.size() > VirtualRecipeLimits.CANDIDATES || candidates.stream().anyMatch(value -> value == null
-                    || value.isEmpty() || value.amount() < 1) || use == null)
+                    || value.isEmpty() || value.amount() < 1) || use == null || gridSlot < -1 || gridSlot >= VirtualRecipeLimits.INPUTS)
                 throw new IllegalArgumentException("invalid virtual provisioner ingredient");
             candidates = List.copyOf(candidates);
         }
@@ -245,6 +248,14 @@ public final class VirtualProvisionerRecipeRegistry
                     || inputs == null || inputs.isEmpty() || inputs.size() > VirtualRecipeLimits.INPUTS)
                 throw new IllegalArgumentException("invalid virtual provisioner recipe");
             inputs = List.copyOf(inputs);
+            int previousGridSlot = -1;
+            for (InputSlot input : inputs)
+                if (input.gridSlot() >= 0)
+                {
+                    if (input.gridSlot() <= previousGridSlot)
+                        throw new IllegalArgumentException("grid cells must be unique and ordered");
+                    previousGridSlot = input.gridSlot();
+                }
             VirtualRecipeLimits.requireInputs(inputs.size(), inputs.stream().mapToLong(slot -> slot.candidates().size()).sum());
             if (byproducts == null || byproducts.size() >= VirtualRecipeLimits.OUTPUTS
                     || byproducts.stream().anyMatch(value -> value == null || value.isEmpty()
@@ -268,6 +279,7 @@ public final class VirtualProvisionerRecipeRegistry
                     .append(VirtualRecipeIdentity.key(output)).append('@').append(outputAmount);
             for (InputSlot slot : inputs)
             {
+                if (slot.gridSlot() >= 0) canonical.append("|grid:").append(slot.gridSlot());
                 canonical.append('|').append(slot.inputGroup()).append(':')
                         .append(slot.use().kind()).append('@').append(slot.use().damagePerCraft()).append(':');
                 slot.candidates().stream().map(value -> VirtualRecipeIdentity.key(value.key()) + '@' + value.amount())

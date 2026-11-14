@@ -1,5 +1,7 @@
 package com.amicbeam.beyondcraftlines.client.integration.jei;
 
+import com.amicbeam.beyondcraftlines.common.crafting.RecipeGridSlots;
+
 import com.amicbeam.beyondcraftlines.common.crafting.*;
 import com.amicbeam.beyondcraftlines.common.network.OpenOrderMenuPayload;
 import com.wintercogs.beyonddimensions.api.storage.key.KeyAmount;
@@ -85,12 +87,15 @@ public final class JeiVirtualRecipeLayouts
         List<Captured> structured = structuredCaptures(type, layout.getRecipe());
         if (!structured.isEmpty()) return structured;
         List<IRecipeSlotView> views = layout.getRecipeSlotsView().getSlotViews();
+        List<Integer> gridCells = RecipeGridSlots.cells(layout.getRecipe(), (int) views.stream()
+                .filter(slot -> slot.getRole() == RecipeIngredientRole.INPUT).count());
         List<List<KeyAmount>> raw = new ArrayList<>();
         for (IRecipeSlotView slot : views)
         {
             if (slot.getRole() == RecipeIngredientRole.RENDER_ONLY) { raw.add(List.of()); continue; }
             List<KeyAmount> values = new ArrayList<>();
             slot.getAllIngredients().limit(VirtualRecipeLimits.CANDIDATES + 1L).forEach(typed -> {
+                if (typed.getIngredient() instanceof net.minecraft.world.item.ItemStack stack && stack.isEmpty()) return;
                 KeyAmount value = RecipeResourceResolver.fromStack(typed.getIngredient());
                 if (value == null || value.isEmpty() || value.amount() < 1)
                     throw new IllegalArgumentException("unrecognized JEI resource type " + typed.getType().getUid());
@@ -113,9 +118,11 @@ public final class JeiVirtualRecipeLayouts
             List<SlotCapture> inputSlots = new ArrayList<>();
             List<SlotCapture> catalysts = new ArrayList<>();
             List<KeyAmount> outputs = new ArrayList<>();
+            int inputView = -1;
             for (int i = 0; i < views.size(); i++)
             {
                 IRecipeSlotView slot = views.get(i);
+                if (slot.getRole() == RecipeIngredientRole.INPUT) inputView++;
                 List<KeyAmount> candidates = variant.get(i).stream().distinct().toList();
                 if (candidates.isEmpty()) continue;
                 if (slot.getRole() == RecipeIngredientRole.OUTPUT)
@@ -126,10 +133,11 @@ public final class JeiVirtualRecipeLayouts
                     outputs.add(new KeyAmount(output.key(), VanillaRecipeBatching.outputAmount(type, output.amount())));
                 }
                 else if (slot.getRole() == RecipeIngredientRole.INPUT)
-                    inputSlots.add(captureSlot(slot, layout.getRecipe(), candidates, false));
+                    inputSlots.add(captureSlot(slot, layout.getRecipe(), candidates, false,
+                            gridCells.isEmpty() ? -1 : gridCells.get(inputView)));
                 else if (slot.getRole() == RecipeIngredientRole.CATALYST)
                 {
-                    SlotCapture catalyst = captureSlot(slot, layout.getRecipe(), candidates, true);
+                    SlotCapture catalyst = captureSlot(slot, layout.getRecipe(), candidates, true, -1);
                     if (catalyst != null) catalysts.add(catalyst);
                 }
             }
@@ -141,12 +149,12 @@ public final class JeiVirtualRecipeLayouts
             {
                 SlotCapture slot = inputSlots.get(i);
                 String group = slot.semanticGroup().isBlank() ? groups.get(i) : slot.semanticGroup();
-                inputs.add(new OpenOrderMenuPayload.VirtualInput(group, slot.candidates(), slot.use()));
+                inputs.add(new OpenOrderMenuPayload.VirtualInput(group, slot.candidates(), slot.use(), slot.gridSlot()));
             }
             for (SlotCapture slot : catalysts)
                 inputs.add(new OpenOrderMenuPayload.VirtualInput(slot.semanticGroup().isBlank()
                         ? JeiSlotGroupResolver.resolve(List.of(slot.groupSlot())).getFirst() : slot.semanticGroup(),
-                        slot.candidates(), slot.use()));
+                        slot.candidates(), slot.use(), slot.gridSlot()));
             captured.addAll(withOutputs(type, outputs, inputs));
             if (captured.size() > 256) throw new IllegalArgumentException("JEI recipe exceeds variant budget");
         }
@@ -179,13 +187,13 @@ public final class JeiVirtualRecipeLayouts
         return withOutputs(type, RecipeOutputResolver.outputs(recipe, level.registryAccess()), inputs);
     }
 
-    private static SlotCapture captureSlot(IRecipeSlotView slot, Object recipe, List<KeyAmount> candidates, boolean catalyst)
+    private static SlotCapture captureSlot(IRecipeSlotView slot, Object recipe, List<KeyAmount> candidates, boolean catalyst, int gridSlot)
     {
         var semantics = VirtualInputSemantics.decide(recipe, candidates, catalyst);
         if (!semantics.included()) return null;
         var group = new JeiSlotGroupResolver.Slot(slot.getSlotName().orElse(""), slot.getAllIngredients()
                 .map(typed -> String.valueOf(typed.getType().getUid())).collect(java.util.stream.Collectors.toSet()));
-        return new SlotCapture(group, candidates, semantics.inputGroup(), semantics.use());
+        return new SlotCapture(group, candidates, semantics.inputGroup(), semantics.use(), gridSlot);
     }
 
     public static RecipeHolder<?> register(Captured captured)
@@ -195,7 +203,7 @@ public final class JeiVirtualRecipeLayouts
         return VirtualProvisionerRecipeRegistry.retainForClientCatalog(
                 VirtualProvisionerRecipeRegistry.register(family, captured.output().key(), captured.output().amount(),
                 captured.inputs().stream().map(input -> new VirtualProvisionerRecipeRegistry.InputSlot(
-                        input.inputGroup(), input.candidates(), input.use())).toList(), captured.byproducts(), captured.guaranteedByproducts()));
+                        input.inputGroup(), input.candidates(), input.use(), input.gridSlot())).toList(), captured.byproducts(), captured.guaranteedByproducts()));
     }
 
     public record Captured(ResourceLocation type, KeyAmount output,
@@ -209,5 +217,5 @@ public final class JeiVirtualRecipeLayouts
         { this(type, output, inputs, List.of()); }
     }
     private record SlotCapture(JeiSlotGroupResolver.Slot groupSlot, List<KeyAmount> candidates,
-                               String semanticGroup, VirtualInputUse use) {}
+                               String semanticGroup, VirtualInputUse use, int gridSlot) {}
 }

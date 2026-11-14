@@ -21,7 +21,7 @@ import java.util.zip.*;
 public final class ClientJeiRecipeCache
 {
     static final int MAGIC = 0x42434C4A;
-    static final int VERSION = 2;
+    static final int VERSION = 3;
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("beyond_craftlines");
     private static final String PREFIX = com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX;
     private static final ThreadPoolExecutor IO = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
@@ -204,6 +204,7 @@ public final class ClientJeiRecipeCache
         for (var slot : descriptor.inputs())
         {
             string(out, slot.inputGroup(), counts);
+            out.writeInt(slot.gridSlot());
             string(out, slot.use().kind().name(), counts);
             out.writeInt(slot.use().damagePerCraft());
             writeAmounts(out, registryAccess, slot.candidates(), counts);
@@ -284,7 +285,7 @@ public final class ClientJeiRecipeCache
                 {
                     if (input.readInt() != MAGIC) throw new IOException("invalid JEI cache magic");
                     int version = input.readInt();
-                    if (version < 1 || version > VERSION) throw new IOException("incompatible JEI cache format");
+                    if (version != VERSION) throw new IOException("incompatible JEI cache format");
                     boolean legacyIdentity = version == 1;
                     needsRewrite = legacyIdentity;
                     Map<ResourceLocation, ResourceLocation> migrations = new HashMap<>();
@@ -382,7 +383,7 @@ public final class ClientJeiRecipeCache
             int slotCount = count(input);
             List<EncodedSlot> slots = new ArrayList<>();
             for (int i = 0; i < slotCount; i++)
-                slots.add(new EncodedSlot(string(input), string(input), input.readInt(), readAmounts(input)));
+                slots.add(new EncodedSlot(string(input), input.readInt(), string(input), input.readInt(), readAmounts(input)));
             return new EncodedDescriptor(id, family, output, amount, slots, readAmounts(input), readAmounts(input));
         }
         private List<EncodedAmount> readAmounts(DataInputStream input) throws IOException
@@ -398,7 +399,7 @@ public final class ClientJeiRecipeCache
             List<VirtualProvisionerRecipeRegistry.InputSlot> slots = new ArrayList<>();
             for (var slot : value.slots())
                 slots.add(new VirtualProvisionerRecipeRegistry.InputSlot(slot.group(), decodeAmounts(slot.candidates()),
-                        new VirtualInputUse(VirtualInputUse.Kind.valueOf(slot.kind()), slot.damage())));
+                        new VirtualInputUse(VirtualInputUse.Kind.valueOf(slot.kind()), slot.damage()), slot.gridSlot()));
             return new VirtualProvisionerRecipeRegistry.Descriptor(value.family(), key(value.output()), value.amount(),
                     slots, decodeAmounts(value.byproducts()), decodeAmounts(value.guaranteed()));
         }
@@ -418,7 +419,7 @@ public final class ClientJeiRecipeCache
     }
 
     private record EncodedAmount(ClientPlanningCatalogCache.EncodedKey key, long amount) {}
-    private record EncodedSlot(String group, String kind, int damage, List<EncodedAmount> candidates) {}
+    private record EncodedSlot(String group, int gridSlot, String kind, int damage, List<EncodedAmount> candidates) {}
     private record EncodedDescriptor(String id, String family, ClientPlanningCatalogCache.EncodedKey output, long amount,
                                      List<EncodedSlot> slots, List<EncodedAmount> byproducts, List<EncodedAmount> guaranteed) {}
 }

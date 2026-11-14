@@ -450,7 +450,7 @@ public final class RecipePlanningService
             long inputAmount = selfInput ? choice.amount()
                     : use.requiredAmount(crafts, choice.key(), choice.amount(), state.stock);
             inputs.add(new RecipePlan.Material(choice.key(), inputAmount, ingredient.slot(),
-                    ingredient.inputGroup()));
+                    ingredient.inputGroup(), ingredient.gridSlot()));
             (reusable ? reusableDependencyInputs
                     : use.kind() == VirtualInputUse.Kind.DURABILITY
                     ? durabilityDependencyInputs : dependencyInputs)

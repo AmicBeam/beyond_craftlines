@@ -160,7 +160,7 @@ public final class RecipeResourceResolver
             for (int slot = 0; slot < virtual.inputs().size(); slot++)
             {
                 var input = virtual.inputs().get(slot);
-                result.add(new ResourceIngredient(slot, input.candidates(), null, input.inputGroup()));
+                result.add(new ResourceIngredient(slot, input.candidates(), null, input.inputGroup(), input.gridSlot()));
             }
             return List.copyOf(result);
         }
@@ -287,8 +287,10 @@ public final class RecipeResourceResolver
     }
 
     public record ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient,
-                                     String inputGroup)
+                                     String inputGroup, int gridSlot)
     {
+        public ResourceIngredient(int slot, List<KeyAmount> candidates, Ingredient itemIngredient, String inputGroup)
+        { this(slot, candidates, itemIngredient, inputGroup, -1); }
         public ResourceIngredient
         {
             if (slot < 0 || candidates == null || candidates.isEmpty()

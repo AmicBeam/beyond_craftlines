@@ -95,7 +95,7 @@ final class ClientJeiRecipeCacheTest
         assertTrue(loaded.result.types().isEmpty());
     }
 
-    @Test void legacyIdsMigrateWithoutRematerializingTheCategory() throws Exception
+    @Test void cacheWithoutGridMetadataRequiresCategoryRecapture() throws Exception
     {
         var descriptor = descriptor("test:crusher", "output");
         var legacySources = Map.of("test:crusher", List.of("presentation:old"));
@@ -105,11 +105,9 @@ final class ClientJeiRecipeCacheTest
         rewriteId(path, descriptor.id().toString(), oldId.toString(), 1);
         var loaded = ClientJeiRecipeCache.loadAsync(path, RegistryAccess.EMPTY, stableSources, legacySources);
         await(loaded);
-        assertFalse(loaded.failed);
-        assertEquals(Set.of("test:crusher"), loaded.result.types());
-        assertEquals(Map.of(oldId, descriptor.id()), loaded.idMigrations);
-        assertTrue(loaded.needsRewrite);
-        assertTrue(VirtualProvisionerRecipeRegistry.find(descriptor.id()).isPresent());
+        assertTrue(loaded.failed);
+        assertTrue(loaded.result.types().isEmpty(), "old catalogs must recapture original empty cells");
+        assertTrue(loaded.idMigrations.isEmpty());
     }
 
     @Test void oneInvalidDescriptorOnlyInvalidatesItsCategoryAndRemovesPartialRestores() throws Exception

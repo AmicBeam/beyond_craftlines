@@ -22,6 +22,7 @@ import java.util.*;
 
 public final class RecipeOrderSavedData extends SavedData
 {
+    final Map<UUID, Map<String, BoundMachineAutomation.ItemSession>> itemSessions = new java.util.HashMap<>();
     private static final String NAME = "beyond_craftlines_recipe_orders";
     private static final SavedDataType<RecipeOrderSavedData> TYPE = new SavedDataType<>(
             Identifier.fromNamespaceAndPath(BeyondCraftlines.MOD_ID, NAME),
@@ -214,6 +215,7 @@ public final class RecipeOrderSavedData extends SavedData
             writeKey(value, input.key(), registries);
             value.putLong("amount", input.amount());
             value.putInt("ingredient_slot", input.ingredientSlot());
+            value.putInt("grid_slot", input.gridSlot());
             value.putString("input_group", input.inputGroup());
             inputs.add(value);
         }
@@ -241,7 +243,7 @@ public final class RecipeOrderSavedData extends SavedData
             inputs.add(new RecipePlan.Material(readKey(value, registries),
                     value.getLongOr("amount", 0L), value.contains("ingredient_slot")
                     ? value.getIntOr("ingredient_slot", -1) : -1,
-                    value.getStringOr("input_group", "ingredients")));
+                    value.getStringOr("input_group", "ingredients"), value.getIntOr("grid_slot", -1)));
         }
         List<RecipePlan.IngredientSelection> selections = new ArrayList<>();
         ListTag encodedSelections = tag.getListOrEmpty("ingredient_selections");
@@ -326,6 +328,7 @@ public final class RecipeOrderSavedData extends SavedData
             writeKey(encoded, input.key(), registries);
             encoded.putLong("amount", input.amount());
             encoded.putInt("ingredient_slot", input.ingredientSlot());
+            encoded.putInt("grid_slot", input.gridSlot());
             encoded.putString("input_group", input.inputGroup());
             remaining.add(encoded);
         }
@@ -346,7 +349,7 @@ public final class RecipeOrderSavedData extends SavedData
             remaining.add(new RecipePlan.Material(readKey(input, registries),
                     input.getLongOr("amount", 0L), input.contains("ingredient_slot")
                     ? input.getIntOr("ingredient_slot", -1) : -1,
-                    input.getStringOr("input_group", "ingredients")));
+                    input.getStringOr("input_group", "ingredients"), input.getIntOr("grid_slot", -1)));
         }
         net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level> dimension =
                 net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION,
@@ -398,7 +401,7 @@ public final class RecipeOrderSavedData extends SavedData
         return List.copyOf(result);
     }
 
-    private static void writeKey(CompoundTag owner, IStackKey<?> key, HolderLookup.Provider registries)
+    static void writeKey(CompoundTag owner, IStackKey<?> key, HolderLookup.Provider registries)
     {
         owner.putString("key_type", key.getTypeId().toString());
         owner.put("key", key.serializeNBT(registries));
@@ -407,7 +410,7 @@ public final class RecipeOrderSavedData extends SavedData
                     .getKey(item.getSource()).toString());
     }
 
-    private static IStackKey<?> readKey(CompoundTag owner, HolderLookup.Provider registries)
+    static IStackKey<?> readKey(CompoundTag owner, HolderLookup.Provider registries)
     {
         Identifier type = Identifier.tryParse(owner.getStringOr("key_type", ""));
         if (type != null)

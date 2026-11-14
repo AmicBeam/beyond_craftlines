@@ -47,11 +47,134 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
     private final List<WirelessConnection> wirelessConnections = new ArrayList<>();
     private ResourceLocation targetBlockIcon;
     private ItemStack targetItemIcon = ItemStack.EMPTY;
+    private final List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.Material> pendingSlotInputs = new ArrayList<>();
+    private java.util.UUID slotOrder;
+    private int slotStep;
+    private int slotConnection = -1;
+    private String slotConnectionKey = "";
     private int connectionCursor;
     private ProvisionerDeliveryStrategy deliveryStrategy = ProvisionerDeliveryStrategy.ROUND_ROBIN;
 
     public CraftlineProvisionerBlockEntity(BlockPos pos, BlockState state) {
         super(CraftlinesBlockEntities.CRAFTLINE_PROVISIONER.get(), pos, state);
+    }
+
+    public void queueSlotInputs(java.util.UUID order, int step, List<com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.Material> inputs)
+    {
+        if (inputs.isEmpty()) return;
+        if (!pendingSlotInputs.isEmpty()) throw new IllegalStateException("slot delivery already pending");
+        slotOrder = order;
+        slotStep = step;
+        slotConnection = -1;
+        slotConnectionKey = "";
+        pendingSlotInputs.addAll(inputs);
+        setChanged();
+    }
+
+    private String slotConnectionKey(WirelessConnection connection)
+    { return connection.dimension() + "|" + connection.position().asLong() + "|" + connection.face() + "|" + connection.blockId(); }
+
+    private BoundMachineAutomation.ItemSession slotSession(ServerLevel currentLevel, WirelessConnection connection)
+    {
+        ServerLevel target = currentLevel.getServer().getLevel(connection.dimension());
+        if (target == null || !target.isLoaded(connection.position())
+                || !BuiltInRegistries.BLOCK.getKey(target.getBlockState(connection.position()).getBlock()).equals(connection.blockId())) return null;
+        var sessions = RecipeOrderSavedData.get(currentLevel.getServer()).itemSessions.computeIfAbsent(slotOrder, unused -> new java.util.HashMap<>());
+        String key = slotStep + "|wireless|" + worldPosition.asLong() + "|" + slotConnectionKey(connection);
+        var candidate = BoundMachineAutomation.itemSession(target, connection.position(), connection.face());
+        var existing = sessions.get(key);
+        if (existing != null && existing.sameInventory(candidate)) return existing;
+        var fresh = candidate;
+        var previous = sessions.values().stream().filter(value -> value.sameInventory(fresh)).findFirst().orElse(null);
+        if (previous != null) candidate = previous.newLayout();
+        RecipeOrderJob order = RecipeOrderSavedData.get(currentLevel.getServer()).get(slotOrder);
+        if (order != null && slotStep >= 0 && slotStep < order.stepCount())
+        {
+            candidate.beginRound();
+            for (var material : order.step(slotStep).inputs())
+                if (material.gridSlot() >= 0 && material.key() instanceof ItemStackKey item)
+                    candidate.offer(item, 1, material.gridSlot());
+        }
+        sessions.put(key, candidate);
+        return candidate;
+    }
+
+    /** A whole grid stays on one supply connection, independent of storage iteration and split strategy. */
+    private void dispatchSlotInputs(ServerLevel currentLevel)
+    {
+        var output = activeRecipeOutput(currentLevel);
+        if (output == null || slotOrder == null) return;
+        if (slotConnection < 0)
+        {
+            for (int index : connectionOrder())
+            {
+                WirelessConnection connection = wirelessConnections.get(index);
+                if (connection.role() != ConnectionRole.SUPPLY) continue;
+                var session = slotSession(currentLevel, connection);
+                if (session == null || !session.isEmpty()) continue;
+                session.beginRound();
+                boolean fits = true;
+                for (var input : pendingSlotInputs)
+                {
+                    if (!(input.key() instanceof ItemStackKey item)) { fits = false; break; }
+                    session.offer(item, input.amount(), input.gridSlot());
+                    if (!session.hasGridCell(input.gridSlot())) { fits = false; break; }
+                }
+                if (!fits) continue;
+                slotConnection = index;
+                slotConnectionKey = slotConnectionKey(connection);
+                setChanged();
+                break;
+            }
+        }
+        if (slotConnection < 0 || slotConnection >= wirelessConnections.size()) return;
+        WirelessConnection connection = wirelessConnections.get(slotConnection);
+        if (!slotConnectionKey.equals(slotConnectionKey(connection)) || connection.role() != ConnectionRole.SUPPLY) return;
+        var session = slotSession(currentLevel, connection);
+        if (session == null) return;
+        session.beginRound();
+        while (!pendingSlotInputs.isEmpty())
+        {
+            var input = pendingSlotInputs.get(0);
+            if (!(input.key() instanceof ItemStackKey item)
+                    || !BindingSavedData.get(currentLevel.getServer()).resourceFilter(currentLevel.dimension(), worldPosition).acceptsSupply(item, output)
+                    || !BindingSavedData.get(currentLevel.getServer()).resourceFilter(connection.dimension(), connection.position()).acceptsSupply(item, output)) return;
+            var targets = session.offer(item, input.amount(), input.gridSlot());
+            if (targets.isEmpty()) return;
+            long delivered = 0;
+            for (var target : targets)
+            {
+                KeyAmount taken = storage.extract(item, target.amount(), false, false);
+                if (taken.isEmpty()) return;
+                long inserted = target.insert(item, taken.amount());
+                if (inserted < taken.amount()) storage.insertFromOrder(item, taken.amount() - inserted, false);
+                delivered += inserted;
+            }
+            if (delivered <= 0) return;
+            if (delivered >= input.amount()) pendingSlotInputs.remove(0);
+            else pendingSlotInputs.set(0, new com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.Material(
+                    input.key(), input.amount() - delivered, input.ingredientSlot(), input.inputGroup(), input.gridSlot()));
+            setChanged();
+            if (delivered < input.amount()) return;
+        }
+        if (deliveryStrategy == ProvisionerDeliveryStrategy.ROUND_ROBIN)
+            connectionCursor = (slotConnection + 1) % wirelessConnections.size();
+        slotConnection = -1;
+        slotConnectionKey = "";
+    }
+
+    public boolean hasPendingSlotInputs() { return !pendingSlotInputs.isEmpty(); }
+
+    private void returnInactiveSlotInputs(ServerLevel currentLevel)
+    {
+        if (pendingSlotInputs.isEmpty()) return;
+        RecipeOrderJob order = slotOrder == null ? null : RecipeOrderSavedData.get(currentLevel.getServer()).get(slotOrder);
+        boolean active = order != null && order.networkId() == getNetId() && slotStep >= 0 && slotStep < order.stepCount()
+                && order.status() != RecipeOrderJob.Status.COMPLETE && order.status() != RecipeOrderJob.Status.CANCELLED
+                && order.status() != RecipeOrderJob.Status.ERROR && order.executions().get(slotStep).externalWait() != null;
+        if (active) return;
+        var network = com.wintercogs.beyonddimensions.api.dimensionnet.DimensionsNet.getNetFromId(getNetId());
+        if (network != null) returnContentTo(network.getUnifiedStorage());
     }
 
     public ProvisionerStorage storage() { return storage; }
@@ -115,7 +238,9 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
 
     public static void serverTick(Level level, BlockPos position, BlockState state,
                                   CraftlineProvisionerBlockEntity provisioner) {
-        if (!(level instanceof ServerLevel serverLevel) || provisioner.wirelessConnections.isEmpty()) return;
+        if (!(level instanceof ServerLevel serverLevel)) return;
+        provisioner.returnInactiveSlotInputs(serverLevel);
+        if (provisioner.wirelessConnections.isEmpty()) return;
         if (!provisioner.storage.isEmpty() && provisioner.supplyConnectionCount() > 0)
             provisioner.dispatchWireless();
         if (provisioner.extractConnectionCount() > 0 && provisioner.participatesInActiveOrder(serverLevel))
@@ -124,6 +249,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
 
     private void dispatchWireless() {
         if (!(level instanceof ServerLevel currentLevel) || wirelessConnections.isEmpty()) return;
+        if (!pendingSlotInputs.isEmpty()) { dispatchSlotInputs(currentLevel); return; }
         var recipeOutput = activeRecipeOutput(currentLevel);
         int size = wirelessConnections.size();
         for (KeyAmount staged : List.copyOf(storage.getStorage())) {
@@ -236,7 +362,12 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
 
     /** Moves every staged resource accepted by the target network and keeps any rejected remainder. */
     public void returnContentTo(UnifiedStorage networkStorage) {
-        if (networkStorage == null || storage.isEmpty()) return;
+        slotOrder = null;
+        slotConnection = -1;
+        slotConnectionKey = "";
+        setChanged();
+        if (networkStorage == null) return;
+        if (storage.isEmpty()) { pendingSlotInputs.clear(); return; }
         for (KeyAmount stack : List.copyOf(storage.getStorage())) {
             if (stack.isEmpty()) continue;
             KeyAmount taken = storage.extract(stack.key(), stack.amount(), false, false);
@@ -244,6 +375,7 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
             KeyAmount remainder = networkStorage.insert(taken.key(), taken.amount(), false);
             if (!remainder.isEmpty()) storage.insertFromOrder(remainder.key(), remainder.amount(), false);
         }
+        if (storage.isEmpty()) pendingSlotInputs.clear();
     }
 
     /** Drops every staged BD resource in the same lossless container used by BD machines. */
@@ -309,6 +441,22 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
     @Override protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
         tag.put("provisioned_resources", storage.serializeNBT());
+        if (slotOrder != null) tag.putString("slot_order", slotOrder.toString());
+        tag.putInt("slot_step", slotStep);
+        tag.putInt("slot_connection", slotConnection);
+        tag.putString("slot_connection_key", slotConnectionKey);
+        ListTag slotInputs = new ListTag();
+        for (var input : pendingSlotInputs)
+        {
+            CompoundTag encoded = new CompoundTag();
+            RecipeOrderSavedData.writeKey(encoded, input.key());
+            encoded.putLong("amount", input.amount());
+            encoded.putInt("ingredient_slot", input.ingredientSlot());
+            encoded.putInt("grid_slot", input.gridSlot());
+            encoded.putString("input_group", input.inputGroup());
+            slotInputs.add(encoded);
+        }
+        tag.put("slot_inputs", slotInputs);
         ListTag candidates = new ListTag();
         recipeCandidates.stream().sorted(Comparator.comparing(ResourceLocation::toString)).forEach(type -> candidates.add(StringTag.valueOf(type.toString())));
         tag.put("recipe_candidates", candidates);
@@ -331,6 +479,20 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
     @Override public void load(CompoundTag tag) {
         super.load(tag);
         if (tag.contains("provisioned_resources")) storage.deserializeNBT(tag.getCompound("provisioned_resources"));
+        slotOrder = null;
+        if (tag.contains("slot_order")) slotOrder = java.util.UUID.fromString(tag.getString("slot_order"));
+        slotStep = tag.getInt("slot_step");
+        slotConnection = tag.contains("slot_connection") ? tag.getInt("slot_connection") : -1;
+        slotConnectionKey = tag.getString("slot_connection_key");
+        pendingSlotInputs.clear();
+        ListTag slotInputs = tag.getList("slot_inputs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < slotInputs.size(); i++)
+        {
+            CompoundTag encoded = slotInputs.getCompound(i);
+            pendingSlotInputs.add(new com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.Material(
+                    RecipeOrderSavedData.readKey(encoded), encoded.getLong("amount"),
+                    encoded.getInt("ingredient_slot"), encoded.getString("input_group"), encoded.getInt("grid_slot")));
+        }
         recipeCandidates.clear();
         ListTag candidates = tag.getList("recipe_candidates", Tag.TAG_STRING);
         for (int i = 0; i < Math.min(32, candidates.size()); i++) {
@@ -363,6 +525,22 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
 
     @Override protected void saveClientData(CompoundTag tag) {
         super.saveClientData(tag);
+        if (slotOrder != null) tag.putString("slot_order", slotOrder.toString());
+        tag.putInt("slot_step", slotStep);
+        tag.putInt("slot_connection", slotConnection);
+        tag.putString("slot_connection_key", slotConnectionKey);
+        ListTag slotInputs = new ListTag();
+        for (var input : pendingSlotInputs)
+        {
+            CompoundTag encoded = new CompoundTag();
+            RecipeOrderSavedData.writeKey(encoded, input.key());
+            encoded.putLong("amount", input.amount());
+            encoded.putInt("ingredient_slot", input.ingredientSlot());
+            encoded.putInt("grid_slot", input.gridSlot());
+            encoded.putString("input_group", input.inputGroup());
+            slotInputs.add(encoded);
+        }
+        tag.put("slot_inputs", slotInputs);
         ListTag candidates = new ListTag();
         recipeCandidates.stream().sorted(Comparator.comparing(ResourceLocation::toString))
                 .forEach(type -> candidates.add(StringTag.valueOf(type.toString())));
@@ -373,6 +551,20 @@ public final class CraftlineProvisionerBlockEntity extends NetedBlockEntity {
 
     @Override protected void loadClientData(CompoundTag tag) {
         super.loadClientData(tag);
+        slotOrder = null;
+        if (tag.contains("slot_order")) slotOrder = java.util.UUID.fromString(tag.getString("slot_order"));
+        slotStep = tag.getInt("slot_step");
+        slotConnection = tag.contains("slot_connection") ? tag.getInt("slot_connection") : -1;
+        slotConnectionKey = tag.getString("slot_connection_key");
+        pendingSlotInputs.clear();
+        ListTag slotInputs = tag.getList("slot_inputs", Tag.TAG_COMPOUND);
+        for (int i = 0; i < slotInputs.size(); i++)
+        {
+            CompoundTag encoded = slotInputs.getCompound(i);
+            pendingSlotInputs.add(new com.amicbeam.beyondcraftlines.common.crafting.RecipePlan.Material(
+                    RecipeOrderSavedData.readKey(encoded), encoded.getLong("amount"),
+                    encoded.getInt("ingredient_slot"), encoded.getString("input_group"), encoded.getInt("grid_slot")));
+        }
         recipeCandidates.clear();
         ListTag candidates = tag.getList("recipe_candidates", Tag.TAG_STRING);
         for (int i = 0; i < Math.min(32, candidates.size()); i++) {

@@ -2471,21 +2471,6 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             if (RecipeResolutionOverrides.NO_RECIPE.equals(recipe)) forcedRecipes.put(output, recipe);
         });
         forcedRecipes.putAll(manualRecipes);
-        LinkedHashMap<String, Identifier> preferredRecipes = new LinkedHashMap<>(defaultResourceRecipes);
-
-        if (preferAutomaticChoices)
-        {
-            preferredRecipes.putAll(automaticResourceRecipes);
-
-        }
-        preferredRecipes.putAll(forcedRecipes);
-        Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients = new LinkedHashMap<>();
-        defaultIngredients.forEach((key, value) -> preferredIngredients.put(
-                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
-        if (preferAutomaticChoices) automaticIngredients.forEach((key, value) -> preferredIngredients.put(
-                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
-        manualIngredients.forEach((key, value) -> preferredIngredients.put(
-                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         LinkedHashMap<String, Identifier> defaultRecipesOnly = new LinkedHashMap<>(defaultResourceRecipes);
 
         defaultRecipesOnly.putAll(forcedRecipes);
@@ -2502,15 +2487,16 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
         Map<ClientRecipePlanner.IngredientKey, String> savedIngredients = new LinkedHashMap<>();
         defaultIngredients.forEach((key, value) -> savedIngredients.put(
                 new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
+        boolean allowSavedPreferenceFallback = CraftlinesConfig.ALLOW_SAVED_PREFERENCE_FALLBACK.get();
         Map<String, Identifier> fixedTreeRecipes = new LinkedHashMap<>(visibleTreeRecipes());
-        fixedTreeRecipes.putAll(forcedRecipes);
         Map<ClientRecipePlanner.IngredientKey, String> fixedTreeIngredients = new LinkedHashMap<>(visibleTreeIngredients());
+        if (!allowSavedPreferenceFallback)
+        {
+            fixedTreeRecipes.keySet().removeAll(savedRecipes.keySet());
+            fixedTreeIngredients.keySet().removeAll(savedIngredients.keySet());
+        }
+        fixedTreeRecipes.putAll(forcedRecipes);
         fixedTreeIngredients.putAll(forcedIngredients);
-        preferredRecipes.putAll(fixedTreeRecipes);
-        preferredRecipes.putAll(forcedRecipes);
-        preferredIngredients.putAll(fixedTreeIngredients);
-        manualIngredients.forEach((key, value) -> preferredIngredients.put(
-                new ClientRecipePlanner.IngredientKey(key.recipe(), key.slot()), value));
         com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
                 "{} client plan visible-tree choices recipes={} ingredients={}",
                 com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.PREFIX,
@@ -2529,11 +2515,13 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             boolean optimalSearch=false;
             try { proposal = ClientRecipePlanner.plan(planningCatalog,
                     stock, target, count, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients,
-                    maxDepth, maxNodes, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch); }
+                    maxDepth, maxNodes, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, optimalSearch,
+                    allowSavedPreferenceFallback); }
             catch (RuntimeException exception) { failure = exception; }
             boolean searchExhausted = proposal != null && proposal.searchExhausted();
             long fallbackSearchNanos = searchDeadline - System.nanoTime();
-            if (!refreshSnapshotIfMissing && hasAutomaticChoices && fallbackSearchNanos > 0
+            if (allowSavedPreferenceFallback && !refreshSnapshotIfMissing && hasAutomaticChoices
+                    && fallbackSearchNanos > 0
                     && (proposal == null || !proposal.craftable()))
             {
                 try
@@ -2555,7 +2543,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             }
             // Automatically rendered choices are hints, not user pins. Retry without them
             // when the initial tree picked a compression/decompression loop.
-            if (!refreshSnapshotIfMissing && (hasDefaults || !fixedTreeRecipes.isEmpty()
+            if ((allowSavedPreferenceFallback || !hasDefaults) && !refreshSnapshotIfMissing
+                    && (hasDefaults || !fixedTreeRecipes.isEmpty()
                     || !fixedTreeIngredients.isEmpty()) && fallbackSearchNanos > 0
                     && (proposal == null || !proposal.craftable()))
             {
@@ -2582,8 +2571,12 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                 {
                     // Discovery may consume its entire budget. Validate current selections with
                     // a fresh bounded budget; manual pins override stale rendered choices.
-                    proposal = ClientRecipePlanner.validateSelectedTree(planningCatalog, stock, target, count,
-                            fixedTreeRecipes, fixedTreeIngredients, maxDepth, maxNodes);
+                    proposal = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
+                            fixedTreeRecipes, fixedTreeIngredients,
+                            allowSavedPreferenceFallback ? Map.of() : savedRecipes,
+                            allowSavedPreferenceFallback ? Map.of() : savedIngredients,
+                            maxDepth, maxNodes, ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, false,
+                            allowSavedPreferenceFallback);
                     failure = null;
                 }
                 catch (RuntimeException exception) { failure = exception; }
@@ -2647,7 +2640,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                         if (CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())
                             startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch,
                                     maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients,
-                                    savedRecipes, savedIngredients);
+                                    savedRecipes, savedIngredients, allowSavedPreferenceFallback);
                         return;
                     }
                     com.amicbeam.beyondcraftlines.common.crafting.OrderDiagnostics.LOGGER.info(
@@ -2675,7 +2668,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                     if (orderButton != null) orderButton.active = true;
                     rebuildTree(false);
                     boolean submitWasQueued=submitWhenReady;
-                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch, maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients);
+                    if(submitWasQueued)submit();else if(CraftlinesConfig.ENABLE_OPTIMAL_RECIPE_SEARCH.get())startOptimalPlanning(generation, nonce, target, count, stockRevision, recipeEpoch, maxDepth, maxNodes, stock, forcedRecipes, forcedIngredients, savedRecipes, savedIngredients, allowSavedPreferenceFallback);
                 });
         });
     }
@@ -2686,7 +2679,8 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
                                       Map<String, Identifier> lockedRecipes,
                                       Map<ClientRecipePlanner.IngredientKey, String> lockedIngredients,
                                       Map<String, Identifier> preferredRecipes,
-                                      Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients)
+                                      Map<ClientRecipePlanner.IngredientKey, String> preferredIngredients,
+                                      boolean allowSavedPreferenceFallback)
     {
         optimizationTask = OPTIMIZATION_EXECUTOR.submit(() -> {
             ClientRecipePlanner.Proposal improved;
@@ -2694,7 +2688,7 @@ public final class CraftlineOrderScreen extends AbstractContainerScreen<Craftlin
             {
                 improved = ClientRecipePlanner.plan(planningCatalog, stock, target, count,
                         lockedRecipes, lockedIngredients, preferredRecipes, preferredIngredients, maxDepth, maxNodes,
-                        ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, true);
+                        ClientRecipePlanner.SEARCH_TIME_LIMIT_NANOS, true, allowSavedPreferenceFallback);
             }
             catch (RuntimeException ignored)
             {

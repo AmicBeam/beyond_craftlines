@@ -102,12 +102,25 @@ public final class ClientRecipePlanner
                                 int maxDepth, int maxNodes, long maxSearchNanos,
                                 boolean optimalSearch)
     {
+        return plan(catalog, suppliedStock, target, requested, lockedRecipes, lockedIngredients,
+                preferredRecipes, preferredIngredients, maxDepth, maxNodes, maxSearchNanos, optimalSearch, true);
+    }
+
+    public static Proposal plan(Catalog catalog, Map<IStackKey<?>, Long> suppliedStock,
+                                IStackKey<?> target, long requested,
+                                Map<String, Identifier> lockedRecipes,
+                                Map<IngredientKey, String> lockedIngredients,
+                                Map<String, Identifier> preferredRecipes,
+                                Map<IngredientKey, String> preferredIngredients,
+                                int maxDepth, int maxNodes, long maxSearchNanos,
+                                boolean optimalSearch, boolean allowSavedPreferenceFallback)
+    {
         if (requested < 1 || maxDepth < 1 || maxNodes < 1 || maxSearchNanos < 1)
             throw new IllegalArgumentException("invalid client plan");
         ClientPlanningBudget budget = new ClientPlanningBudget(maxNodes, maxSearchNanos, System::nanoTime,
                 optimalSearch);
         Search search = new Search(catalog, lockedRecipes, lockedIngredients, preferredRecipes,
-                preferredIngredients, suppliedStock, maxDepth, budget, optimalSearch);
+                preferredIngredients, suppliedStock, maxDepth, budget, optimalSearch, allowSavedPreferenceFallback);
         State state = search.run(target, requested);
         boolean exhausted = budget.exhausted();
         boolean failed = !state.succeeded || !state.missing.isEmpty();
@@ -142,13 +155,15 @@ public final class ClientRecipePlanner
         private final int maxDepth;
         private final ClientPlanningBudget budget;
         private final boolean optimalSearch;
+        private final boolean allowSavedPreferenceFallback;
 
         private Search(Catalog catalog, Map<String, Identifier> lockedRecipes,
                        Map<IngredientKey, String> lockedIngredients,
                        Map<String, Identifier> preferredRecipes,
                        Map<IngredientKey, String> preferredIngredients,
                        Map<IStackKey<?>, Long> suppliedStock, int maxDepth,
-                       ClientPlanningBudget budget, boolean optimalSearch)
+                       ClientPlanningBudget budget, boolean optimalSearch,
+                       boolean allowSavedPreferenceFallback)
         {
             this.byOutput = catalog::lookup;
             this.selectedByOutput = catalog::selected;
@@ -160,6 +175,7 @@ public final class ClientRecipePlanner
             this.maxDepth = maxDepth;
             this.budget = budget;
             this.optimalSearch = optimalSearch;
+            this.allowSavedPreferenceFallback = allowSavedPreferenceFallback;
         }
 
         private State run(IStackKey<?> target, long requested)
@@ -395,6 +411,11 @@ public final class ClientRecipePlanner
         {
             var preferred = preferredRecipes.get(RecipeResourceResolver.resolutionKey(resource));
 
+            if (preferred != null && !allowSavedPreferenceFallback)
+            {
+                List<Recipe> matching = selectedByOutput.apply(resource, preferred);
+                if (!matching.isEmpty()) return matching;
+            }
             String preferredId = preferred == null ? null : preferred.toString();
             return PlanningRouteOrder.order(candidates, recipe -> recipe.id().toString(), preferredId,
                     recipe -> unstockedSlots(recipe, state), recipe -> true);
@@ -403,6 +424,12 @@ public final class ClientRecipePlanner
         private List<Candidate> rankIngredients(IngredientKey key, Slot slot, State state)
         {
             String preferred = preferredIngredients.get(key);
+            if (preferred != null && !allowSavedPreferenceFallback)
+            {
+                List<Candidate> matching = slot.candidates().stream()
+                        .filter(candidate -> preferredIngredientMatches(preferred, candidate)).toList();
+                if (!matching.isEmpty()) return matching;
+            }
             return PlanningRouteOrder.order(slot.candidates(),
                     candidate -> preferredIngredientMatches(preferred, candidate) ? preferred : candidate.selection(),
                     preferred,

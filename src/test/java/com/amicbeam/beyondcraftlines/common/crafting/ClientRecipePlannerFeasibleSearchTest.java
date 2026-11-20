@@ -134,10 +134,21 @@ final class ClientRecipePlannerFeasibleSearchTest
         var product = key("product");
         var preferred = recipe("preferred", product, List.of(slot(0, copper, 1)));
         var fallback = recipe("fallback", product, List.of(slot(0, iron, 1)));
-        var result = ClientRecipePlanner.plan(new ClientRecipePlanner.Catalog(List.of(preferred, fallback)),
+        var catalog = new ClientRecipePlanner.Catalog(List.of(preferred, fallback));
+        var recipePreferences = Map.of(RecipeResourceResolver.resolutionKey(product), preferred.id());
+        for (boolean fullSearch : List.of(false, true))
+        {
+            var kept = ClientRecipePlanner.plan(catalog, Map.of(iron, 1L), product, 1,
+                    Map.of(), Map.of(), recipePreferences, Map.of(),
+                    8, 64, 1_000_000_000L, fullSearch, false);
+            assertEquals(PlanningOutcome.MISSING_INPUTS, kept.outcome());
+            assertEquals(Map.of(copper, 1L), kept.missing());
+            assertEquals(preferred.id(), kept.recipes().get(RecipeResourceResolver.resolutionKey(product)));
+        }
+        var result = ClientRecipePlanner.plan(catalog,
                 Map.of(iron, 1L), product, 1, Map.of(), Map.of(),
-                Map.of(RecipeResourceResolver.resolutionKey(product), preferred.id()), Map.of(),
-                8, 64, 1_000_000_000L, true);
+                recipePreferences, Map.of(),
+                8, 64, 1_000_000_000L, true, true);
         assertEquals(PlanningOutcome.READY, result.outcome());
         assertEquals(fallback.id(), result.recipes().get(RecipeResourceResolver.resolutionKey(product)));
     }
@@ -176,6 +187,37 @@ final class ClientRecipePlannerFeasibleSearchTest
                 result.ingredients().get(new ClientRecipePlanner.IngredientKey(root.id(), 0)));
         assertEquals(1L, result.extraction().get(copper));
         assertEquals(1L, result.extraction().get(iron));
+    }
+
+    @Test
+    void savedIngredientFallbackCanBeEnabledWithoutChangingUnpreferredSlots()
+    {
+        var copper = key("copper");
+        var iron = key("iron");
+        var unavailable = key("unavailable");
+        var product = key("product");
+        var root = recipe("root", product, List.of(options(0, copper, iron), options(1, copper, unavailable)));
+        var catalog = new ClientRecipePlanner.Catalog(List.of(root));
+        var stock = Map.of(copper, 1L, iron, 1L);
+        var slot = new ClientRecipePlanner.IngredientKey(root.id(), 0);
+        var saved = Map.of(slot, "test:copper");
+        for (boolean fullSearch : List.of(false, true))
+        {
+            var kept = ClientRecipePlanner.plan(catalog, stock, product, 1,
+                    Map.of(), Map.of(), Map.of(), saved, 8, 64, 1_000_000_000L, fullSearch, false);
+            assertEquals(PlanningOutcome.MISSING_INPUTS, kept.outcome());
+            assertEquals("test:copper", kept.ingredients().get(slot));
+        }
+        var fallback = ClientRecipePlanner.plan(catalog, stock, product, 1,
+                Map.of(), Map.of(), Map.of(), saved, 8, 64, 1_000_000_000L, true, true);
+        assertTrue(fallback.craftable(), fallback.missing().toString());
+        assertEquals("test:iron", fallback.ingredients().get(slot));
+
+        var stale = ClientRecipePlanner.plan(catalog, stock, product, 1,
+                Map.of(RecipeResourceResolver.resolutionKey(product), root.id()), Map.of(),
+                Map.of(), Map.of(slot, "test:removed"), 8, 64, 1_000_000_000L, true, false);
+        assertTrue(stale.craftable(), stale.missing().toString());
+        assertEquals("test:iron", stale.ingredients().get(slot));
     }
 
     @Test

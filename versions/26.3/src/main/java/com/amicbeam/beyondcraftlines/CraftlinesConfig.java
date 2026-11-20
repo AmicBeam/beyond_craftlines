@@ -47,6 +47,11 @@ public final class CraftlinesConfig
             .translation("config.beyond_craftlines.enable_optimal_recipe_search")
             .define("enableOptimalRecipeSearch", true);
 
+    public static final ModConfigSpec.BooleanValue ALLOW_SAVED_PREFERENCE_FALLBACK = CLIENT_BUILDER
+            .comment("Allow automatic planning to try alternatives when a saved recipe or ingredient preference cannot complete the order.")
+            .translation("config.beyond_craftlines.allow_saved_preference_fallback")
+            .define("allowSavedPreferenceFallback", false);
+
     public static final ModConfigSpec.BooleanValue PRELOAD_ALL_RECIPE_TYPES = CLIENT_BUILDER
             .comment("Preload all supported recipe types when entering a world and reuse the persistent catalog on later logins. Disable to preload only the current network's enabled types. Changing this setting switches the catalog scope.")
             .translation("config.beyond_craftlines.preload_all_recipe_types")

@@ -10,6 +10,7 @@
   "config.beyond_craftlines.amount_preview_delay_ticks": "Amount preview delay (ticks)",
   "config.beyond_craftlines.recipe_preview_delay_ticks": "Recipe choice preview delay (ticks)",
   "config.beyond_craftlines.enable_optimal_recipe_search": "Search for a complete craftable plan",
+  "config.beyond_craftlines.allow_saved_preference_fallback": "Allow fallback from saved recipe and ingredient preferences",
   "config.beyond_craftlines.collapse_duplicate_tree_resources": "Show only the duplicate resource node closest to the root",
   "config.beyond_craftlines.show_jei_order_button_everywhere": "Show JEI order button on every screen",
   "config.beyond_craftlines.order_status_refresh_interval_ticks": "Order status refresh interval (ticks)",

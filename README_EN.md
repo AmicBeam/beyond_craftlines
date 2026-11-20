@@ -4,7 +4,7 @@
 
 Recipe-driven autocrafting for Beyond Dimensions. Beyond: Craftlines turns JEI recipes into interactive recursive crafting trees, reserves resources from BD networks, schedules crafting grids and real machines, collects their outputs, and carries production from “find the recipe” to “receive the result” through persistent orders that can be inspected and cancelled.
 
-Version 0.7.3 fixes dashboard attachment to vanilla chests and trapped chests, and adds an action-bar message when the target cannot support a dashboard. See the [0.7.3 changelog](docs/CHANGELOG_0.7.3.md).
+Version 0.7.4 adds slot-aware feeding with preserved empty recipe cells and order-local compatibility caching. See the [0.7.4 changelog](docs/CHANGELOG_0.7.4.md) and [functional and regression test plan](docs/SLOT_DELIVERY_TEST_PLAN.md).
 
 ## Features
 
@@ -50,10 +50,10 @@ See the [detailed cache guide (Chinese)](docs/RECIPE_CACHE.md) and [Wiki](https:
 
 Unless explicitly scoped to one version, feature descriptions and development changes apply to all five versions above.
 
-Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.3`, sharing the `0.7` feature version.
+Version numbering: the second component identifies the feature version and stays consistent across Minecraft versions. The third component identifies the fix revision and can advance independently for each Minecraft version. The Minecraft 1.20.1, 1.21.1, 26.1.2, 26.2, and 26.3 builds are all `0.7.4`, sharing the `0.7` feature version.
 
 - `mod_id`: `beyond_craftlines`
-- Required dependencies: Beyond Dimensions and JEI on all five Minecraft versions. `for-bd0.7` artifacts require BD `<0.8`: at least 0.7.30 on 1.20.1, 1.21.1 and 26.1.2, or 0.7.31 on 26.2 and 26.3. Separate `for-bd0.8` artifacts on 1.20.1 Forge and 1.21.1 NeoForge require BD `[0.8.8,0.9)`, CompixelUI and Kotlin. Install only one matching Craftlines JAR per instance. The 1.20.1 BD 0.8 runtime requires Forge 47.2.18 or newer.
+- Required dependencies: Beyond Dimensions and JEI on all five Minecraft versions. `for-bd0.7` artifacts require BD `<0.8`: at least 0.7.40 on 1.20.1, 1.21.1 and 26.1.2, or 0.7.41 on 26.2 and 26.3. Separate `for-bd0.8` artifacts on 1.20.1 Forge and 1.21.1 NeoForge require BD `[0.8.8,0.9)`, CompixelUI and Kotlin. Install only one matching Craftlines JAR per instance. The 1.20.1 BD 0.8 runtime requires Forge 47.2.18 or newer.
 - Optional dependencies: GuideME; EMI on Minecraft 1.20.1 Forge and 1.21.1 NeoForge. The 26.1.2, 26.2, and 26.3 builds retain an explicit no-op EMI bridge and do not provide EMI runtime support.
 
 Server configuration paths: 1.20.1, 1.21.1, 26.1.2, and 26.2 use `serverconfig/beyond_craftlines-server.toml` inside the world directory. Minecraft 26.3 uses NeoForge synced configuration: the global default is `config/beyond_craftlines-server.toml`, with a per-world override at `syncedconfig/beyond_craftlines-server.toml`, synchronized to clients on connection. When upgrading a world, copy any previous world-specific file from `serverconfig` into that world’s `syncedconfig`; the filename and settings remain unchanged.
@@ -85,11 +85,11 @@ cd ../26.3 && ../../gradlew --no-daemon build
 
 The five artifacts are written to:
 
-- `versions/1.20.1/build/libs/beyond_craftlines-0.7.3+1.20.1-for-bd0.7.jar`
-- `build/libs/beyond_craftlines-0.7.3+1.21.1-for-bd0.7.jar`
-- `versions/26.1.2/build/libs/beyond_craftlines-0.7.3+26.1.2-for-bd0.7.jar`
-- `versions/26.2/build/libs/beyond_craftlines-0.7.3+26.2-for-bd0.7.jar`
-- `versions/26.3/build/libs/beyond_craftlines-0.7.3+26.3-for-bd0.7.jar`
+- `versions/1.20.1/build/libs/beyond_craftlines-0.7.4+1.20.1-for-bd0.7.jar`
+- `build/libs/beyond_craftlines-0.7.4+1.21.1-for-bd0.7.jar`
+- `versions/26.1.2/build/libs/beyond_craftlines-0.7.4+26.1.2-for-bd0.7.jar`
+- `versions/26.2/build/libs/beyond_craftlines-0.7.4+26.2-for-bd0.7.jar`
+- `versions/26.3/build/libs/beyond_craftlines-0.7.4+26.3-for-bd0.7.jar`
 
 The two BD 0.8 builds share recipe logic and common tests. Run from the repository root with JDK 17 / 21 respectively:
 
@@ -98,11 +98,11 @@ The two BD 0.8 builds share recipe logic and common tests. Run from the reposito
 ./gradlew -p versions/1.21.1-bd0.8 --no-daemon build
 ```
 
-Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.3+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.3+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
+Their artifacts are `versions/1.20.1-bd0.8/build/libs/beyond_craftlines-0.7.4+1.20.1-for-bd0.8.jar` and `versions/1.21.1-bd0.8/build/libs/beyond_craftlines-0.7.4+1.21.1-for-bd0.8.jar`. Minecraft 26.1.2, 26.2 and 26.3 currently provide only BD 0.7 builds.
 
 Ordinary firework rockets have server-derived recipe variants for flight durations 1, 2 and 3. Each consumes one paper and the corresponding number of separate gunpowder slots, and delegates assembly to the real vanilla recipe. Rockets with explosions are never silently replaced by ordinary rockets. See [dynamic crafting acceptance](docs/DYNAMIC_CRAFTING.md) for brewing, rockets and White Sheath policy test coverage and limitations.
 
-When exact recipe matching fails, right-click the resource node to select a component variant. The bundled SlashBlade profile has been removed; actual dynamic outputs are tracked per order. Ordinary exact indexing and batching retain their existing paths. See [component matching](docs/COMPONENT_MATCHING.md). Clients and servers must use matching protocol 35 builds.
+When exact recipe matching fails, right-click the resource node to select a component variant. The bundled SlashBlade profile has been removed; actual dynamic outputs are tracked per order. Ordinary exact indexing and batching retain their existing paths. See [component matching](docs/COMPONENT_MATCHING.md). Clients and servers must use matching protocol 36 builds.
 
 ## Usage Overview
 

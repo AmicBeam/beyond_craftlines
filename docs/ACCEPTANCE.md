@@ -1,5 +1,7 @@
 # Beyond: Craftlines 验收文档
 
+0.7.4 的有序配方槽位投料、动力合成器模型测试及相关回归案例见 [槽位投料测试文档](SLOT_DELIVERY_TEST_PLAN.md)。
+
 本文用于验收合成链供给器的配方类型确认 GUI。案例使用 Create 工作盆，因为同一个
 `create:basin` 催化剂通常会被 JEI 同时登记到以下配方类型：
 
